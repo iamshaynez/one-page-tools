@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>角色随机分配工具</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        textarea {
+            width: 100%;
+            height: 100px;
+            margin-bottom: 10px;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #result {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>角色随机分配工具</h1>
+    <label for="characters">游戏人物列表（每行一个）：</label>
+    <textarea id="characters" placeholder="输入游戏人物，每行一个"></textarea>
+    
+    <label for="players">玩家姓名（每行一个）：</label>
+    <textarea id="players" placeholder="输入玩家姓名，每行一个"></textarea>
+    
+    <button onclick="randomAssign()">随机分配</button>
+    
+    <div id="result"></div>
+
+    <script>
+        function randomAssign() {
+            const characters = document.getElementById('characters').value.split('\n').filter(char => char.trim() !== '');
+            const players = document.getElementById('players').value.split('\n').filter(player => player.trim() !== '');
+            const resultDiv = document.getElementById('result');
+
+            if (characters.length !== players.length) {
+                resultDiv.innerHTML = '<p style="color: red;">错误：游戏人物数量与玩家数量不一致！</p>';
+                return;
+            }
+
+            // Fisher-Yates shuffle algorithm
+            for (let i = characters.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [characters[i], characters[j]] = [characters[j], characters[i]];
+            }
+
+            let result = '<h2>分配结果：</h2><ul>';
+            for (let i = 0; i < players.length; i++) {
+                result += `<li>${players[i]}: ${characters[i]}</li>`;
+            }
+            result += '</ul>';
+
+            resultDiv.innerHTML = result;
+        }
+    </script>
+</body>
+</html>
