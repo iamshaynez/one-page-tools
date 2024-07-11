@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>扫雷游戏</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f0f0f0;
+        }
+        #game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        #game {
+            display: grid;
+            grid-template-columns: repeat(25, 20px);
+            gap: 1px;
+            margin-bottom: 10px;
+        }
+        .cell {
+            width: 20px;
+            height: 20px;
+            background-color: #ccc;
+            border: 1px solid #999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .revealed {
+            background-color: #fff;
+        }
+        .mine {
+            background-color: #f00;
+        }
+        .flag::after {
+            content: '🚩';
+            font-size: 16px;
+        }
+        #controls {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 500px;
+            margin-bottom: 10px;
+        }
+        button {
+            padding: 5px 10px;
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="controls">
+            <div id="timer">时间: 0秒</div>
+            <button id="restart">重新开始</button>
+        </div>
+        <div id="game"></div>
+    </div>
+
+    <script>
+        const game = document.getElementById('game');
+        const timerDisplay = document.getElementById('timer');
+        const restartButton = document.getElementById('restart');
+        const size = 25;
+        const mineCount = 100;
+        let mineField = [];
+        let revealed = [];
+        let flagged = [];
+        let gameStarted = false;
+        let gameOver = false;
+        let timer;
+        let time = 0;
+
+        function initGame() {
+            game.innerHTML = '';
+            mineField = Array(size * size).fill(false);
+            revealed = Array(size * size).fill(false);
+            flagged = Array(size * size).fill(false);
+            gameStarted = false;
+            gameOver = false;
+            time = 0;
+            updateTimerDisplay();
+
+            // 随机放置地雷
+            for (let i = 0; i < mineCount; i++) {
+                let index;
+                do {
+                    index = Math.floor(Math.random() * size * size);
+                } while (mineField[index]);
+                mineField[index] = true;
+            }
+
+            // 创建单元格
+            for (let i = 0; i < size * size; i++) {
+                const cell = document.createElement('div');
+                cell.classList.add('cell');
+                cell.dataset.index = i;
+                cell.addEventListener('click', handleLeftClick);
+                cell.addEventListener('contextmenu', handleRightClick);
+                game.appendChild(cell);
+            }
+        }
+
+        function startTimer() {
+            timer = setInterval(() => {
+                time++;
+                updateTimerDisplay();
+            }, 1000);
+        }
+
+        function stopTimer() {
+            clearInterval(timer);
+        }
+
+        function updateTimerDisplay() {
+            timerDisplay.textContent = `时间: ${time}秒`;
+        }
+
+        function handleLeftClick(e) {
+            if (gameOver) return;
+            const index = parseInt(e.target.dataset.index);
+            if (flagged[index]) return; // 如果已标记旗帜，左键点击无效
+
+            if (!gameStarted) {
+                gameStarted = true;
+                startTimer();
+            }
+
+            if (mineField[index]) {
+                revealMines();
+                gameOver = true;
+                stopTimer();
+                alert('游戏结束！');
+            } else {
+                reveal(index);
+                checkWin();
+            }
+        }
+
+        function handleRightClick(e) {
+            e.preventDefault(); // 阻止默认的右键菜单
+            if (gameOver) return;
+            const index = parseInt(e.target.dataset.index);
+            if (revealed[index]) return; // 如果已经揭示，不能标记旗帜
+
+            flagged[index] = !flagged[index];
+            e.target.classList.toggle('flag');
+
+            if (!gameStarted) {
+                gameStarted = true;
+                startTimer();
+            }
+        }
+
+        function reveal(index) {
+            if (revealed[index] || flagged[index]) return;
+            revealed[index] = true;
+            const cell = game.children[index];
+            cell.classList.add('revealed');
+
+            const count = countAdjacentMines(index);
+            if (count > 0) {
+                cell.textContent = count;
+            } else {
+                const neighbors = getNeighbors(index);
+                neighbors.forEach(reveal);
+            }
+        }
+
+        function countAdjacentMines(index) {
+            const neighbors = getNeighbors(index);
+            return neighbors.filter(i => mineField[i]).length;
+        }
+
+        function getNeighbors(index) {
+            const row = Math.floor(index / size);
+            const col = index % size;
+            const neighbors = [];
+
+            for (let i = -1; i <= 1; i++) {
+                for (let j = -1; j <= 1; j++) {
+                    const newRow = row + i;
+                    const newCol = col + j;
+                    if (newRow >= 0 && newRow < size && newCol >= 0 && newCol < size) {
+                        neighbors.push(newRow * size + newCol);
+                    }
+                }
+            }
+
+            return neighbors;
+        }
+
+        function revealMines() {
+            mineField.forEach((isMine, index) => {
+                if (isMine) {
+                    const cell = game.children[index];
+                    cell.classList.add('mine');
+                }
+            });
+        }
+
+        function checkWin() {
+            const revealedCount = revealed.filter(Boolean).length;
+            if (revealedCount === size * size - mineCount) {
+                gameOver = true;
+                stopTimer();
+                alert('恭喜你赢了！');
+            }
+        }
+
+        restartButton.addEventListener('click', () => {
+            stopTimer();
+            initGame();
+        });
+
+        initGame();
+    </script>
+</body>
+</html>
