@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mermaid 图表生成器</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        h1 {
+            text-align: center;
+        }
+        .container {
+            display: flex;
+            flex: 1;
+            gap: 20px;
+        }
+        .left-panel, .right-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        textarea {
+            flex: 1;
+            resize: none;
+            padding: 10px;
+            font-family: monospace;
+        }
+        #output {
+            flex: 1;
+            border: 1px solid #ccc;
+            padding: 10px;
+            overflow: auto;
+        }
+        button {
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+    </style>
+</head>
+<body>
+    <h1>Mermaid 图表生成器</h1>
+    <div class="container">
+        <div class="left-panel">
+            <textarea id="input" placeholder="在此输入 Mermaid 代码..."></textarea>
+            <button onclick="renderMermaid()">渲染图表</button>
+        </div>
+        <div class="right-panel">
+            <div id="output"></div>
+        </div>
+    </div>
+
+    <script>
+        mermaid.initialize({ startOnLoad: true });
+
+        function renderMermaid() {
+            var input = document.getElementById('input').value;
+            var output = document.getElementById('output');
+            output.innerHTML = '<div class="mermaid">' + input + '</div>';
+            mermaid.init(undefined, '.mermaid');
+        }
+
+        // 页面加载完成后自动渲染一次
+        window.onload = function() {
+            renderMermaid();
+        }
+
+        // 监听输入变化,实时渲染
+        document.getElementById('input').addEventListener('input', renderMermaid);
+    </script>
+</body>
+</html>
