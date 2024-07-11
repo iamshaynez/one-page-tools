@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>One Page Tools Index</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header-image {
+            display: block;
+            margin: 0 auto 20px;
+            max-width: 50%;
+            height: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        button {
+            display: block;
+            margin: 20px auto;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+        #lucky-result {
+            margin-top: 20px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            background-color: #f9f9f9;
+        }
+    </style>
+</head>
+<body>
+    <center><h1>一个网页的玩具大集合</h1></center>
+    <center><img src="https://cdn.sa.net/2024/07/11/eyVQiz6Z4lMb8r9.png" alt="Header Image" class="header-image"></center>
+    
+    <button onclick="feelLucky()">Feel Lucky</button>
+    
+    <div id="lucky-result"></div>
+    
+    <table id="tools-table">
+        <thead>
+            <tr>
+                <th>工具名</th>
+                <th>说明文字</th>
+                <th>地址</th>
+            </tr>
+        </thead>
+        <tbody>
+            <!-- 表格内容将由JavaScript动态生成 -->
+        </tbody>
+    </table>
+
+    <script>
+        const tools = [
+            { name: "浅草观音寺抽签", description: "随机抽取一张浅草寺的幸运签，看看今天的运气呀。", url: "/asakusa.html" },
+            { name: "游戏角色分配器", description: "剧本杀选择困难症专用", url: "/randomrole.html" },
+            
+            // 可以继续添加更多工具
+        ];
+
+        function populateTable() {
+            const tbody = document.querySelector("#tools-table tbody");
+            tools.forEach(tool => {
+                const row = tbody.insertRow();
+                row.insertCell(0).textContent = tool.name;
+                row.insertCell(1).textContent = tool.description;
+                const linkCell = row.insertCell(2);
+                const link = document.createElement('a');
+                link.href = tool.url;
+                link.textContent = tool.url;
+                linkCell.appendChild(link);
+            });
+        }
+
+        function feelLucky() {
+            const randomTool = tools[Math.floor(Math.random() * tools.length)];
+            const resultDiv = document.getElementById("lucky-result");
+            resultDiv.innerHTML = `
+                <h3>${randomTool.name}</h3>
+                <p>${randomTool.description}</p>
+                <a href="${randomTool.url}" target="_blank">访问工具</a>
+            `;
+        }
+
+        // 页面加载时填充表格
+        populateTable();
+    </script>
+</body>
+</html>
