@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>牌局记分器</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: center;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        button {
+            margin: 5px;
+            padding: 5px 10px;
+        }
+        input[type="number"] {
+            width: 60px;
+        }
+        .player-name {
+            font-weight: bold;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>牌局记分器</h1>
+    <div>
+        <button onclick="addPlayer()">添加玩家</button>
+        <button onclick="removePlayer()">删除玩家</button>
+        <button onclick="addRow()">新增一局</button>
+        <button onclick="resetData()">重置所有数据</button>
+    </div>
+    <table id="scoreTable">
+        <thead>
+            <tr id="headerRow">
+                <th>局数</th>
+            </tr>
+        </thead>
+        <tbody id="scoreBody"></tbody>
+    </table>
+
+    <script>
+        let players = [];
+        let scores = [];
+
+        function loadData() {
+            const savedPlayers = localStorage.getItem('players');
+            const savedScores = localStorage.getItem('scores');
+            if (savedPlayers && savedScores) {
+                players = JSON.parse(savedPlayers);
+                scores = JSON.parse(savedScores);
+            } else {
+                initializePlayers();
+            }
+            updateTable();
+        }
+
+        function initializePlayers() {
+            players = [];
+            scores = [];
+            const playerCount = prompt('请输入初始玩家数量：');
+            if (playerCount && !isNaN(playerCount) && playerCount > 0) {
+                for (let i = 0; i < playerCount; i++) {
+                    const playerName = prompt(`请输入玩家${i + 1}的名称：`);
+                    players.push(playerName || `玩家${i + 1}`);
+                }
+                scores = [new Array(players.length).fill(0)];
+            } else {
+                players = ['玩家1', '玩家2'];
+                scores = [[0, 0]];
+            }
+        }
+
+        function saveData() {
+            localStorage.setItem('players', JSON.stringify(players));
+            localStorage.setItem('scores', JSON.stringify(scores));
+        }
+
+        function updateTable() {
+            const headerRow = document.getElementById('headerRow');
+            headerRow.innerHTML = '<th>局数</th>';
+            players.forEach((player, index) => {
+                headerRow.innerHTML += `<th><span class="player-name" onclick="editPlayerName(${index})">${player}</span></th>`;
+            });
+
+            const scoreBody = document.getElementById('scoreBody');
+            scoreBody.innerHTML = '';
+            scores.forEach((row, index) => {
+                let newRow = '<tr>';
+                newRow += `<td>第 ${index + 1} 局</td>`;
+                row.forEach((score, playerIndex) => {
+                    newRow += `<td><input type="number" value="${score}" onchange="updateScore(${index}, ${playerIndex}, this.value)"></td>`;
+                });
+                newRow += '</tr>';
+                scoreBody.innerHTML += newRow;
+            });
+
+            const totalRow = document.createElement('tr');
+            totalRow.innerHTML = '<td><strong>总分</strong></td>';
+            players.forEach((_, index) => {
+                const total = scores.reduce((sum, row) => sum + row[index], 0);
+                totalRow.innerHTML += `<td><strong>${total}</strong></td>`;
+            });
+            scoreBody.appendChild(totalRow);
+
+            saveData();
+        }
+
+        function addPlayer() {
+            const newPlayer = prompt('请输入新玩家名称：');
+            if (newPlayer) {
+                players.push(newPlayer);
+                scores.forEach(row => row.push(0));
+                updateTable();
+            }
+        }
+
+        function removePlayer() {
+            if (players.length > 1) {
+                const index = prompt(`请输入要删除的玩家序号（1-${players.length}）：`);
+                if (index && index >= 1 && index <= players.length) {
+                    players.splice(index - 1, 1);
+                    scores.forEach(row => row.splice(index - 1, 1));
+                    updateTable();
+                }
+            } else {
+                alert('至少需要保留一名玩家！');
+            }
+        }
+
+        function addRow() {
+            scores.push(new Array(players.length).fill(0));
+            updateTable();
+        }
+
+        function resetData() {
+            if (confirm('确定要重置所有数据吗？这将清除所有现有的玩家和分数。')) {
+                players = [];
+                scores = [];
+                initializePlayers();
+                updateTable();
+            }
+        }
+
+        function updateScore(rowIndex, playerIndex, value) {
+            scores[rowIndex][playerIndex] = parseInt(value) || 0;
+            updateTable();
+        }
+
+        function editPlayerName(index) {
+            const newName = prompt(`请输入玩家${index + 1}的新名称：`, players[index]);
+            if (newName && newName !== players[index]) {
+                players[index] = newName;
+                updateTable();
+            }
+        }
+
+        window.onload = loadData;
+    </script>
+</body>
+</html>
