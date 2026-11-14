@@ -1,0 +1,166 @@
+---
+import ToolShell from '../../layouts/ToolShell.astro';
+---
+<ToolShell toolKey="randomrole">
+  <div class="tool-grid tool-grid--2">
+    <div class="card panel">
+      <div class="row" style="justify-content:space-between;">
+        <h2>角色列表</h2>
+        <select class="select" id="template" style="width:auto;">
+          <option value="">载入模板…</option>
+          <option value="werewolf9">狼人杀 · 9 人局</option>
+          <option value="werewolf12">狼人杀 · 12 人局</option>
+          <option value="avalon7">阿瓦隆 · 7 人局</option>
+          <option value="mystery6">剧本杀 · 6 人本</option>
+        </select>
+      </div>
+      <textarea class="textarea" id="characters" placeholder="每行一个角色，如：&#10;预言家&#10;女巫&#10;猎人"></textarea>
+      <p class="muted small"><span id="char-count">0</span> 个角色</p>
+
+      <h2 style="margin-top:20px;">玩家名单</h2>
+      <textarea class="textarea" id="players" placeholder="每行一个玩家姓名"></textarea>
+      <p class="muted small"><span id="player-count">0</span> 位玩家 · 名单自动记忆</p>
+
+      <div class="row" style="margin-top:16px;">
+        <button class="btn btn--red" id="assign">随机分配</button>
+        <button class="btn btn--ghost btn--sm" id="swap">仅重抽角色顺序</button>
+      </div>
+      <p class="small" id="error" style="color:var(--red);margin-top:10px;"></p>
+    </div>
+
+    <div class="card panel">
+      <h2>分配结果</h2>
+      <div id="result" class="result-empty muted">
+        <p>分配结果将在这里出现。</p>
+        <p class="small">角色与玩家数量一致时即可分配。</p>
+      </div>
+      <div class="row" id="result-actions" style="margin-top:16px;">
+        <button class="btn btn--sm" id="copy-result">复制结果</button>
+        <button class="btn btn--ghost btn--sm" id="save-card">保存结果卡</button>
+      </div>
+    </div>
+  </div>
+</ToolShell>
+
+<style>
+  .panel { padding: 24px; }
+  .panel h2 { font-size: 1.05rem; margin-bottom: 12px; }
+  .result-empty { padding: 40px 0; text-align: center; }
+  .pair {
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 16px; margin-top: 10px;
+    background: var(--paper-sunken); border-radius: var(--radius-m);
+    animation: slideUp .3s var(--ease) backwards;
+  }
+  .pair__player { font-family: var(--font-serif); font-weight: 600; font-size: 1.05rem; }
+  .pair__arrow { color: var(--ink-faint); }
+  .pair__role { color: var(--red); font-family: var(--font-serif); font-size: 1.05rem; }
+  #result-actions { visibility: hidden; }
+  #result-actions.show { visibility: visible; }
+</style>
+
+<script>
+  import { store, shuffle, toast, download, escapeHTML } from '../../scripts/ui';
+
+  const charEl = document.getElementById('characters') as HTMLTextAreaElement;
+  const playerEl = document.getElementById('players') as HTMLTextAreaElement;
+  const resultEl = document.getElementById('result')!;
+  const errorEl = document.getElementById('error')!;
+  let lastPairs: { player: string; role: string }[] = [];
+
+  const TEMPLATES: Record<string, string[]> = {
+    werewolf9: ['预言家', '女巫', '猎人', '狼人', '狼人', '狼人', '平民', '平民', '平民'],
+    werewolf12: ['预言家', '女巫', '猎人', '白痴', '狼人', '狼人', '狼人', '狼人', '平民', '平民', '平民', '平民'],
+    avalon7: ['梅林', '派西维尔', '忠臣', '忠臣', '忠臣', '莫甘娜', '刺客'],
+    mystery6: ['侦探', '嫌疑人甲', '嫌疑人乙', '嫌疑人丙', '嫌疑人丁', '嫌疑人戊'],
+  };
+
+  // 玩家名单记忆
+  playerEl.value = store.get<string>('opt-randomrole-players', '');
+  playerEl.addEventListener('input', () => {
+    store.set('opt-randomrole-players', playerEl.value);
+    updateCounts();
+  });
+
+  function lines(el: HTMLTextAreaElement): string[] {
+    return el.value.split('\n').map(s => s.trim()).filter(Boolean);
+  }
+  function updateCounts() {
+    document.getElementById('char-count')!.textContent = String(lines(charEl).length);
+    document.getElementById('player-count')!.textContent = String(lines(playerEl).length);
+  }
+  charEl.addEventListener('input', updateCounts);
+  updateCounts();
+
+  document.getElementById('template')!.addEventListener('change', (e) => {
+    const v = (e.target as HTMLSelectElement).value;
+    if (v && TEMPLATES[v]) { charEl.value = TEMPLATES[v].join('\n'); updateCounts(); }
+    (e.target as HTMLSelectElement).value = '';
+  });
+
+  function renderPairs(pairs: { player: string; role: string }[]) {
+    lastPairs = pairs;
+    resultEl.innerHTML = pairs.map((p, i) => `
+      <div class="pair" style="animation-delay:${i * 60}ms">
+        <span class="pair__player">${escapeHTML(p.player)}</span>
+        <span class="pair__arrow">⟶</span>
+        <span class="pair__role">${escapeHTML(p.role)}</span>
+      </div>`).join('');
+    document.getElementById('result-actions')!.classList.add('show');
+  }
+
+  function assign() {
+    const roles = lines(charEl);
+    const players = lines(playerEl);
+    errorEl.textContent = '';
+    if (roles.length === 0 || players.length === 0) { errorEl.textContent = '请先填写角色与玩家名单。'; return; }
+    if (roles.length !== players.length) {
+      errorEl.textContent = `数量不一致：${roles.length} 个角色 vs ${players.length} 位玩家。`;
+      return;
+    }
+    const shuffled = shuffle(roles);
+    renderPairs(players.map((player, i) => ({ player, role: shuffled[i] })));
+  }
+
+  document.getElementById('assign')!.addEventListener('click', assign);
+  document.getElementById('swap')!.addEventListener('click', () => {
+    if (lastPairs.length === 0) { assign(); return; }
+    const roles = shuffle(lastPairs.map(p => p.role));
+    renderPairs(lastPairs.map((p, i) => ({ player: p.player, role: roles[i] })));
+  });
+
+  document.getElementById('copy-result')!.addEventListener('click', async () => {
+    const text = lastPairs.map(p => `${p.player} → ${p.role}`).join('\n');
+    await navigator.clipboard.writeText(text);
+    toast('分配结果已复制');
+  });
+
+  document.getElementById('save-card')!.addEventListener('click', () => {
+    const W = 640, rowH = 72, H = 200 + lastPairs.length * rowH;
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#f1f1ef'; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#141210'; ctx.font = 'bold 36px "Noto Serif SC", serif'; ctx.textAlign = 'center';
+    ctx.fillText('角色分配结果', W / 2, 70);
+    ctx.font = '18px "Noto Serif SC", serif'; ctx.fillStyle = '#8a847c';
+    ctx.fillText('玩具展馆 · 角色随机分配器', W / 2, 110);
+    lastPairs.forEach((p, i) => {
+      const y = 180 + i * rowH;
+      ctx.fillStyle = i % 2 ? '#e8e8e4' : '#fafaf8';
+      ctx.fillRect(40, y - 36, W - 80, rowH - 10);
+      ctx.fillStyle = '#141210'; ctx.font = '26px "Noto Serif SC", serif'; ctx.textAlign = 'left';
+      ctx.fillText(p.player, 70, y);
+      ctx.fillStyle = '#ce1432'; ctx.textAlign = 'right';
+      ctx.fillText(p.role, W - 70, y);
+    });
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = '角色分配.png'; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      toast('结果卡已保存');
+    }, 'image/png');
+  });
+</script>

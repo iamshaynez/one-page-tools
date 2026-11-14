@@ -1,0 +1,140 @@
+---
+import ToolShell from '../../layouts/ToolShell.astro';
+---
+<ToolShell toolKey="vertical">
+  <div class="tool-grid tool-grid--2">
+    <div class="card panel">
+      <div class="field">
+        <label>正文（中文竖排，从右往左）</label>
+        <textarea class="textarea" id="text" style="min-height:220px;">山不在高，有仙则名。
+水不在深，有龙则灵。
+斯是陋室，惟吾德馨。</textarea>
+      </div>
+      <div class="field" style="margin-top:12px;">
+        <label>落款（可选）</label>
+        <input class="input" id="signature" placeholder="如：甲辰冬 小文 书" />
+      </div>
+      <div class="row" style="margin-top:12px;">
+        <div class="field grow">
+          <label>字号 px</label>
+          <input type="number" class="input" id="font-size" value="40" min="20" max="100" />
+        </div>
+        <div class="field grow">
+          <label>列距 px</label>
+          <input type="number" class="input" id="col-gap" value="72" min="40" max="160" />
+        </div>
+      </div>
+      <div class="row" style="margin-top:12px;">
+        <div class="field grow">
+          <label>纸色</label>
+          <select class="select" id="paper">
+            <option value="#f1f1ef">玄墨 · 冷灰</option>
+            <option value="#f7f3e8">宣纸 · 米白</option>
+            <option value="#141210">墨底 · 白字</option>
+          </select>
+        </div>
+        <div class="field grow">
+          <label>印章落款</label>
+          <select class="select" id="seal">
+            <option value="yes">加盖朱文印</option>
+            <option value="no">不加盖</option>
+          </select>
+        </div>
+      </div>
+      <div class="row" style="margin-top:18px;">
+        <button class="btn btn--red" id="render">生成竖排</button>
+        <button class="btn" id="save">下载长图</button>
+      </div>
+    </div>
+
+    <div class="card panel center" style="overflow:auto;">
+      <canvas id="canvas" style="max-width:100%;height:auto;"></canvas>
+    </div>
+  </div>
+</ToolShell>
+
+<style>
+  .panel { padding: 24px; }
+</style>
+
+<script>
+  import { toast } from '../../scripts/ui';
+
+  let lastCanvas: HTMLCanvasElement | null = null;
+
+  function render() {
+    const text = (document.getElementById('text') as HTMLTextAreaElement).value.trim();
+    if (!text) { toast('请输入正文'); return; }
+    const signature = (document.getElementById('signature') as HTMLInputElement).value.trim();
+    const fontSize = Number((document.getElementById('font-size') as HTMLInputElement).value);
+    const colGap = Number((document.getElementById('col-gap') as HTMLInputElement).value);
+    const paper = (document.getElementById('paper') as HTMLSelectElement).value;
+    const withSeal = (document.getElementById('seal') as HTMLSelectElement).value === 'yes';
+    const dark = paper === '#141210';
+    const ink = dark ? '#ece7de' : '#141210';
+
+    // 每段一列（从右往左）
+    const paragraphs = text.split('\n').map(s => s.trim()).filter(Boolean);
+    const charsPerCol = Math.max(...paragraphs.map(p => p.length));
+    const sigCols = signature ? 2 : 1; // 落款 + 留白
+    const cols = paragraphs.length + sigCols;
+    const W = cols * colGap + 160;
+    const H = Math.max(charsPerCol, signature.length) * (fontSize + 8) + 200;
+
+    const canvas = document.getElementById('canvas') as HTMLCanvasElement;
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = paper; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = dark ? '#35302a' : '#d9d5cd'; ctx.lineWidth = 1.5;
+    ctx.strokeRect(24, 24, W - 48, H - 48);
+
+    ctx.fillStyle = ink;
+    ctx.font = `${fontSize}px "Noto Serif SC", "Songti SC", serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+
+    const startX = W - 80 - colGap / 2;
+    paragraphs.forEach((para, col) => {
+      const x = startX - col * colGap;
+      [...para].forEach((ch, row) => {
+        ctx.fillText(ch, x, 90 + row * (fontSize + 8));
+      });
+    });
+
+    // 落款（小字，位于最左列）
+    if (signature) {
+      const x = startX - paragraphs.length * colGap;
+      ctx.font = `${Math.round(fontSize * 0.6)}px "Noto Serif SC", serif`;
+      const sigSize = Math.round(fontSize * 0.6);
+      [...signature].forEach((ch, row) => {
+        ctx.fillText(ch, x, H - 100 - (signature.length - row) * (sigSize + 6));
+      });
+      // 朱文印
+      if (withSeal) {
+        const sealSize = sigSize + 20;
+        const sy = H - 100 + 16;
+        ctx.fillStyle = '#ce1432';
+        ctx.fillRect(x - sealSize / 2, sy, sealSize, sealSize);
+        ctx.fillStyle = '#f7f3e8';
+        ctx.font = `${sigSize}px "Noto Serif SC", serif`;
+        ctx.fillText(signature[signature.length - 1] ?? '印', x, sy + 10);
+      }
+    }
+    lastCanvas = canvas;
+  }
+
+  document.getElementById('render')!.addEventListener('click', render);
+  document.getElementById('save')!.addEventListener('click', () => {
+    if (!lastCanvas) render();
+    if (!lastCanvas) return;
+    lastCanvas.toBlob((blob) => {
+      if (!blob) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `竖排-${Date.now()}.png`; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      toast('长图已下载');
+    }, 'image/png');
+  });
+
+  render();
+</script>

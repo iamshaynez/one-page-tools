@@ -1,0 +1,85 @@
+---
+import ToolShell from '../../layouts/ToolShell.astro';
+---
+<ToolShell toolKey="cron">
+  <div class="card panel">
+    <div class="row">
+      <input class="input mono grow" id="expr" value="*/20 * * * *" placeholder="分 时 日 月 周，如 */20 * * * *" style="font-size:1.2rem;" />
+      <button class="btn btn--red" id="parse">解释</button>
+    </div>
+    <div class="row" style="margin-top:12px;">
+      <button class="btn btn--ghost btn--sm" data-eg="*/5 * * * *">每 5 分钟</button>
+      <button class="btn btn--ghost btn--sm" data-eg="0 9 * * 1-5">工作日 9 点</button>
+      <button class="btn btn--ghost btn--sm" data-eg="0 0 1 * *">每月 1 号</button>
+      <button class="btn btn--ghost btn--sm" data-eg="30 3 * * 0">周日 3:30</button>
+      <button class="btn btn--ghost btn--sm" data-eg="0 22-23 * * 6">周六深夜</button>
+      <button class="btn btn--ghost btn--sm" data-eg="@daily">@daily</button>
+    </div>
+    <p class="small" id="error" style="color:var(--red);margin-top:10px;"></p>
+    <h2 class="serif" id="human" style="margin-top:16px;font-size:1.4rem;"></h2>
+    <p class="muted small mono" id="normalized" style="margin-top:6px;"></p>
+  </div>
+
+  <div class="card panel" style="margin-top:16px;">
+    <h3 style="font-size:1rem;margin-bottom:12px;">未来 10 次触发（本地时区）</h3>
+    <table class="table">
+      <thead><tr><th>#</th><th>时间</th><th>距今</th></tr></thead>
+      <tbody id="runs"></tbody>
+    </table>
+  </div>
+
+  <div class="card panel muted small" style="margin-top:16px;line-height:2;">
+    <strong>语法速查</strong> · 五段：分(0-59) 时(0-23) 日(1-31) 月(1-12) 周(0-7，0和7都是周日)<br />
+    <code>*</code> 任意 · <code>*/n</code> 每 n · <code>a-b</code> 范围 · <code>a,b</code> 列表 · <code>a-b/n</code> 范围内每 n ·
+    支持 <code>@daily @hourly @weekly @monthly @yearly</code> 与 jan-dec / mon-sun 别名
+  </div>
+</ToolShell>
+
+<style>
+  .panel { padding: 24px; }
+  .panel code { font-family: var(--font-mono); background: var(--paper-sunken); padding: 1px 6px; border-radius: 4px; }
+</style>
+
+<script>
+  import { parseCron, describe, nextRuns } from '../../scripts/cron-core';
+
+  const exprEl = document.getElementById('expr') as HTMLInputElement;
+
+  function humanizeDelta(ms: number): string {
+    const min = Math.round(ms / 60000);
+    if (min < 1) return '不到 1 分钟';
+    if (min < 60) return `${min} 分钟后`;
+    const h = Math.floor(min / 60);
+    if (h < 24) return `${h} 小时${min % 60 ? ` ${min % 60} 分` : ''}后`;
+    return `${Math.floor(h / 24)} 天${h % 24 ? ` ${h % 24} 小时` : ''}后`;
+  }
+
+  function run() {
+    const errEl = document.getElementById('error')!;
+    errEl.textContent = '';
+    try {
+      const expr = parseCron(exprEl.value);
+      document.getElementById('human')!.textContent = describe(expr);
+      document.getElementById('normalized')!.textContent = `${expr.minute.raw} ${expr.hour.raw} ${expr.dom.raw} ${expr.month.raw} ${expr.dow.raw}`;
+      const runs = nextRuns(expr, 10);
+      const now = Date.now();
+      document.getElementById('runs')!.innerHTML = runs.map((d, i) => `
+        <tr>
+          <td class="muted">${i + 1}</td>
+          <td class="mono">${d.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', weekday: 'short' })}</td>
+          <td class="muted small">${humanizeDelta(d.getTime() - now)}</td>
+        </tr>`).join('');
+    } catch (err) {
+      errEl.textContent = err instanceof Error ? err.message : String(err);
+      document.getElementById('human')!.textContent = '';
+      document.getElementById('runs')!.innerHTML = '';
+    }
+  }
+
+  document.getElementById('parse')!.addEventListener('click', run);
+  exprEl.addEventListener('input', run);
+  document.querySelectorAll<HTMLButtonElement>('[data-eg]').forEach(b => {
+    b.addEventListener('click', () => { exprEl.value = b.dataset.eg!; run(); });
+  });
+  run();
+</script>

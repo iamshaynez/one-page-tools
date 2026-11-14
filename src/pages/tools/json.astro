@@ -1,0 +1,96 @@
+---
+import ToolShell from '../../layouts/ToolShell.astro';
+---
+<ToolShell toolKey="json">
+  <div class="row" style="margin-bottom:14px;">
+    <button class="btn btn--sm" id="fmt">格式化</button>
+    <button class="btn btn--sm" id="minify">压缩</button>
+    <button class="btn btn--sm" id="to-yaml">JSON → YAML</button>
+    <button class="btn btn--sm" id="to-json">YAML → JSON</button>
+    <button class="btn btn--ghost btn--sm" id="escape">转义为字符串</button>
+    <button class="btn btn--ghost btn--sm" id="unescape">反转义</button>
+    <div class="grow"></div>
+    <button class="btn btn--ghost btn--sm" id="sample">示例</button>
+    <button class="btn btn--ghost btn--sm" id="clear">清空</button>
+  </div>
+
+  <div class="tool-grid tool-grid--2">
+    <div class="card panel">
+      <textarea id="input" class="textarea textarea--mono" spellcheck="false" placeholder='{"hello": "world"}' style="min-height:420px;"></textarea>
+      <p class="small" id="status" style="margin-top:10px;"></p>
+    </div>
+    <div class="card panel">
+      <pre id="output" class="mono" style="margin:0;white-space:pre-wrap;word-break:break-all;font-size:0.85rem;min-height:420px;"></pre>
+    </div>
+  </div>
+  <div class="row" style="margin-top:14px;">
+    <button class="btn btn--sm" id="copy">复制结果</button>
+    <span class="muted small" id="stats"></span>
+  </div>
+</ToolShell>
+
+<style>
+  .panel { padding: 16px; }
+  #status.ok { color: var(--ink-muted); }
+  #status.err { color: var(--red); font-family: var(--font-mono); font-size: 0.8rem; }
+</style>
+
+<script>
+  import { formatJSON, minifyJSON, jsonToYAML, yamlToJSON, escapeJSONString, unescapeJSONString } from '../../scripts/json-core';
+  import { toast } from '../../scripts/ui';
+
+  const input = document.getElementById('input') as HTMLTextAreaElement;
+  const output = document.getElementById('output')!;
+  const status = document.getElementById('status')!;
+
+  const SAMPLE = JSON.stringify({
+    name: '玩具展馆', version: 2, offline: true,
+    tools: ['snake', 'mine', 'score'],
+    design: { paper: '#f1f1ef', ink: '#141210', red: '#ce1432' },
+  }, null, 2);
+
+  function setStatus(msg: string, ok: boolean) {
+    status.textContent = msg;
+    status.className = `small ${ok ? 'ok' : 'err'}`;
+  }
+
+  function run(fn: (s: string) => string, label: string) {
+    const text = input.value.trim();
+    if (!text) { toast('请先输入内容'); return; }
+    try {
+      const result = fn(text);
+      output.textContent = result;
+      setStatus(`✓ ${label}成功`, true);
+      document.getElementById('stats')!.textContent = `输出 ${result.length} 字符`;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatus(`✗ ${label}失败：${msg}`, false);
+      output.textContent = '';
+      document.getElementById('stats')!.textContent = '';
+    }
+  }
+
+  document.getElementById('fmt')!.addEventListener('click', () => run(s => formatJSON(s, 2), '格式化'));
+  document.getElementById('minify')!.addEventListener('click', () => run(minifyJSON, '压缩'));
+  document.getElementById('to-yaml')!.addEventListener('click', () => run(s => jsonToYAML(JSON.parse(s)), '转 YAML'));
+  document.getElementById('to-json')!.addEventListener('click', () => run(s => JSON.stringify(yamlToJSON(s), null, 2), '转 JSON'));
+  document.getElementById('escape')!.addEventListener('click', () => run(escapeJSONString, '转义'));
+  document.getElementById('unescape')!.addEventListener('click', () => run(unescapeJSONString, '反转义'));
+  document.getElementById('sample')!.addEventListener('click', () => { input.value = SAMPLE; output.textContent = ''; setStatus('', true); });
+  document.getElementById('clear')!.addEventListener('click', () => { input.value = ''; output.textContent = ''; setStatus('', true); });
+  document.getElementById('copy')!.addEventListener('click', async () => {
+    if (!output.textContent) { toast('没有可复制的结果'); return; }
+    await navigator.clipboard.writeText(output.textContent);
+    toast('已复制');
+  });
+
+  // 输入时做轻量 JSON 校验提示
+  input.addEventListener('input', () => {
+    const t = input.value.trim();
+    if (!t) { setStatus('', true); return; }
+    if (t.startsWith('{') || t.startsWith('[')) {
+      try { JSON.parse(t); setStatus('✓ JSON 合法', true); }
+      catch { setStatus('… 输入中（JSON 尚不完整或有误）', false); }
+    } else setStatus('', true);
+  });
+</script>

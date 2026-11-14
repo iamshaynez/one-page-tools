@@ -1,0 +1,150 @@
+---
+import ToolShell from '../../layouts/ToolShell.astro';
+---
+<ToolShell toolKey="g2048">
+  <div class="stage">
+    <div class="row" style="margin-bottom:14px;">
+      <div>得分 <strong class="mono" id="score" style="font-size:1.3rem;">0</strong></div>
+      <div class="muted">最佳 <strong class="mono" id="best">0</strong></div>
+      <div class="grow"></div>
+      <button class="btn btn--sm" id="restart">新一局</button>
+    </div>
+    <div class="board card" id="board" aria-label="2048 棋盘"></div>
+    <p class="muted small center" style="margin-top:14px;">方向键 / WASD / 滑动屏幕。合成 2048！</p>
+  </div>
+
+  <div class="overlay hidden" id="over">
+    <div class="modal center">
+      <h2 id="over-title">游戏结束</h2>
+      <p class="muted" id="over-score"></p>
+      <div class="row" style="justify-content:center;margin-top:20px;">
+        <button class="btn btn--red" id="over-restart">再来一局</button>
+        <button class="btn btn--ghost hidden" id="continue-btn">继续挑战</button>
+      </div>
+    </div>
+  </div>
+</ToolShell>
+
+<style>
+  .stage { max-width: 420px; margin: 0 auto; }
+  .board {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+    padding: 14px; touch-action: none; user-select: none;
+    background: var(--paper-sunken);
+  }
+  .tile {
+    aspect-ratio: 1; display: grid; place-items: center;
+    border-radius: var(--radius-m);
+    font-family: var(--font-serif); font-weight: 700; font-size: clamp(1.2rem, 5vw, 1.9rem);
+    background: var(--paper-raised); color: var(--ink);
+    transition: transform 0.08s;
+  }
+  .tile--pop { animation: pop 0.14s var(--ease); }
+  @keyframes pop { 0% { transform: scale(0.4); } 70% { transform: scale(1.08); } 100% { transform: scale(1); } }
+  .tile[data-v="2"] { background: #eee9df; color: #45403b; }
+  .tile[data-v="4"] { background: #e5dcc8; color: #45403b; }
+  .tile[data-v="8"] { background: #d9c9a8; color: #141210; }
+  .tile[data-v="16"] { background: #c9a35a; color: #fff; }
+  .tile[data-v="32"] { background: #b08a3e; color: #fff; }
+  .tile[data-v="64"] { background: #8a6a2e; color: #fff; }
+  .tile[data-v="128"] { background: #e8384f; color: #fff; font-size: clamp(1rem, 4vw, 1.5rem); }
+  .tile[data-v="256"] { background: #ce1432; color: #fff; font-size: clamp(1rem, 4vw, 1.5rem); }
+  .tile[data-v="512"] { background: #a30f28; color: #fff; font-size: clamp(1rem, 4vw, 1.5rem); }
+  .tile[data-v="1024"] { background: #141210; color: #f1f1ef; font-size: clamp(0.9rem, 3.5vw, 1.3rem); }
+  .tile[data-v="2048"] { background: #141210; color: #c9a35a; font-size: clamp(0.9rem, 3.5vw, 1.3rem); box-shadow: 0 0 0 2px #c9a35a; }
+  .tile[data-v="4096"], .tile[data-v="8192"] { background: #141210; color: #ce1432; font-size: clamp(0.9rem, 3.5vw, 1.3rem); box-shadow: 0 0 0 2px #ce1432; }
+</style>
+
+<script>
+  import { createGrid, move, spawnTile, canMove, hasWon } from '../../scripts/g2048-core';
+  import type { Direction } from '../../scripts/g2048-core';
+  import { store } from '../../scripts/ui';
+
+  const boardEl = document.getElementById('board')!;
+  const overlay = document.getElementById('over')!;
+  let grid = createGrid();
+  let score = 0;
+  let best = store.get<number>('opt-2048-best', 0);
+  let wonShown = false;
+  let freePlay = false;
+  document.getElementById('best')!.textContent = String(best);
+
+  function render(pop = true) {
+    boardEl.innerHTML = '';
+    grid.forEach(row => row.forEach(v => {
+      const tile = document.createElement('div');
+      tile.className = 'tile' + (pop && v ? ' tile--pop' : '');
+      if (v) { tile.dataset.v = String(v); tile.textContent = String(v); }
+      boardEl.appendChild(tile);
+    }));
+    document.getElementById('score')!.textContent = String(score);
+    if (score > best) {
+      best = score;
+      store.set('opt-2048-best', best);
+      document.getElementById('best')!.textContent = String(best);
+    }
+  }
+
+  function checkState() {
+    if (hasWon(grid) && !wonShown && !freePlay) {
+      wonShown = true;
+      document.getElementById('over-title')!.textContent = '🎉 合成 2048！';
+      document.getElementById('over-score')!.textContent = `得分 ${score}。继续挑战更高数字？`;
+      document.getElementById('continue-btn')!.classList.remove('hidden');
+      overlay.classList.remove('hidden');
+    } else if (!canMove(grid)) {
+      document.getElementById('over-title')!.textContent = '棋盘已满';
+      document.getElementById('over-score')!.textContent = `本局得分 ${score} · 最佳 ${best}`;
+      document.getElementById('continue-btn')!.classList.add('hidden');
+      overlay.classList.remove('hidden');
+    }
+  }
+
+  function doMove(dir: Direction) {
+    const result = move(grid, dir);
+    if (!result) return;
+    grid = result.grid;
+    score += result.gained;
+    spawnTile(grid);
+    render();
+    checkState();
+  }
+
+  const KEYMAP: Record<string, Direction> = {
+    ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down',
+    a: 'left', d: 'right', w: 'up', s: 'down', A: 'left', D: 'right', W: 'up', S: 'down',
+  };
+  document.addEventListener('keydown', (e) => {
+    if (!overlay.classList.contains('hidden')) return;
+    const dir = KEYMAP[e.key];
+    if (dir) { e.preventDefault(); doMove(dir); }
+  });
+
+  let touchStart: { x: number; y: number } | null = null;
+  boardEl.addEventListener('touchstart', (e) => {
+    touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }, { passive: true });
+  boardEl.addEventListener('touchmove', (e) => {
+    if (!touchStart) return;
+    const dx = e.touches[0].clientX - touchStart.x;
+    const dy = e.touches[0].clientY - touchStart.y;
+    if (Math.abs(dx) < 28 && Math.abs(dy) < 28) return;
+    doMove(Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
+    touchStart = null;
+  }, { passive: true });
+
+  function restart() {
+    grid = createGrid();
+    score = 0; wonShown = false; freePlay = false;
+    overlay.classList.add('hidden');
+    render(false);
+  }
+  document.getElementById('restart')!.addEventListener('click', restart);
+  document.getElementById('over-restart')!.addEventListener('click', restart);
+  document.getElementById('continue-btn')!.addEventListener('click', () => {
+    freePlay = true;
+    overlay.classList.add('hidden');
+  });
+
+  render(false);
+</script>

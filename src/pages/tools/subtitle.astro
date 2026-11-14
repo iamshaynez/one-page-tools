@@ -1,0 +1,195 @@
+---
+import ToolShell from '../../layouts/ToolShell.astro';
+---
+<ToolShell toolKey="subtitle">
+  <div class="tool-grid tool-grid--2">
+    <div class="card panel">
+      <div class="field">
+        <label>上传图片</label>
+        <input type="file" id="upload" accept="image/*" class="input" />
+      </div>
+      <div class="field" style="margin-top:14px;">
+        <label>字幕文本（每行一条，图片向下延伸）</label>
+        <textarea class="textarea" id="text" placeholder="第一行字幕&#10;第二行字幕&#10;第三行字幕"></textarea>
+      </div>
+
+      <div class="row" style="margin-top:14px;">
+        <div class="field grow">
+          <label>字号（相对图高 %）</label>
+          <input type="number" class="input" id="font-size" value="4.5" min="2" max="12" step="0.5" />
+        </div>
+        <div class="field grow">
+          <label>行距倍数</label>
+          <input type="number" class="input" id="line-height" value="2.2" min="1.2" max="4" step="0.1" />
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:14px;">
+        <div class="field grow">
+          <label>文字颜色</label>
+          <input type="color" class="input" id="color" value="#ffffff" style="height:44px;padding:4px;" />
+        </div>
+        <div class="field grow">
+          <label>描边颜色</label>
+          <input type="color" class="input" id="stroke" value="#141210" style="height:44px;padding:4px;" />
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:14px;">
+        <div class="field grow">
+          <label>延伸样式</label>
+          <select class="select" id="extend-mode">
+            <option value="blur">模糊拉伸（推荐）</option>
+            <option value="dark">深色渐变</option>
+            <option value="mirror">镜像延伸</option>
+            <option value="repeat">原图重复（v1 经典）</option>
+          </select>
+        </div>
+        <div class="field grow">
+          <label>底部衬底</label>
+          <select class="select" id="backdrop">
+            <option value="none">无</option>
+            <option value="gradient" selected>黑色渐变</option>
+            <option value="solid">半透明色条</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:18px;">
+        <button class="btn btn--red" id="generate">生成图片</button>
+        <button class="btn btn--ghost" id="download-btn" disabled>下载 PNG</button>
+      </div>
+    </div>
+
+    <div class="card panel center">
+      <img id="preview" alt="预览" style="max-height:70vh;object-fit:contain;" />
+      <p class="muted small" id="preview-hint">上传图片并输入字幕后点「生成图片」</p>
+    </div>
+  </div>
+</ToolShell>
+
+<style>
+  .panel { padding: 24px; }
+</style>
+
+<script>
+  import { toast } from '../../scripts/ui';
+
+  let originalImage: HTMLImageElement | null = null;
+  let objectURL: string | null = null;
+  const preview = document.getElementById('preview') as HTMLImageElement;
+
+  document.getElementById('upload')!.addEventListener('change', (e) => {
+    const file = (e.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    if (objectURL) URL.revokeObjectURL(objectURL);
+    objectURL = URL.createObjectURL(file);   // Blob URL，不占 base64 内存
+    const img = new Image();
+    img.onload = () => {
+      originalImage = img;
+      preview.src = objectURL!;
+      document.getElementById('preview-hint')!.textContent = `${img.width} × ${img.height}`;
+    };
+    img.src = objectURL;
+  });
+
+  function generate() {
+    if (!originalImage) { toast('请先上传图片'); return; }
+    const img = originalImage;
+    const lines = (document.getElementById('text') as HTMLTextAreaElement).value
+      .split('\n').map(s => s.trim()).filter(Boolean);
+    if (lines.length === 0) { toast('请输入至少一行字幕'); return; }
+
+    const fontPct = parseFloat((document.getElementById('font-size') as HTMLInputElement).value) / 100;
+    const lineHeight = parseFloat((document.getElementById('line-height') as HTMLInputElement).value);
+    const color = (document.getElementById('color') as HTMLInputElement).value;
+    const stroke = (document.getElementById('stroke') as HTMLInputElement).value;
+    const mode = (document.getElementById('extend-mode') as HTMLSelectElement).value;
+    const backdrop = (document.getElementById('backdrop') as HTMLSelectElement).value;
+
+    const W = img.width;
+    const fontSize = Math.round(img.height * fontPct);
+    const rowH = Math.round(fontSize * lineHeight);
+    const H = img.height + rowH * (lines.length - 1);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d')!;
+
+    // 原图
+    ctx.drawImage(img, 0, 0);
+
+    // 延伸区
+    const stripH = Math.round(img.height * 0.25);
+    for (let i = 1; i < lines.length; i++) {
+      const y = img.height + (i - 1) * rowH;
+      if (mode === 'blur') {
+        ctx.save();
+        ctx.filter = 'blur(18px) brightness(0.75)';
+        ctx.drawImage(img, 0, img.height - stripH, W, stripH, -10, y - 10, W + 20, rowH + 20);
+        ctx.restore();
+      } else if (mode === 'dark') {
+        const grad = ctx.createLinearGradient(0, y, 0, y + rowH);
+        grad.addColorStop(0, '#1a1713'); grad.addColorStop(1, '#0d0b09');
+        ctx.fillStyle = grad; ctx.fillRect(0, y, W, rowH);
+      } else if (mode === 'mirror') {
+        ctx.save();
+        ctx.translate(0, y * 2 + rowH); ctx.scale(1, -1);
+        ctx.drawImage(img, 0, img.height - stripH, W, stripH, 0, y, W, rowH);
+        ctx.restore();
+      } else {
+        ctx.drawImage(img, 0, img.height - stripH, W, stripH, 0, y, W, rowH);
+      }
+    }
+
+    // 衬底
+    if (backdrop !== 'none') {
+      const totalText = rowH * lines.length;
+      const top = H - totalText;
+      if (backdrop === 'gradient') {
+        const grad = ctx.createLinearGradient(0, top - fontSize, 0, H);
+        grad.addColorStop(0, 'rgba(0,0,0,0)'); grad.addColorStop(1, 'rgba(0,0,0,0.55)');
+        ctx.fillStyle = grad; ctx.fillRect(0, top - fontSize, W, totalText + fontSize);
+      } else {
+        ctx.fillStyle = 'rgba(0,0,0,0.4)';
+        lines.forEach((_, i) => ctx.fillRect(0, H - totalText + i * rowH, W, rowH));
+      }
+    }
+
+    // 字幕
+    ctx.font = `600 ${fontSize}px "Noto Serif SC", "PingFang SC", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    lines.forEach((line, i) => {
+      const y = H - rowH * lines.length + i * rowH + rowH / 2;
+      ctx.strokeStyle = stroke; ctx.lineWidth = Math.max(2, fontSize / 12);
+      ctx.strokeText(line, W / 2, y);
+      ctx.fillStyle = color;
+      ctx.fillText(line, W / 2, y);
+    });
+
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      if (objectURL) URL.revokeObjectURL(objectURL);
+      objectURL = URL.createObjectURL(blob);
+      preview.src = objectURL;
+      (document.getElementById('download-btn') as HTMLButtonElement).disabled = false;
+      document.getElementById('preview-hint')!.textContent = `已生成 ${W} × ${H}`;
+      // 暂存供下载
+      (document.getElementById('download-btn') as HTMLButtonElement & { _blob?: Blob })._blob = blob;
+    }, 'image/png');
+  }
+
+  document.getElementById('generate')!.addEventListener('click', generate);
+  document.getElementById('download-btn')!.addEventListener('click', () => {
+    const btn = document.getElementById('download-btn') as HTMLButtonElement & { _blob?: Blob };
+    if (!btn._blob) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(btn._blob);
+    a.download = `字幕图-${Date.now()}.png`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    toast('图片已下载');
+  });
+</script>

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect x="4" y="4" width="56" height="56" rx="12" fill="#141210"/>
+  <text x="32" y="42" font-family="'Noto Serif SC',serif" font-size="32" font-weight="700" fill="#f1f1ef" text-anchor="middle">玩</text>
+  <rect x="44" y="44" width="12" height="12" rx="2" fill="#ce1432"/>
+</svg>

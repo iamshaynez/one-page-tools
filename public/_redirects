@@ -1,0 +1,10 @@
+# 旧版 URL 兼容（v1 的 /xxx.html -> v2 的 /tools/xxx/）
+/index.html            /                      301
+/asakusa.html          /tools/asakusa/        301
+/randomrole.html       /tools/randomrole/     301
+/snake.html            /tools/snake/          301
+/mine.html             /tools/mine/           301
+/mermaid.html          /tools/mermaid/        301
+/score.html            /tools/score/          301
+/subtitle.html         /tools/subtitle/       301
+# prompts 路径保持不变，无需重定向

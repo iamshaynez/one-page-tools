@@ -1,0 +1,138 @@
+---
+import ToolShell from '../../layouts/ToolShell.astro';
+---
+<ToolShell toolKey="party">
+  <div class="card panel">
+    <div class="field">
+      <label>名单（每行一个，自动记忆）</label>
+      <textarea class="textarea" id="names" placeholder="张三&#10;李四&#10;王五&#10;赵六" style="min-height:140px;"></textarea>
+    </div>
+    <p class="muted small"><span id="count">0</span> 人</p>
+  </div>
+
+  <div class="tool-grid tool-grid--2" style="margin-top:20px;">
+    <!-- 分组 -->
+    <div class="card panel">
+      <h2>随机分组</h2>
+      <div class="row">
+        <div class="field grow">
+          <label>每组人数</label>
+          <input type="number" class="input" id="group-size" value="3" min="1" max="20" />
+        </div>
+        <button class="btn btn--red" id="do-group" style="margin-top:22px;">分组</button>
+      </div>
+      <div id="group-result" style="margin-top:16px;"></div>
+    </div>
+
+    <!-- 抽奖 -->
+    <div class="card panel">
+      <h2>幸运抽奖</h2>
+      <div class="row">
+        <div class="field grow">
+          <label>抽取人数</label>
+          <input type="number" class="input" id="draw-count" value="1" min="1" max="20" />
+        </div>
+        <button class="btn btn--red" id="do-draw" style="margin-top:22px;">开奖</button>
+      </div>
+      <label class="row small muted" style="margin-top:10px;">
+        <input type="checkbox" id="no-repeat" checked /> 本轮已中奖者不再重复中奖
+      </label>
+      <div id="draw-result" style="margin-top:16px;"></div>
+      <div id="winners-log"></div>
+    </div>
+  </div>
+</ToolShell>
+
+<style>
+  .panel { padding: 24px; }
+  .panel h2 { font-size: 1.1rem; margin-bottom: 14px; }
+  .group-box { margin-top: 12px; padding: 14px 18px; background: var(--paper-sunken); border-radius: var(--radius-m); }
+  .group-box h3 { font-size: 0.95rem; color: var(--red); margin-bottom: 6px; }
+  .winner {
+    display: inline-block; margin: 6px 8px 0 0; padding: 10px 22px;
+    background: var(--red); color: #fff; border-radius: var(--radius-m);
+    font-family: var(--font-serif); font-size: 1.2rem;
+    animation: pop .35s var(--ease) backwards;
+  }
+  @keyframes pop { from { transform: scale(.5); opacity: 0; } }
+  .winner-flash { font-family: var(--font-serif); font-size: 1.8rem; text-align: center; padding: 20px 0; min-height: 76px; }
+  #winners-log .small { margin-top: 12px; }
+</style>
+
+<script>
+  import { store, shuffle, toast, escapeHTML } from '../../scripts/ui';
+
+  const namesEl = document.getElementById('names') as HTMLTextAreaElement;
+  namesEl.value = store.get<string>('opt-party-names', '');
+  let winners = store.get<string[]>('opt-party-winners', []);
+
+  function names(): string[] {
+    return namesEl.value.split('\n').map(s => s.trim()).filter(Boolean);
+  }
+  function updateCount() { document.getElementById('count')!.textContent = String(names().length); }
+  namesEl.addEventListener('input', () => { store.set('opt-party-names', namesEl.value); updateCount(); });
+  updateCount();
+
+  // 分组
+  document.getElementById('do-group')!.addEventListener('click', () => {
+    const list = names();
+    if (list.length < 2) { toast('至少需要 2 个人'); return; }
+    const size = Math.max(1, Number((document.getElementById('group-size') as HTMLInputElement).value));
+    const shuffled = shuffle(list);
+    const groups: string[][] = [];
+    // 轮流分配，保证组间人数均衡
+    const groupCount = Math.ceil(list.length / size);
+    for (let i = 0; i < groupCount; i++) groups.push([]);
+    shuffled.forEach((name, i) => groups[i % groupCount].push(name));
+
+    document.getElementById('group-result')!.innerHTML = groups.map((g, i) => `
+      <div class="group-box">
+        <h3>第 ${i + 1} 组 · ${g.length} 人</h3>
+        <div>${g.map(escapeHTML).join('、')}</div>
+      </div>`).join('');
+  });
+
+  // 抽奖（带滚动动画）
+  let drawing = false;
+  document.getElementById('do-draw')!.addEventListener('click', () => {
+    if (drawing) return;
+    const noRepeat = (document.getElementById('no-repeat') as HTMLInputElement).checked;
+    let pool = names();
+    if (noRepeat) pool = pool.filter(n => !winners.includes(n));
+    if (pool.length === 0) { toast('名单为空或所有人都已中过奖'); return; }
+    const count = Math.min(Number((document.getElementById('draw-count') as HTMLInputElement).value), pool.length);
+
+    drawing = true;
+    const box = document.getElementById('draw-result')!;
+    box.innerHTML = '<div class="winner-flash" id="flash"></div>';
+    const flash = document.getElementById('flash')!;
+    const all = names();
+    const roll = setInterval(() => {
+      flash.textContent = all[Math.floor(Math.random() * all.length)] ?? '';
+    }, 70);
+
+    setTimeout(() => {
+      clearInterval(roll);
+      const lucky = shuffle(pool).slice(0, count);
+      winners.push(...lucky);
+      store.set('opt-party-winners', winners);
+      box.innerHTML = lucky.map((n, i) =>
+        `<span class="winner" style="animation-delay:${i * 120}ms">${escapeHTML(n)}</span>`
+      ).join('');
+      renderLog();
+      drawing = false;
+    }, 1600);
+  });
+
+  function renderLog() {
+    document.getElementById('winners-log')!.innerHTML = winners.length
+      ? `<p class="small muted">已中奖 ${winners.length} 人：${winners.map(escapeHTML).join('、')}
+         <a href="javascript:void 0" id="reset-winners" style="margin-left:8px;">清空重开</a></p>`
+      : '';
+    document.getElementById('reset-winners')?.addEventListener('click', () => {
+      winners = []; store.set('opt-party-winners', winners); renderLog();
+      toast('中奖记录已清空');
+    });
+  }
+  renderLog();
+</script>

@@ -1,0 +1,173 @@
+---
+import ToolShell from '../../layouts/ToolShell.astro';
+---
+<ToolShell toolKey="seal">
+  <div class="tool-grid tool-grid--2">
+    <div class="card panel">
+      <div class="field">
+        <label>印文（1-4 字）</label>
+        <input class="input serif" id="text" value="小文" maxlength="4" style="font-size:1.5rem;" />
+      </div>
+      <div class="row" style="margin-top:16px;">
+        <div class="field grow">
+          <label>印式</label>
+          <select class="select" id="style">
+            <option value="zhu">朱文（红底白字）</option>
+            <option value="bai">白文（红字白底）</option>
+          </select>
+        </div>
+        <div class="field grow">
+          <label>形状</label>
+          <select class="select" id="shape">
+            <option value="square">方形</option>
+            <option value="round">圆形</option>
+            <option value="rect">长方形</option>
+          </select>
+        </div>
+      </div>
+      <div class="row" style="margin-top:16px;">
+        <div class="field grow">
+          <label>边框</label>
+          <select class="select" id="border">
+            <option value="thick">粗边</option>
+            <option value="thin">细边</option>
+            <option value="double">双边</option>
+            <option value="none">无边</option>
+          </select>
+        </div>
+        <div class="field grow">
+          <label>做旧</label>
+          <select class="select" id="aging">
+            <option value="light">轻微</option>
+            <option value="none">无</option>
+            <option value="heavy">斑驳</option>
+          </select>
+        </div>
+      </div>
+      <div class="row" style="margin-top:20px;">
+        <button class="btn btn--red" id="render">刻印</button>
+        <button class="btn" id="save-svg">下载 SVG</button>
+        <button class="btn btn--ghost" id="save-png">下载 PNG</button>
+      </div>
+      <p class="muted small" style="margin-top:16px;">多字按传统印章从右往左、从上往下排列。做旧为随机噪点，每次刻印效果不同。</p>
+    </div>
+
+    <div class="card panel center" style="display:grid;place-items:center;min-height:360px;">
+      <div id="preview"></div>
+    </div>
+  </div>
+</ToolShell>
+
+<style>
+  .panel { padding: 24px; }
+  #preview svg { max-width: 280px; width: 100%; height: auto; }
+</style>
+
+<script>
+  import { toast, download } from '../../scripts/ui';
+
+  function buildSVG(): string {
+    const text = (document.getElementById('text') as HTMLInputElement).value.trim() || '印';
+    const style = (document.getElementById('style') as HTMLSelectElement).value;
+    const shape = (document.getElementById('shape') as HTMLSelectElement).value;
+    const border = (document.getElementById('border') as HTMLSelectElement).value;
+    const aging = (document.getElementById('aging') as HTMLSelectElement).value;
+
+    const W = shape === 'rect' ? 240 : 300;
+    const H = 300;
+    const red = '#ce1432';
+    const chars = [...text].slice(0, 4);
+    const zhu = style === 'zhu';
+    const fg = zhu ? '#f7f3e8' : red;
+    const bg = zhu ? red : 'transparent';
+
+    // 传统排列：2字右左；3字右列1+左列2（或横排）；4字2x2从右上起
+    let positions: { x: number; y: number; size: number }[] = [];
+    const cx = W / 2, cy = H / 2;
+    if (chars.length === 1) positions = [{ x: cx, y: cy, size: 170 }];
+    else if (chars.length === 2) positions = [
+      { x: cx + 55, y: cy, size: 110 }, { x: cx - 55, y: cy, size: 110 },
+    ];
+    else if (chars.length === 3) positions = [
+      { x: cx + 58, y: cy, size: 100 },
+      { x: cx - 55, y: cy - 62, size: 95 }, { x: cx - 55, y: cy + 62, size: 95 },
+    ];
+    else positions = [
+      { x: cx + 58, y: cy - 62, size: 92 }, { x: cx + 58, y: cy + 62, size: 92 },
+      { x: cx - 58, y: cy - 62, size: 92 }, { x: cx - 58, y: cy + 62, size: 92 },
+    ];
+
+    let parts = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">`;
+    // 底
+    if (shape === 'round') parts += `<circle cx="${cx}" cy="${cy}" r="145" fill="${bg}"/>`;
+    else parts += `<rect x="5" y="5" width="${W - 10}" height="${H - 10}" rx="10" fill="${bg}"/>`;
+
+    // 边框
+    const bc = zhu ? '#f7f3e8' : red;
+    if (border !== 'none') {
+      const widths = { thick: 10, thin: 3, double: 4 } as const;
+      const bw = widths[border as 'thick' | 'thin' | 'double'];
+      if (shape === 'round') {
+        parts += `<circle cx="${cx}" cy="${cy}" r="${140 - bw / 2}" fill="none" stroke="${bc}" stroke-width="${bw}"/>`;
+        if (border === 'double') parts += `<circle cx="${cx}" cy="${cy}" r="126" fill="none" stroke="${bc}" stroke-width="2"/>`;
+      } else {
+        parts += `<rect x="${10 + bw / 2}" y="${10 + bw / 2}" width="${W - 20 - bw}" height="${H - 20 - bw}" rx="6" fill="none" stroke="${bc}" stroke-width="${bw}"/>`;
+        if (border === 'double') parts += `<rect x="26" y="26" width="${W - 52}" height="${H - 52}" rx="4" fill="none" stroke="${bc}" stroke-width="2"/>`;
+      }
+    }
+
+    // 字
+    chars.forEach((ch, i) => {
+      const p = positions[i];
+      parts += `<text x="${p.x}" y="${p.y}" font-family="'Noto Serif SC','Songti SC',serif" font-weight="700" font-size="${p.size}" fill="${fg}" text-anchor="middle" dominant-baseline="central">${ch}</text>`;
+    });
+
+    // 做旧：随机小缺口（底色覆盖）
+    if (aging !== 'none') {
+      const n = aging === 'heavy' ? 90 : 30;
+      const holeColor = zhu ? '#f1f1ef' : '#f1f1ef';
+      parts += '<g opacity="0.85">';
+      for (let i = 0; i < n; i++) {
+        const x = Math.random() * W, y = Math.random() * H;
+        const r = Math.random() * (aging === 'heavy' ? 5 : 3) + 0.5;
+        parts += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" fill="${holeColor}" opacity="${(Math.random() * 0.5 + 0.3).toFixed(2)}"/>`;
+      }
+      parts += '</g>';
+    }
+    parts += '</svg>';
+    return parts;
+  }
+
+  function render() {
+    document.getElementById('preview')!.innerHTML = buildSVG();
+  }
+
+  document.getElementById('render')!.addEventListener('click', render);
+  document.getElementById('save-svg')!.addEventListener('click', () => {
+    download('印章.svg', buildSVG(), 'image/svg+xml');
+    toast('SVG 已下载');
+  });
+  document.getElementById('save-png')!.addEventListener('click', () => {
+    const svg = buildSVG();
+    const img = new Image();
+    const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 600; canvas.height = 600;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(img, 0, 0, 600, 600);
+      URL.revokeObjectURL(url);
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = '印章.png'; a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+        toast('PNG 已下载（透明底）');
+      }, 'image/png');
+    };
+    img.src = url;
+  });
+
+  render();
+</script>

@@ -1,0 +1,144 @@
+---
+import Base from '../layouts/Base.astro';
+import { TOOLS, CATEGORIES } from '../data/tools';
+---
+<Base>
+  <header class="hero">
+    <div class="wrap">
+      <div class="hero__top">
+        <span class="hero__mark">玄墨 · 玩具展馆</span>
+        <button class="btn btn--ghost btn--sm" id="theme-toggle" aria-label="切换深浅色">◐</button>
+      </div>
+      <h1 class="hero__title">一个网页的<br />玩具大集合<span class="red">。</span></h1>
+      <p class="hero__sub muted">
+        {TOOLS.length} 个单页玩具，每个都由 AI 生成，<a href="/about" class="hero__link">Prompt 全部公开</a>。<br />
+        冷灰为纸，玄黑为墨，冷漆红点睛。
+      </p>
+      <div class="row" style="margin-top: 28px;">
+        <button class="btn btn--red" id="lucky">⚄ 随便来一个</button>
+        <a class="btn btn--ghost" href="/about">关于这座展馆</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="wrap" style="padding-bottom: 56px;">
+    <nav class="filter-bar" id="filter-bar" aria-label="分类筛选">
+      <button class="chip chip--active" data-cat="all">全部 <span class="chip__n">{TOOLS.length}</span></button>
+      {Object.entries(CATEGORIES).map(([key, c]) => (
+        <button class="chip" data-cat={key}>{c.label} <span class="chip__n">{TOOLS.filter(t => t.category === key).length}</span></button>
+      ))}
+      <input type="search" class="input filter-search" id="search" placeholder="搜索玩具…" aria-label="搜索玩具" />
+    </nav>
+
+    <div class="cards" id="cards">
+      {TOOLS.map((t) => (
+        <a href={`/tools/${t.key}/`} class="tcard card" data-cat={t.category} data-search={`${t.name} ${t.desc} ${t.key}`.toLowerCase()}>
+          <div class="tcard__head">
+            <span class="tcard__icon" aria-hidden="true">{t.icon}</span>
+            <span class="tcard__name">{t.name}</span>
+            {t.featured && <span class="tag tag--red">馆藏</span>}
+          </div>
+          <p class="tcard__desc muted">{t.desc}</p>
+          <div class="tcard__foot">
+            <span class="small muted">{CATEGORIES[t.category].label} · {t.since}</span>
+            <span class="tcard__prompt small" data-prompt={t.key}>Prompt ↗</span>
+          </div>
+        </a>
+      ))}
+    </div>
+    <p class="center muted hidden" id="empty" style="padding: 48px 0;">没有找到匹配的玩具。</p>
+  </main>
+
+  <footer class="site-foot wrap muted small">
+    <span>玩具展馆 · 一个网页的玩具大集合</span>
+    <span>v2.0 · Astro · 静态 · 可离线</span>
+  </footer>
+</Base>
+
+<style>
+  .hero { padding: 36px 0 40px; border-bottom: 1px solid var(--line-soft); margin-bottom: 28px; }
+  .hero__top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 36px; }
+  .hero__mark { font-family: var(--font-serif); letter-spacing: 0.2em; font-size: 0.9rem; color: var(--ink-muted); }
+  .hero__title { font-size: clamp(2.2rem, 6vw, 3.6rem); font-weight: 700; letter-spacing: 0.02em; }
+  .hero__sub { margin-top: 18px; font-size: 1rem; line-height: 1.9; }
+  .hero__link { border-bottom: 1px solid var(--red); }
+  .filter-bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 24px; }
+  .chip {
+    padding: 6px 16px; border-radius: 99px; font-size: 0.9rem;
+    border: 1px solid var(--line); background: transparent; color: var(--ink-soft);
+    transition: all 0.15s;
+  }
+  .chip:hover { border-color: var(--ink); }
+  .chip--active { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .chip__n { opacity: 0.6; font-size: 0.8em; margin-left: 2px; }
+  .filter-search { width: 180px; margin-left: auto; padding: 7px 14px; border-radius: 99px; font-size: 0.9rem; }
+  .cards { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+  .tcard { display: flex; flex-direction: column; padding: 22px; transition: transform 0.18s var(--ease), box-shadow 0.18s; position: relative; }
+  .tcard:hover { transform: translateY(-3px); box-shadow: var(--shadow-lift); color: var(--ink); }
+  .tcard__head { display: flex; align-items: center; gap: 12px; }
+  .tcard__icon {
+    display: grid; place-items: center; width: 40px; height: 40px; flex-shrink: 0;
+    border: 1.5px solid var(--ink); border-radius: var(--radius-m);
+    font-family: var(--font-serif); font-size: 1.2rem; font-weight: 600;
+    transition: background 0.15s, color 0.15s;
+  }
+  .tcard:hover .tcard__icon { background: var(--red); border-color: var(--red); color: #fff; }
+  .tcard__name { font-family: var(--font-serif); font-size: 1.15rem; font-weight: 600; }
+  .tcard__desc { font-size: 0.88rem; line-height: 1.7; margin: 12px 0 16px; flex: 1; }
+  .tcard__foot { display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed var(--line); padding-top: 12px; }
+  .tcard__prompt { color: var(--ink-faint); }
+  .tcard__prompt:hover { color: var(--red); }
+  .site-foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 24px; border-top: 1px solid var(--line-soft); }
+  @media (max-width: 640px) { .filter-search { width: 100%; margin-left: 0; } }
+</style>
+
+<script define:vars={{ keys: TOOLS.map(t => t.key) }}>
+  // 主题
+  document.getElementById('theme-toggle')?.addEventListener('click', () => {
+    const dark = document.documentElement.dataset.theme === 'dark';
+    if (dark) delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = 'dark';
+    localStorage.setItem('opt-theme', dark ? 'light' : 'dark');
+  });
+
+  // Feel Lucky：漆红闪光后跳转
+  document.getElementById('lucky')?.addEventListener('click', () => {
+    const key = keys[Math.floor(Math.random() * keys.length)];
+    document.body.style.transition = 'opacity .25s';
+    document.body.style.opacity = '0.4';
+    setTimeout(() => (location.href = `/tools/${key}/`), 220);
+  });
+
+  // 分类 + 搜索
+  let cat = 'all';
+  const searchInput = document.getElementById('search');
+  const cards = [...document.querySelectorAll('.tcard')];
+  const empty = document.getElementById('empty');
+  function applyFilter() {
+    const q = (searchInput.value || '').trim().toLowerCase();
+    let visible = 0;
+    for (const c of cards) {
+      const ok = (cat === 'all' || c.dataset.cat === cat) && (!q || c.dataset.search.includes(q));
+      c.classList.toggle('hidden', !ok);
+      if (ok) visible++;
+    }
+    empty.classList.toggle('hidden', visible > 0);
+  }
+  document.getElementById('filter-bar')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.chip');
+    if (!btn) return;
+    document.querySelectorAll('.chip').forEach((c) => c.classList.remove('chip--active'));
+    btn.classList.add('chip--active');
+    cat = btn.dataset.cat;
+    applyFilter();
+  });
+  searchInput?.addEventListener('input', applyFilter);
+
+  // 卡片上的 Prompt 链接：进入工具页并自动开抽屉（通过 hash）
+  document.querySelectorAll('[data-prompt]').forEach((el) => {
+    el.addEventListener('click', (e) => {
+      e.preventDefault(); e.stopPropagation();
+      location.href = `/tools/${el.dataset.prompt}/#prompt`;
+    });
+  });
+</script>

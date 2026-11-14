@@ -1,1 +1,60 @@
-# one-page-tools
+# 玩具展馆 · one-page-tools
+
+> 一个网页的玩具大集合。冷灰为纸，玄黑为墨，冷漆红点睛。
+
+**22 个单页玩具，每个都由 AI 生成，Prompt 全部公开。**
+
+静态站点（Astro 构建）· 零框架交互（原生 TypeScript）· 本地优先（数据不出浏览器）· PWA 可离线 · 无广告无追踪。
+
+## 快速开始
+
+```bash
+npm ci
+npm run dev       # 本地预览 http://localhost:4321
+npm run build     # 构建到 dist/，可直接部署 Cloudflare Pages
+npm test          # 67 个单元测试（游戏核心/工具核心纯函数）
+```
+
+部署：Cloudflare Pages 连接本仓库，构建命令 `npm run build`，输出目录 `dist`。旧版 URL（`/snake.html` 等）由 `public/_redirects` 301 到新路径。
+
+## 馆藏清单
+
+| 分类 | 玩具 |
+|---|---|
+| 经典玩具 | 浅草观音寺抽签 · 角色随机分配器 · 贪食蛇 · 扫雷 · Mermaid 图表 · 牌局计分板 · 字幕图片生成 |
+| 创作工坊 | 每日诗签 · 竖排文字器 · 印章生成器 · 聚会抽奖分组 · 玄墨番茄钟 |
+| 开发者工具 | JSON 工具台 · 正则测试器 · Cron 解释器 · 时间戳工具 · 密码与 UUID |
+| 趣味游戏 | 2048 · 猜数字 1A2B · 今晚吃什么轮盘 · 白噪音小屋 · 五子棋 |
+
+## 展馆传统：Prompt 即展品
+
+每个玩具的诞生指令公开在 `/prompts/{key}.txt`，页内右上角「Prompt」按钮即展品铭牌。
+经典玩具另有 `*.v1.txt` 保存 2024 年 7 月的初代 prompt —— 同一件展品，两代人的对话。
+
+## 如何造一个新玩具（三件套）
+
+1. `src/pages/tools/你的key.astro` — 用 `ToolShell` 包一层，写界面与交互
+2. `src/data/tools.ts` — 注册表加一条记录（大厅/分类/Feel Lucky 自动生效）
+3. `public/prompts/你的key.txt` — 把生成它的 prompt 存进来
+
+如果玩具有核心逻辑（棋盘、计分、解析），抽成 `src/scripts/*-core.ts` 纯函数，并在 `tests/` 配单元测试。
+
+## 设计宪章
+
+| 角色 | 值 | 用途 |
+|---|---|---|
+| 冷灰 paper | `#f1f1ef` | 纸底 |
+| 玄黑 ink | `#141210` | 主文字/收边 |
+| 冷漆红 red | `#ce1432` | 点睛：主按钮、印章、当前项 |
+
+标题 Noto Serif SC 衬线，正文 system-ui，代码 JetBrains Mono。深色模式自动跟随系统，可手动切换。
+
+## 工程
+
+- **测试**：`tests/` 覆盖贪食蛇（食物不落蛇身、撞尾判定）、扫雷（首击安全、chord、3BV）、计分（撤销重做、CSV）、Cron（解析/求值/人话）、2048（合并规则）、1A2B、五子棋 AI（必赢必堵）、JSON/YAML 互转
+- **CI**：GitHub Actions 跑测试 + 构建 + 广告代码扫描
+- **PWA**：`public/sw.js` 预缓存核心资源，页面 network-first，资产 cache-first
+
+## License
+
+MIT。签文与诗词为公有领域古籍内容。

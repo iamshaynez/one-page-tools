@@ -1,0 +1,189 @@
+---
+import ToolShell from '../../layouts/ToolShell.astro';
+---
+<ToolShell toolKey="timestamp">
+  <div class="card panel center">
+    <p class="muted small">当前时间</p>
+    <p class="mono" id="now-human" style="font-size:1.3rem;margin:8px 0;"></p>
+    <p class="mono muted" id="now-ts" style="font-size:1.05rem;"></p>
+    <div class="row" style="justify-content:center;margin-top:10px;">
+      <button class="btn btn--ghost btn--sm" id="copy-now-s">复制秒级</button>
+      <button class="btn btn--ghost btn--sm" id="copy-now-ms">复制毫秒级</button>
+    </div>
+  </div>
+
+  <div class="tool-grid tool-grid--2" style="margin-top:16px;">
+    <div class="card panel">
+      <h2>时间戳 → 日期</h2>
+      <div class="field">
+        <label>输入时间戳（自动识别秒/毫秒）</label>
+        <input class="input mono" id="ts-input" placeholder="如 1763078400 或 1763078400000" />
+      </div>
+      <div id="ts-result" style="margin-top:14px;"></div>
+    </div>
+
+    <div class="card panel">
+      <h2>日期 → 时间戳</h2>
+      <div class="field">
+        <label>选择日期时间</label>
+        <input type="datetime-local" class="input mono" id="date-input" step="1" />
+      </div>
+      <div id="date-result" style="margin-top:14px;"></div>
+    </div>
+  </div>
+
+  <div class="card panel" style="margin-top:16px;">
+    <h2>自然语言速算</h2>
+    <div class="row">
+      <input class="input grow" id="nl-input" placeholder="试试：现在 / 今天 0 点 / 明天下午三点 / 3 天后 / 2 小时前 / 下周一" />
+      <button class="btn btn--sm" id="nl-run">计算</button>
+    </div>
+    <div id="nl-result" style="margin-top:14px;"></div>
+  </div>
+</ToolShell>
+
+<style>
+  .panel { padding: 24px; }
+  .panel h2 { font-size: 1.05rem; margin-bottom: 14px; }
+  .result-line { font-family: var(--font-mono); font-size: 0.9rem; padding: 6px 0; display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dashed var(--line-soft); }
+  .result-line b { color: var(--red); font-weight: 500; }
+</style>
+
+<script>
+  import { toast } from '../../scripts/ui';
+
+  function line(label: string, value: string): string {
+    return `<div class="result-line"><span class="muted">${label}</span><b>${value}</b></div>`;
+  }
+
+  // 当前时间常显
+  function tickNow() {
+    const now = new Date();
+    document.getElementById('now-human')!.textContent = now.toLocaleString('zh-CN', { hour12: false });
+    document.getElementById('now-ts')!.textContent = `${Math.floor(now.getTime() / 1000)} (秒) · ${now.getTime()} (毫秒)`;
+  }
+  setInterval(tickNow, 1000);
+  tickNow();
+
+  document.getElementById('copy-now-s')!.addEventListener('click', async () => {
+    await navigator.clipboard.writeText(String(Math.floor(Date.now() / 1000)));
+    toast('秒级时间戳已复制');
+  });
+  document.getElementById('copy-now-ms')!.addEventListener('click', async () => {
+    await navigator.clipboard.writeText(String(Date.now()));
+    toast('毫秒级时间戳已复制');
+  });
+
+  // 时间戳 → 日期
+  document.getElementById('ts-input')!.addEventListener('input', () => {
+    const raw = (document.getElementById('ts-input') as HTMLInputElement).value.trim();
+    const box = document.getElementById('ts-result')!;
+    if (!/^-?\d+$/.test(raw)) { box.innerHTML = raw ? '<p class="small muted">请输入纯数字</p>' : ''; return; }
+    const n = Number(raw);
+    const ms = Math.abs(n) < 1e11 ? n * 1000 : n;   // 小于 1e11 视为秒
+    const d = new Date(ms);
+    if (isNaN(d.getTime())) { box.innerHTML = '<p class="small" style="color:var(--red)">无效时间戳</p>'; return; }
+    box.innerHTML =
+      line('本地时间', d.toLocaleString('zh-CN', { hour12: false })) +
+      line('UTC', d.toISOString().replace('T', ' ').slice(0, 19)) +
+      line('ISO 8601', d.toISOString()) +
+      line('相对', humanizeDelta(Date.now() - ms));
+  });
+
+  function humanizeDelta(ms: number): string {
+    const abs = Math.abs(ms);
+    const suffix = ms >= 0 ? '前' : '后';
+    if (abs < 60000) return `刚刚`;
+    if (abs < 3600000) return `${Math.round(abs / 60000)} 分钟${suffix}`;
+    if (abs < 86400000) return `${Math.round(abs / 3600000)} 小时${suffix}`;
+    return `${Math.round(abs / 86400000)} 天${suffix}`;
+  }
+
+  // 日期 → 时间戳
+  const dateInput = document.getElementById('date-input') as HTMLInputElement;
+  function setDateNow() {
+    const now = new Date();
+    now.setMilliseconds(0);
+    dateInput.value = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 19);
+  }
+  setDateNow();
+  dateInput.addEventListener('input', () => {
+    const d = new Date(dateInput.value);
+    const box = document.getElementById('date-result')!;
+    if (isNaN(d.getTime())) { box.innerHTML = ''; return; }
+    box.innerHTML =
+      line('秒级', String(Math.floor(d.getTime() / 1000))) +
+      line('毫秒级', String(d.getTime())) +
+      line('UTC', d.toISOString().replace('T', ' ').slice(0, 19));
+  });
+
+  // 自然语言
+  function parseNatural(input: string): Date | null {
+    const s = input.trim().replace(/\s+/g, ' ');
+    const now = new Date();
+    if (!s) return null;
+    if (/^(现在|now)$/i.test(s)) return now;
+    if (/^今天/.test(s)) {
+      const d = new Date(now); d.setHours(0, 0, 0, 0);
+      const m = s.match(/(\d+)\s*点/);
+      if (m) d.setHours(Number(m[1]));
+      return d;
+    }
+    if (/^明天/.test(s) || /^后天/.test(s) || /^昨天/.test(s)) {
+      const offset = s.startsWith('明天') ? 1 : s.startsWith('后天') ? 2 : -1;
+      const d = new Date(now);
+      d.setDate(d.getDate() + offset);
+      d.setHours(0, 0, 0, 0);
+      if (/下午|晚上/.test(s)) d.setHours(15);
+      if (/上午|早上/.test(s)) d.setHours(9);
+      const m = s.match(/([一二三四五六七八九十\d]+)\s*点/);
+      if (m) {
+        const CN: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+        const num = CN[m[1]] ?? Number(m[1]);
+        if (!isNaN(num)) {
+          let h = num;
+          if (/下午|晚上/.test(s) && h < 12) h += 12;
+          d.setHours(h);
+        }
+      }
+      return d;
+    }
+    let m = s.match(/^(\d+)\s*(天|日|小时|分钟|周)\s*(后|前)$/);
+    if (m) {
+      const n = Number(m[1]) * (m[3] === '前' ? -1 : 1);
+      const d = new Date(now);
+      const unit = m[2];
+      if (unit === '天' || unit === '日') d.setDate(d.getDate() + n);
+      else if (unit === '小时') d.setHours(d.getHours() + n);
+      else if (unit === '分钟') d.setMinutes(d.getMinutes() + n);
+      else if (unit === '周') d.setDate(d.getDate() + n * 7);
+      return d;
+    }
+    m = s.match(/^下?周([一二三四五六日天])$/);
+    if (m) {
+      const target = '日天'.includes(m[1]) ? 0 : '一二三四五六'.indexOf(m[1]) + 1;
+      const d = new Date(now);
+      let delta = (target - d.getDay() + 7) % 7;
+      if (delta === 0 || s.startsWith('下')) delta += 7;
+      d.setDate(d.getDate() + delta);
+      d.setHours(0, 0, 0, 0);
+      return d;
+    }
+    // 回退：标准日期字符串
+    const fallback = new Date(s);
+    return isNaN(fallback.getTime()) ? null : fallback;
+  }
+
+  function runNL() {
+    const s = (document.getElementById('nl-input') as HTMLInputElement).value;
+    const box = document.getElementById('nl-result')!;
+    const d = parseNatural(s);
+    if (!d) { box.innerHTML = '<p class="small" style="color:var(--red)">无法解析，试试「明天下午三点」「3 天后」「下周一」</p>'; return; }
+    box.innerHTML =
+      line('本地时间', d.toLocaleString('zh-CN', { hour12: false, weekday: 'short' })) +
+      line('秒级', String(Math.floor(d.getTime() / 1000))) +
+      line('毫秒级', String(d.getTime()));
+  }
+  document.getElementById('nl-run')!.addEventListener('click', runNL);
+  document.getElementById('nl-input')!.addEventListener('keydown', (e) => { if (e.key === 'Enter') runNL(); });
+</script>

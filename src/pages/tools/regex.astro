@@ -1,0 +1,152 @@
+---
+import ToolShell from '../../layouts/ToolShell.astro';
+---
+<ToolShell toolKey="regex">
+  <div class="card panel">
+    <div class="row">
+      <span class="mono muted">/</span>
+      <input class="input mono grow" id="pattern" placeholder="正则表达式，如 \d{4}-\d{2}-\d{2}" />
+      <span class="mono muted">/</span>
+      <input class="input mono" id="flags" value="g" style="width:80px;" placeholder="flags" title="g 全局 i 忽略大小写 m 多行 s 点通配 u unicode" />
+    </div>
+    <div class="row" style="margin-top:12px;">
+      <select class="select" id="preset" style="width:auto;">
+        <option value="">常用正则速查…</option>
+        <option value="email">邮箱</option>
+        <option value="phone">中国大陆手机号</option>
+        <option value="url">URL</option>
+        <option value="date">日期 YYYY-MM-DD</option>
+        <option value="ipv4">IPv4</option>
+        <option value="idcard">身份证号</option>
+        <option value="hex">Hex 颜色</option>
+        <option value="qq">QQ 号</option>
+      </select>
+      <span class="muted small" id="match-info"></span>
+    </div>
+    <p class="small" id="error" style="color:var(--red);margin-top:8px;"></p>
+  </div>
+
+  <div class="tool-grid tool-grid--2" style="margin-top:16px;">
+    <div class="card panel">
+      <label class="small muted">测试文本</label>
+      <textarea class="textarea textarea--mono" id="text" style="min-height:260px;margin-top:8px;">联系邮箱 hello@xiaowenz.com 或 admin@test.org
+手机号 13800138000，备用 15912345678
+日期 2026-11-14，版本 v2.0.0
+颜色 #ce1432 和 #f1f1ef</textarea>
+      <div id="groups" style="margin-top:12px;"></div>
+    </div>
+    <div class="card panel">
+      <label class="small muted">匹配高亮</label>
+      <pre id="highlight" class="mono" style="white-space:pre-wrap;word-break:break-all;font-size:0.85rem;margin-top:8px;min-height:260px;"></pre>
+    </div>
+  </div>
+
+  <div class="card panel" style="margin-top:16px;">
+    <label class="small muted">替换为（支持 $1 $2 分组引用）</label>
+    <div class="row" style="margin-top:8px;">
+      <input class="input mono grow" id="replacement" placeholder="替换文本，如 [$1]" />
+      <button class="btn btn--sm" id="do-replace">替换</button>
+      <button class="btn btn--ghost btn--sm" id="copy-replaced">复制</button>
+    </div>
+    <pre id="replaced" class="mono small" style="white-space:pre-wrap;margin-top:12px;"></pre>
+  </div>
+</ToolShell>
+
+<style>
+  .panel { padding: 20px; }
+  #highlight mark { background: color-mix(in srgb, var(--red) 22%, transparent); color: var(--red); border-radius: 3px; padding: 0 1px; }
+  .group-row { font-family: var(--font-mono); font-size: 0.8rem; padding: 6px 0; border-bottom: 1px dashed var(--line-soft); }
+  .group-row b { color: var(--red); }
+</style>
+
+<script>
+  import { escapeHTML, toast } from '../../scripts/ui';
+
+  const PRESETS: Record<string, { p: string; f: string }> = {
+    email: { p: '[\\w.+-]+@[\\w-]+\\.[\\w.]+', f: 'g' },
+    phone: { p: '1[3-9]\\d{9}', f: 'g' },
+    url: { p: 'https?://[^\\s<>"\')]+', f: 'g' },
+    date: { p: '\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])', f: 'g' },
+    ipv4: { p: '\\b(?:(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\b', f: 'g' },
+    idcard: { p: '\\b\\d{6}(?:19|20)\\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\\d|3[01])\\d{3}[\\dXx]\\b', f: 'g' },
+    hex: { p: '#(?:[0-9a-fA-F]{3}){1,2}\\b', f: 'g' },
+    qq: { p: '\\b[1-9]\\d{4,10}\\b', f: 'g' },
+  };
+
+  const patternEl = document.getElementById('pattern') as HTMLInputElement;
+  const flagsEl = document.getElementById('flags') as HTMLInputElement;
+  const textEl = document.getElementById('text') as HTMLTextAreaElement;
+
+  function getRegex(): RegExp | null {
+    document.getElementById('error')!.textContent = '';
+    if (!patternEl.value) return null;
+    try {
+      return new RegExp(patternEl.value, flagsEl.value);
+    } catch (err) {
+      document.getElementById('error')!.textContent = err instanceof Error ? err.message : String(err);
+      return null;
+    }
+  }
+
+  function run() {
+    const re = getRegex();
+    const text = textEl.value;
+    const hl = document.getElementById('highlight')!;
+    const groups = document.getElementById('groups')!;
+    if (!re) {
+      hl.innerHTML = escapeHTML(text);
+      groups.innerHTML = '';
+      document.getElementById('match-info')!.textContent = '';
+      return;
+    }
+    const matches = [...text.matchAll(re)];
+    document.getElementById('match-info')!.textContent = `${matches.length} 处匹配`;
+
+    // 高亮（按 matchAll 位置重建，避免替换 HTML 注入）
+    let html = '', cursor = 0;
+    for (const m of matches) {
+      const idx = m.index ?? 0;
+      html += escapeHTML(text.slice(cursor, idx));
+      html += `<mark>${escapeHTML(m[0] || '∅')}</mark>`;
+      cursor = idx + (m[0]?.length ?? 0);
+      if (m[0] === '' && !re.global) break;
+      if (m[0] === '') cursor = idx + 1; // 防空匹配死循环
+    }
+    html += escapeHTML(text.slice(cursor));
+    hl.innerHTML = html;
+
+    // 分组展示（前 12 条）
+    groups.innerHTML = matches.slice(0, 12).map((m, i) => {
+      const gs = m.slice(1).map((g, gi) => `<span class="muted"> $${gi + 1}=</span>"${escapeHTML(g ?? '')}"`).join('');
+      return `<div class="group-row"><b>#${i + 1}</b> "${escapeHTML(m[0])}" <span class="muted">@${m.index}</span>${gs}</div>`;
+    }).join('') + (matches.length > 12 ? `<p class="small muted">… 共 ${matches.length} 条，仅显示前 12</p>` : '');
+  }
+
+  [patternEl, flagsEl, textEl].forEach(el => el.addEventListener('input', run));
+
+  document.getElementById('preset')!.addEventListener('change', (e) => {
+    const v = (e.target as HTMLSelectElement).value;
+    if (v && PRESETS[v]) {
+      patternEl.value = PRESETS[v].p;
+      flagsEl.value = PRESETS[v].f;
+      run();
+    }
+    (e.target as HTMLSelectElement).value = '';
+  });
+
+  document.getElementById('do-replace')!.addEventListener('click', () => {
+    const re = getRegex();
+    if (!re) { toast('请先输入合法正则'); return; }
+    const rep = (document.getElementById('replacement') as HTMLInputElement).value;
+    const result = textEl.value.replace(re, rep);
+    document.getElementById('replaced')!.textContent = result;
+  });
+  document.getElementById('copy-replaced')!.addEventListener('click', async () => {
+    const t = document.getElementById('replaced')!.textContent;
+    if (!t) { toast('先执行替换'); return; }
+    await navigator.clipboard.writeText(t);
+    toast('替换结果已复制');
+  });
+
+  run();
+</script>

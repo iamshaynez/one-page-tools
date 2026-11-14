@@ -1,0 +1,225 @@
+---
+import ToolShell from '../../layouts/ToolShell.astro';
+---
+<ToolShell toolKey="noise">
+  <div class="stage">
+    <p class="muted center" style="margin-bottom:24px;">所有声音由 Web Audio 实时合成，零音频素材，完全离线。点卡片开始/停止，可多种声音混合。</p>
+    <div class="grid" id="grid">
+      <button class="sound-card card" data-sound="rain">
+        <span class="sound-card__icon">雨</span>
+        <span class="sound-card__name serif">雨打窗棂</span>
+        <span class="sound-card__desc muted small">细密雨点落在屋檐</span>
+        <input type="range" class="vol" min="0" max="100" value="60" aria-label="音量" />
+      </button>
+      <button class="sound-card card" data-sound="fire">
+        <span class="sound-card__icon">火</span>
+        <span class="sound-card__name serif">篝火噼啪</span>
+        <span class="sound-card__desc muted small">冬夜温暖的木柴声</span>
+        <input type="range" class="vol" min="0" max="100" value="50" aria-label="音量" />
+      </button>
+      <button class="sound-card card" data-sound="wind">
+        <span class="sound-card__icon">風</span>
+        <span class="sound-card__name serif">山间清风</span>
+        <span class="sound-card__desc muted small">穿过松林的气息</span>
+        <input type="range" class="vol" min="0" max="100" value="50" aria-label="音量" />
+      </button>
+      <button class="sound-card card" data-sound="wave">
+        <span class="sound-card__icon">浪</span>
+        <span class="sound-card__name serif">海浪拍岸</span>
+        <span class="sound-card__desc muted small">潮起潮落的节奏</span>
+        <input type="range" class="vol" min="0" max="100" value="55" aria-label="音量" />
+      </button>
+      <button class="sound-card card" data-sound="white">
+        <span class="sound-card__icon">白</span>
+        <span class="sound-card__name serif">白噪音</span>
+        <span class="sound-card__desc muted small">屏蔽干扰的底噪</span>
+        <input type="range" class="vol" min="0" max="100" value="40" aria-label="音量" />
+      </button>
+      <button class="sound-card card" data-sound="night">
+        <span class="sound-card__icon">夜</span>
+        <span class="sound-card__name serif">夏夜虫鸣</span>
+        <span class="sound-card__desc muted small">蟋蟀与远处的蛙声</span>
+        <input type="range" class="vol" min="0" max="100" value="45" aria-label="音量" />
+      </button>
+    </div>
+    <div class="row" style="justify-content:center;margin-top:24px;">
+      <button class="btn btn--ghost" id="stop-all">全部停止</button>
+    </div>
+    <p class="muted small center" style="margin-top:16px;">建议搭配玄墨番茄钟使用，专注效果更佳。</p>
+  </div>
+</ToolShell>
+
+<style>
+  .stage { max-width: 720px; margin: 0 auto; }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+  .sound-card {
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    padding: 26px 18px 18px; text-align: center;
+    transition: all 0.2s var(--ease);
+  }
+  .sound-card__icon {
+    display: grid; place-items: center; width: 56px; height: 56px;
+    border: 1.5px solid var(--ink); border-radius: 50%;
+    font-family: var(--font-serif); font-size: 1.6rem;
+    transition: all 0.2s;
+  }
+  .sound-card__name { font-size: 1.1rem; }
+  .sound-card.active { border-color: var(--red); }
+  .sound-card.active .sound-card__icon { background: var(--red); border-color: var(--red); color: #fff; animation: breathe 2.4s ease-in-out infinite; }
+  @keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+  .vol { width: 100%; margin-top: 10px; accent-color: var(--red); }
+</style>
+
+<script>
+  let audioCtx: AudioContext | null = null;
+  const active = new Map<string, { stop: () => void; gain: GainNode }>();
+
+  function ctx(): AudioContext {
+    if (!audioCtx) audioCtx = new AudioContext();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+
+  function noiseBuffer(ac: AudioContext, seconds = 4): AudioBuffer {
+    const buf = ac.createBuffer(1, ac.sampleRate * seconds, ac.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    return buf;
+  }
+
+  function noiseSource(ac: AudioContext): AudioBufferSourceNode {
+    const src = ac.createBufferSource();
+    src.buffer = noiseBuffer(ac);
+    src.loop = true;
+    src.start();
+    return src;
+  }
+
+  type SoundBuilder = (ac: AudioContext, out: GainNode) => { stop: () => void };
+
+  const BUILDERS: Record<string, SoundBuilder> = {
+    // 雨：高通滤波白噪 + 缓慢振幅波动
+    rain(ac, out) {
+      const src = noiseSource(ac);
+      const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 400;
+      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 6000;
+      const lfo = ac.createOscillator(); lfo.frequency.value = 0.3;
+      const lfoGain = ac.createGain(); lfoGain.gain.value = 0.15;
+      const base = ac.createGain(); base.gain.value = 0.8;
+      lfo.connect(lfoGain); lfoGain.connect(base.gain); lfo.start();
+      src.connect(hp); hp.connect(lp); lp.connect(base); base.connect(out);
+      return { stop: () => { src.stop(); lfo.stop(); } };
+    },
+    // 篝火：低通棕噪 + 随机爆裂声
+    fire(ac, out) {
+      const src = noiseSource(ac);
+      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 500;
+      const base = ac.createGain(); base.gain.value = 0.5;
+      src.connect(lp); lp.connect(base); base.connect(out);
+      let alive = true;
+      function crackle() {
+        if (!alive) return;
+        const t = ac.currentTime;
+        const burst = ac.createBufferSource();
+        burst.buffer = noiseBuffer(ac, 0.1);
+        const g = ac.createGain();
+        g.gain.setValueAtTime(Math.random() * 0.5 + 0.2, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+        const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1500;
+        burst.connect(hp); hp.connect(g); g.connect(out);
+        burst.start(); burst.stop(t + 0.1);
+        setTimeout(crackle, Math.random() * 400 + 80);
+      }
+      crackle();
+      return { stop: () => { alive = false; src.stop(); } };
+    },
+    // 风：带通滤波 + 频率缓慢游走
+    wind(ac, out) {
+      const src = noiseSource(ac);
+      const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 400; bp.Q.value = 0.6;
+      const lfo = ac.createOscillator(); lfo.frequency.value = 0.07;
+      const lfoGain = ac.createGain(); lfoGain.gain.value = 250;
+      lfo.connect(lfoGain); lfoGain.connect(bp.frequency); lfo.start();
+      const g = ac.createGain(); g.gain.value = 0.9;
+      src.connect(bp); bp.connect(g); g.connect(out);
+      return { stop: () => { src.stop(); lfo.stop(); } };
+    },
+    // 海浪：低通噪音 + 6 秒周期的涌动
+    wave(ac, out) {
+      const src = noiseSource(ac);
+      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1200;
+      const g = ac.createGain(); g.gain.value = 0.2;
+      const lfo = ac.createOscillator(); lfo.frequency.value = 1 / 7;
+      const lfoGain = ac.createGain(); lfoGain.gain.value = 0.5;
+      lfo.connect(lfoGain); lfoGain.connect(g.gain); lfo.start();
+      src.connect(lp); lp.connect(g); g.connect(out);
+      return { stop: () => { src.stop(); lfo.stop(); } };
+    },
+    // 白噪音
+    white(ac, out) {
+      const src = noiseSource(ac);
+      const g = ac.createGain(); g.gain.value = 0.5;
+      src.connect(g); g.connect(out);
+      return { stop: () => src.stop() };
+    },
+    // 夏夜虫鸣：周期性高频颤音
+    night(ac, out) {
+      let alive = true;
+      function chirp() {
+        if (!alive) return;
+        const t = ac.currentTime;
+        const osc = ac.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.value = 3800 + Math.random() * 800;
+        const g = ac.createGain();
+        g.gain.setValueAtTime(0, t);
+        // 一串短促的唧唧声
+        for (let i = 0; i < 5; i++) {
+          g.gain.setValueAtTime(0.06, t + i * 0.09);
+          g.gain.setValueAtTime(0, t + i * 0.09 + 0.04);
+        }
+        const pan = ac.createStereoPanner();
+        pan.pan.value = Math.random() * 1.6 - 0.8;
+        osc.connect(g); g.connect(pan); pan.connect(out);
+        osc.start(t); osc.stop(t + 0.6);
+        setTimeout(chirp, Math.random() * 1600 + 500);
+      }
+      chirp();
+      return { stop: () => { alive = false; } };
+    },
+  };
+
+  document.querySelectorAll<HTMLButtonElement>('.sound-card').forEach(card => {
+    const name = card.dataset.sound!;
+    const vol = card.querySelector<HTMLInputElement>('.vol')!;
+
+    card.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).classList.contains('vol')) return;
+      const ac = ctx();
+      if (active.has(name)) {
+        active.get(name)!.stop();
+        active.delete(name);
+        card.classList.remove('active');
+      } else {
+        const gain = ac.createGain();
+        gain.gain.value = Number(vol.value) / 100;
+        gain.connect(ac.destination);
+        const handle = BUILDERS[name](ac, gain);
+        active.set(name, { stop: () => { handle.stop(); gain.disconnect(); }, gain });
+        card.classList.add('active');
+      }
+    });
+
+    vol.addEventListener('input', () => {
+      const handle = active.get(name);
+      if (handle) handle.gain.gain.value = Number(vol.value) / 100;
+    });
+    vol.addEventListener('click', (e) => e.stopPropagation());
+  });
+
+  document.getElementById('stop-all')!.addEventListener('click', () => {
+    active.forEach(h => h.stop());
+    active.clear();
+    document.querySelectorAll('.sound-card.active').forEach(c => c.classList.remove('active'));
+  });
+</script>

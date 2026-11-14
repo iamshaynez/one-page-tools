@@ -1,0 +1,163 @@
+---
+import ToolShell from '../../layouts/ToolShell.astro';
+---
+<ToolShell toolKey="gomoku">
+  <div class="stage">
+    <div class="row" style="margin-bottom:14px;">
+      <select class="select" id="mode" style="width:auto;">
+        <option value="ai">人机对弈（你执黑先行）</option>
+        <option value="pvp">本地双人</option>
+      </select>
+      <div class="grow"></div>
+      <span id="turn-label" class="serif">黑棋落子</span>
+      <button class="btn btn--sm" id="restart">重开</button>
+      <button class="btn btn--ghost btn--sm" id="undo">悔棋</button>
+    </div>
+
+    <div class="card" style="padding:10px;">
+      <canvas id="board" width="640" height="640" style="width:100%;height:auto;display:block;touch-action:manipulation;"></canvas>
+    </div>
+    <p class="muted small center" style="margin-top:12px;" id="status">五子连珠即胜。AI 会进攻也会堵你。</p>
+  </div>
+</ToolShell>
+
+<style>
+  .stage { max-width: 560px; margin: 0 auto; }
+  #turn-label { font-size: 1.05rem; }
+</style>
+
+<script>
+  import { createBoard, checkWin, bestMove, SIZE } from '../../scripts/gomoku-core';
+  import type { Board, Stone } from '../../scripts/gomoku-core';
+
+  const canvas = document.getElementById('board') as HTMLCanvasElement;
+  const ctx = canvas.getContext('2d')!;
+  let board: Board = createBoard();
+  let turn: Stone = 1;
+  let over = false;
+  let moves: { r: number; c: number; stone: Stone }[] = [];
+  let mode: 'ai' | 'pvp' = 'ai';
+  let thinking = false;
+
+  const PAD = 32;
+  const CELL = (canvas.width - PAD * 2) / (SIZE - 1);
+
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // 棋盘底
+    ctx.fillStyle = '#e8d9b8';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // 网格
+    ctx.strokeStyle = '#8a7a54'; ctx.lineWidth = 1;
+    for (let i = 0; i < SIZE; i++) {
+      ctx.beginPath();
+      ctx.moveTo(PAD, PAD + i * CELL); ctx.lineTo(canvas.width - PAD, PAD + i * CELL);
+      ctx.moveTo(PAD + i * CELL, PAD); ctx.lineTo(PAD + i * CELL, canvas.height - PAD);
+      ctx.stroke();
+    }
+    // 星位
+    const stars = [[3, 3], [3, 11], [7, 7], [11, 3], [11, 11]];
+    ctx.fillStyle = '#8a7a54';
+    stars.forEach(([r, c]) => {
+      ctx.beginPath();
+      ctx.arc(PAD + c * CELL, PAD + r * CELL, 4, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    // 棋子
+    for (let r = 0; r < SIZE; r++) {
+      for (let c = 0; c < SIZE; c++) {
+        const s = board[r][c];
+        if (!s) continue;
+        const x = PAD + c * CELL, y = PAD + r * CELL;
+        const grad = ctx.createRadialGradient(x - 4, y - 4, 2, x, y, CELL / 2);
+        if (s === 1) { grad.addColorStop(0, '#5a5348'); grad.addColorStop(1, '#141210'); }
+        else { grad.addColorStop(0, '#ffffff'); grad.addColorStop(1, '#d9d5cd'); }
+        ctx.beginPath();
+        ctx.arc(x, y, CELL / 2 - 2, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+        ctx.strokeStyle = s === 1 ? '#141210' : '#b8b2a8';
+        ctx.stroke();
+      }
+    }
+    // 最后一手标记
+    if (moves.length) {
+      const last = moves[moves.length - 1];
+      ctx.strokeStyle = '#ce1432'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(PAD + last.c * CELL, PAD + last.r * CELL, CELL / 2 + 3, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
+  function place(r: number, c: number): void {
+    if (board[r][c] !== 0 || over) return;
+    board[r][c] = turn;
+    moves.push({ r, c, stone: turn });
+    if (checkWin(board, r, c, turn)) {
+      over = true;
+      document.getElementById('status')!.textContent = `🎉 ${turn === 1 ? '黑棋' : '白棋'}获胜！${moves.length} 手终局。`;
+      document.getElementById('turn-label')!.textContent = '对局结束';
+    } else if (moves.length === SIZE * SIZE) {
+      over = true;
+      document.getElementById('status')!.textContent = '平局！';
+    } else {
+      turn = turn === 1 ? 2 : 1;
+      document.getElementById('turn-label')!.textContent = `${turn === 1 ? '黑棋' : '白棋'}落子`;
+    }
+    draw();
+  }
+
+  canvas.addEventListener('click', (e) => {
+    if (over || thinking) return;
+    if (mode === 'ai' && turn === 2) return;
+    const rect = canvas.getBoundingClientRect();
+    const scale = canvas.width / rect.width;
+    const x = (e.clientX - rect.left) * scale;
+    const y = (e.clientY - rect.top) * scale;
+    const c = Math.round((x - PAD) / CELL);
+    const r = Math.round((y - PAD) / CELL);
+    if (r < 0 || r >= SIZE || c < 0 || c >= SIZE) return;
+    place(r, c);
+
+    // AI 应手
+    if (mode === 'ai' && !over && turn === 2) {
+      thinking = true;
+      document.getElementById('turn-label')!.textContent = '白棋思考中…';
+      setTimeout(() => {
+        const mv = bestMove(board, 2);
+        if (mv) place(mv.r, mv.c);
+        thinking = false;
+      }, 350);
+    }
+  });
+
+  document.getElementById('undo')!.addEventListener('click', () => {
+    if (!moves.length || thinking) return;
+    // 人机模式悔棋撤两手（玩家+AI）
+    const times = mode === 'ai' && moves.length >= 2 ? 2 : 1;
+    for (let i = 0; i < times; i++) {
+      const last = moves.pop();
+      if (last) board[last.r][last.c] = 0;
+    }
+    over = false;
+    turn = moves.length ? (moves[moves.length - 1].stone === 1 ? 2 : 1) : 1;
+    document.getElementById('status')!.textContent = '五子连珠即胜。';
+    document.getElementById('turn-label')!.textContent = `${turn === 1 ? '黑棋' : '白棋'}落子`;
+    draw();
+  });
+
+  document.getElementById('restart')!.addEventListener('click', () => {
+    board = createBoard(); turn = 1; over = false; moves = []; thinking = false;
+    document.getElementById('status')!.textContent = '五子连珠即胜。AI 会进攻也会堵你。';
+    document.getElementById('turn-label')!.textContent = '黑棋落子';
+    draw();
+  });
+
+  document.getElementById('mode')!.addEventListener('change', (e) => {
+    mode = (e.target as HTMLSelectElement).value as 'ai' | 'pvp';
+    document.getElementById('restart')!.dispatchEvent(new Event('click'));
+  });
+
+  draw();
+</script>

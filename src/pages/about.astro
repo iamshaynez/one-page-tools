@@ -1,0 +1,63 @@
+---
+import Base from '../layouts/Base.astro';
+import { TOOLS } from '../data/tools';
+---
+<Base title="关于 · 玩具展馆">
+  <main class="wrap about">
+    <a href="/" class="muted">← 返回大厅</a>
+    <h1 style="margin: 24px 0 8px;">每个玩具，<br />都是一次与 AI 的对话<span class="red">。</span></h1>
+    <p class="muted">关于这座展馆 · About</p>
+
+    <section class="card about__card">
+      <h2>展馆宣言</h2>
+      <p>
+        这里的 {TOOLS.length} 个玩具，每一个都由 AI 生成。它们诞生的原始指令 —— Prompt ——
+        全部公开，就挂在每个玩具右上角的「Prompt」按钮里，像博物馆展品的铭牌。
+      </p>
+      <p>
+        2024 年 7 月，第一代的七个玩具在一周内诞生：抽签、扫雷、贪食蛇、计分板……
+        那时的想法很简单：<strong>如果一个网页就是一个玩具，那写下需求的过程，本身就是展品。</strong>
+      </p>
+      <p>
+        2026 年 11 月，第二代重构完成。玄墨视觉接管了一切：冷灰为纸，玄黑为墨，冷漆红点睛。
+        玩具变多了，Prompt 的传统没变。你可以复制任何一个 Prompt，喂给你的 AI，造出你自己的版本。
+      </p>
+    </section>
+
+    <section class="card about__card">
+      <h2>技术札记</h2>
+      <ul class="about__list">
+        <li><strong>静态生成</strong> — Astro 构建，无后端，部署于 Cloudflare Pages</li>
+        <li><strong>零框架交互</strong> — 每个玩具都是原生 TypeScript，无 React/Vue</li>
+        <li><strong>本地优先</strong> — 你的数据（分数、名单、最高分）只存在你的浏览器里</li>
+        <li><strong>可离线</strong> — PWA 支持，添加到主屏幕后断网也能玩</li>
+        <li><strong>无广告、无追踪</strong> — 干干净净</li>
+      </ul>
+    </section>
+
+    <section class="card about__card">
+      <h2>如何造一个新玩具</h2>
+      <p>三件套：</p>
+      <ol class="about__list">
+        <li>在 <code>src/pages/tools/</code> 写一个 .astro 页面</li>
+        <li>在 <code>src/data/tools.ts</code> 注册表加一条记录</li>
+        <li>把生成它的 Prompt 存到 <code>public/prompts/你的名字.txt</code></li>
+      </ol>
+      <p class="muted small">然后它就出现在大厅里了。就这么简单。</p>
+    </section>
+
+    <div class="row" style="margin: 32px 0;">
+      <a class="btn btn--red" href="/">回大厅逛逛</a>
+    </div>
+  </main>
+</Base>
+
+<style>
+  .about { max-width: 760px; padding-top: 40px; padding-bottom: 48px; }
+  .about h1 { font-size: clamp(1.8rem, 5vw, 2.6rem); }
+  .about__card { padding: 28px; margin-top: 24px; }
+  .about__card h2 { margin-bottom: 14px; font-size: 1.3rem; }
+  .about__card p { line-height: 1.9; }
+  .about__list { line-height: 2; padding-left: 20px; }
+  .about__list code { font-family: var(--font-mono); font-size: 0.85em; background: var(--paper-sunken); padding: 2px 6px; border-radius: 4px; }
+</style>

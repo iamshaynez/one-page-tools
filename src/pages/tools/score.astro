@@ -1,0 +1,281 @@
+---
+import ToolShell from '../../layouts/ToolShell.astro';
+---
+<ToolShell toolKey="score">
+  <div class="row" style="margin-bottom:16px;">
+    <button class="btn btn--sm" id="add-player">+ 玩家</button>
+    <button class="btn btn--sm" id="add-round">+ 一局</button>
+    <button class="btn btn--ghost btn--sm" id="undo" disabled>↩ 撤销</button>
+    <button class="btn btn--ghost btn--sm" id="redo" disabled>↪ 重做</button>
+    <div class="grow"></div>
+    <button class="btn btn--ghost btn--sm" id="export">导出 CSV</button>
+    <button class="btn btn--ghost btn--sm" id="sessions">牌局存档</button>
+    <button class="btn btn--ghost btn--sm" id="reset" style="color:var(--red);">重置</button>
+  </div>
+
+  <div class="card" style="overflow-x:auto;">
+    <table class="table" id="table">
+      <thead><tr id="head"></tr></thead>
+      <tbody id="body"></tbody>
+      <tfoot><tr id="foot"></tr></tfoot>
+    </table>
+  </div>
+
+  <div class="card" style="margin-top:20px;padding:20px;">
+    <h3 style="font-size:1rem;margin-bottom:12px;">总分趋势</h3>
+    <svg id="trend" viewBox="0 0 720 200" style="width:100%;height:auto;" aria-label="分数趋势图"></svg>
+    <div class="row small" id="legend" style="margin-top:8px;"></div>
+  </div>
+
+  <p class="muted small" style="margin-top:14px;">
+    点击玩家名可改名或移除。分数输入即存，撤销可回退任何操作（含删除）。数据保存在本机。
+  </p>
+</ToolShell>
+
+<style>
+  #table input {
+    width: 70px; padding: 6px 8px; text-align: center;
+    background: transparent; border: 1px solid transparent; border-radius: 6px;
+    font-family: var(--font-mono); font-size: 0.95rem;
+  }
+  #table input:hover { border-color: var(--line); }
+  #table input:focus { border-color: var(--ink); background: var(--paper-raised); outline: none; }
+  .pname { cursor: pointer; border-bottom: 1px dashed var(--line); }
+  .pname:hover { color: var(--red); }
+  .round-del { visibility: hidden; color: var(--ink-faint); background: none; border: none; font-size: 0.85rem; }
+  tr:hover .round-del { visibility: visible; }
+  .round-del:hover { color: var(--red); }
+  #foot td { font-weight: 700; font-family: var(--font-mono); border-top: 2px solid var(--line); }
+</style>
+
+<script>
+  import {
+    createSession, newGame, totals, addPlayer, removePlayer, renamePlayer,
+    addRound, removeRound, setScore, toCSV, History,
+  } from '../../scripts/score-core';
+  import type { ScoreGame, Session } from '../../scripts/score-core';
+  import { store, toast, download, promptDialog, confirmDialog, modal, escapeHTML } from '../../scripts/ui';
+
+  const PALETTE = ['#ce1432', '#2563eb', '#15803d', '#b45309', '#7c3aed', '#0e7490', '#be185d', '#65a30d'];
+
+  let session: Session = store.get<Session>('opt-score-session', createSession());
+  if (!session.games[session.activeId]) session = createSession();
+
+  // 历史栈以当前牌局为粒度
+  let history = new History<ScoreGame>(session.games[session.activeId]);
+
+  const headEl = document.getElementById('head')!;
+  const bodyEl = document.getElementById('body')!;
+  const footEl = document.getElementById('foot')!;
+
+  function game(): ScoreGame { return history.present; }
+
+  function persist() {
+    session.games[session.activeId] = game();
+    store.set('opt-score-session', session);
+  }
+
+  function commit(g: ScoreGame) {
+    history.push(g);
+    persist();
+    render();
+  }
+
+  function refreshUndoButtons() {
+    (document.getElementById('undo') as HTMLButtonElement).disabled = !history.canUndo;
+    (document.getElementById('redo') as HTMLButtonElement).disabled = !history.canRedo;
+  }
+
+  // 渲染结构（表头/行/合计）。输入分数不调用此函数 → 不失焦
+  function render() {
+    const g = game();
+    headEl.innerHTML = '<th>局数</th>' + g.players.map((p, i) =>
+      `<th><span class="pname" data-p="${i}" title="点击改名 / 移除">${escapeHTML(p)}</span></th>`
+    ).join('');
+
+    bodyEl.innerHTML = '';
+    g.rounds.forEach((row, r) => {
+      const tr = document.createElement('tr');
+      let html = `<td>第 ${r + 1} 局 <button class="round-del" data-del-round="${r}" title="删除此局">✕</button></td>`;
+      row.forEach((v, p) => {
+        html += `<td><input type="number" inputmode="numeric" data-r="${r}" data-p="${p}" value="${v}" /></td>`;
+      });
+      tr.innerHTML = html;
+      bodyEl.appendChild(tr);
+    });
+
+    const t = totals(g);
+    footEl.innerHTML = '<td>总分</td>' + t.map((v, i) => {
+      const max = Math.max(...t), min = Math.min(...t);
+      const cls = t.length > 1 && v === max && v !== min ? 'style="color:var(--red)"' : '';
+      return `<td ${cls}>${v}</td>`;
+    }).join('');
+
+    refreshUndoButtons();
+    renderTrend();
+  }
+
+  // 只更新合计 + 趋势，不动 DOM 输入框
+  function renderTotalsOnly() {
+    const t = totals(game());
+    const cells = footEl.querySelectorAll('td');
+    t.forEach((v, i) => {
+      const cell = cells[i + 1];
+      if (cell && cell.textContent !== String(v)) cell.textContent = String(v);
+    });
+    renderTrend();
+  }
+
+  function renderTrend() {
+    const g = game();
+    const svg = document.getElementById('trend')!;
+    const legend = document.getElementById('legend')!;
+    if (g.rounds.length < 2) {
+      svg.innerHTML = '<text x="360" y="100" text-anchor="middle" fill="var(--ink-faint)" font-size="14">两局以上显示趋势</text>';
+      legend.innerHTML = '';
+      return;
+    }
+    // 累计分数序列
+    const series = g.players.map((_, p) => {
+      let acc = 0;
+      return g.rounds.map(r => (acc += r[p] || 0));
+    });
+    const all = series.flat();
+    const min = Math.min(...all, 0), max = Math.max(...all, 1);
+    const W = 720, H = 200, padL = 40, padB = 24;
+    const x = (r: number) => padL + (r / (g.rounds.length - 1)) * (W - padL - 16);
+    const y = (v: number) => H - padB - ((v - min) / (max - min || 1)) * (H - padB - 16);
+
+    let parts = '';
+    // 零线
+    parts += `<line x1="${padL}" y1="${y(0)}" x2="${W - 16}" y2="${y(0)}" stroke="var(--line)" stroke-dasharray="4 4"/>`;
+    parts += `<text x="8" y="${y(max) + 4}" fill="var(--ink-faint)" font-size="11">${max}</text>`;
+    parts += `<text x="8" y="${y(min) + 4}" fill="var(--ink-faint)" font-size="11">${min}</text>`;
+    series.forEach((s, p) => {
+      const color = PALETTE[p % PALETTE.length];
+      const points = s.map((v, r) => `${x(r)},${y(v)}`).join(' ');
+      parts += `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round"/>`;
+      s.forEach((v, r) => { parts += `<circle cx="${x(r)}" cy="${y(v)}" r="3" fill="${color}"/>`; });
+    });
+    svg.innerHTML = parts;
+    legend.innerHTML = g.players.map((p, i) =>
+      `<span style="color:${PALETTE[i % PALETTE.length]}">● ${escapeHTML(p)}</span>`
+    ).join('');
+  }
+
+  // ---- 事件 ----
+  bodyEl.addEventListener('input', (e) => {
+    const input = e.target as HTMLInputElement;
+    if (input.dataset.r === undefined) return;
+    const r = Number(input.dataset.r), p = Number(input.dataset.p);
+    const v = parseInt(input.value, 10) || 0;
+    // 不重建 DOM，只提交数据（undo 支持）
+    history.push(setScore(game(), r, p, v));
+    persist();
+    refreshUndoButtons();
+    renderTotalsOnly();
+  });
+
+  headEl.addEventListener('click', async (e) => {
+    const el = (e.target as HTMLElement).closest('.pname') as HTMLElement | null;
+    if (!el) return;
+    const p = Number(el.dataset.p);
+    const { el: overlay, close } = modal('玩家设置', `
+      <p class="muted">当前玩家：<strong>${escapeHTML(game().players[p])}</strong></p>
+      <div class="row" style="margin-top:18px;">
+        <button class="btn btn--sm" data-act="rename">改名</button>
+        <button class="btn btn--ghost btn--sm" data-act="remove" style="color:var(--red);">移除玩家</button>
+      </div>`);
+    overlay.querySelector('[data-act="rename"]')!.addEventListener('click', async () => {
+      close();
+      const name = await promptDialog('新的玩家名称', '', game().players[p]);
+      if (name?.trim()) commit(renamePlayer(game(), p, name.trim()));
+    });
+    overlay.querySelector('[data-act="remove"]')!.addEventListener('click', async () => {
+      close();
+      if (await confirmDialog('移除玩家', '该玩家的所有分数将一并移除（可撤销）。', '移除')) {
+        commit(removePlayer(game(), p));
+      }
+    });
+  });
+
+  bodyEl.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest('[data-del-round]') as HTMLElement | null;
+    if (btn) commit(removeRound(game(), Number(btn.dataset.delRound)));
+  });
+
+  document.getElementById('add-player')!.addEventListener('click', async () => {
+    const name = await promptDialog('新玩家名称', `玩家${game().players.length + 1}`);
+    if (name !== null) commit(addPlayer(game(), name.trim() || `玩家${game().players.length + 1}`));
+  });
+  document.getElementById('add-round')!.addEventListener('click', () => commit(addRound(game())));
+  document.getElementById('undo')!.addEventListener('click', () => {
+    if (history.undo()) { persist(); render(); }
+  });
+  document.getElementById('redo')!.addEventListener('click', () => {
+    if (history.redo()) { persist(); render(); }
+  });
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
+      e.preventDefault();
+      if (e.shiftKey) { if (history.redo()) { persist(); render(); } }
+      else if (history.undo()) { persist(); render(); }
+    }
+  });
+
+  document.getElementById('export')!.addEventListener('click', () => {
+    download(`牌局计分-${new Date().toISOString().slice(0, 10)}.csv`, toCSV(game()), 'text/csv');
+    toast('CSV 已导出');
+  });
+
+  document.getElementById('reset')!.addEventListener('click', async () => {
+    if (await confirmDialog('重置牌局', '将清空当前牌局全部玩家与分数（可撤销）。', '重置')) {
+      commit(newGame(['玩家一', '玩家二']));
+      toast('已重置');
+    }
+  });
+
+  document.getElementById('sessions')!.addEventListener('click', () => {
+    const entries = Object.entries(session.games);
+    const { el: overlay, close } = modal('牌局存档', `
+      <div id="session-list">
+        ${entries.map(([id, g]) => `
+          <div class="row" style="justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line-soft);">
+            <span>${id === session.activeId ? '▶ ' : ''}${escapeHTML(g.players.join('、'))}
+              <span class="muted small">${g.rounds.length} 局</span></span>
+            <span class="row">
+              <button class="btn btn--ghost btn--sm" data-load="${id}">载入</button>
+              ${entries.length > 1 ? `<button class="btn btn--ghost btn--sm" data-drop="${id}" style="color:var(--red);">删</button>` : ''}
+            </span>
+          </div>`).join('')}
+      </div>
+      <button class="btn btn--sm" id="new-session" style="margin-top:16px;">+ 开新牌局</button>`);
+
+    overlay.querySelectorAll('[data-load]').forEach(b => b.addEventListener('click', () => {
+      session.activeId = (b as HTMLElement).dataset.load!;
+      history = new History<ScoreGame>(session.games[session.activeId]);
+      persist(); render(); close();
+      toast('已载入牌局');
+    }));
+    overlay.querySelectorAll('[data-drop]').forEach(b => b.addEventListener('click', () => {
+      const id = (b as HTMLElement).dataset.drop!;
+      delete session.games[id];
+      store.set('opt-score-session', session);
+      close();
+      document.getElementById('sessions')!.dispatchEvent(new Event('click'));
+    }));
+    overlay.querySelector('#new-session')!.addEventListener('click', async () => {
+      close();
+      const count = await promptDialog('新牌局：玩家数量？', '2', '2');
+      const n = Math.min(12, Math.max(1, parseInt(count ?? '', 10) || 2));
+      const id = `g${Date.now()}`;
+      session.games[id] = newGame(Array.from({ length: n }, (_, i) => `玩家${['一','二','三','四','五','六','七','八','九','十','十一','十二'][i]}`));
+      session.activeId = id;
+      history = new History<ScoreGame>(session.games[id]);
+      persist(); render();
+      toast('新牌局已开');
+    });
+  });
+
+  render();
+</script>

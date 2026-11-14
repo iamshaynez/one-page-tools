@@ -1,0 +1,108 @@
+---
+import ToolShell from '../../layouts/ToolShell.astro';
+---
+<ToolShell toolKey="poem">
+  <div class="stage">
+    <div class="poem-card card" id="card">
+      <span class="poem-card__seal" aria-hidden="true">詩</span>
+      <p class="poem-card__label muted small" id="label">今日诗签</p>
+      <div class="poem-card__body">
+        <div class="poem-card__lines serif" id="lines"></div>
+        <div class="poem-card__meta">
+          <h2 id="title" class="serif"></h2>
+          <p class="muted" id="author"></p>
+        </div>
+      </div>
+      <p class="poem-card__foot muted small">玩具展馆 · 每日诗签</p>
+    </div>
+
+    <div class="row" style="justify-content:center;margin-top:24px;">
+      <button class="btn btn--red" id="random">换一首</button>
+      <button class="btn" id="save">保存诗签卡</button>
+      <button class="btn btn--ghost" id="today">回到今日</button>
+    </div>
+    <p class="muted small center" style="margin-top:14px;">每日诗签以日期为种子，一天一首，同一日不变。</p>
+  </div>
+</ToolShell>
+
+<style>
+  .stage { max-width: 480px; margin: 0 auto; }
+  .poem-card { position: relative; padding: 40px 36px 24px; overflow: hidden; }
+  .poem-card::before { content: ''; position: absolute; inset: 12px; border: 1px solid var(--line); border-radius: 8px; pointer-events: none; }
+  .poem-card__seal {
+    position: absolute; top: 28px; right: 28px;
+    width: 44px; height: 44px; display: grid; place-items: center;
+    background: var(--red); color: #fff; font-family: var(--font-serif);
+    font-size: 1.4rem; border-radius: 4px; transform: rotate(5deg);
+  }
+  .poem-card__label { letter-spacing: 0.3em; }
+  .poem-card__body { margin-top: 24px; }
+  .poem-card__lines { font-size: 1.3rem; line-height: 2.3; letter-spacing: 0.1em; }
+  .poem-card__meta { margin-top: 26px; padding-top: 16px; border-top: 1px dashed var(--line); }
+  .poem-card__meta h2 { font-size: 1.2rem; }
+  .poem-card__meta p { margin: 4px 0 0; font-size: 0.9rem; }
+  .poem-card__foot { margin-top: 24px; text-align: center; letter-spacing: 0.2em; font-size: 0.75rem; }
+</style>
+
+<script>
+  import { dailyPoem, randomPoem } from '../../data/poems';
+  import type { Poem } from '../../data/poems';
+  import { toast } from '../../scripts/ui';
+
+  let current: Poem;
+  let isDaily = true;
+
+  function show(p: Poem, daily: boolean) {
+    current = p; isDaily = daily;
+    document.getElementById('label')!.textContent = daily
+      ? `今日诗签 · ${new Date().toLocaleDateString('zh-CN')}`
+      : '随机诗签';
+    document.getElementById('lines')!.innerHTML = p.lines.map(l => `<div>${l}</div>`).join('');
+    document.getElementById('title')!.textContent = `《${p.title}》`;
+    document.getElementById('author')!.textContent = `${p.dynasty} · ${p.author}`;
+  }
+
+  document.getElementById('random')!.addEventListener('click', () => show(randomPoem(), false));
+  document.getElementById('today')!.addEventListener('click', () => show(dailyPoem(), true));
+
+  document.getElementById('save')!.addEventListener('click', () => {
+    const W = 800, lineH = 68;
+    const H = 420 + current.lines.length * lineH;
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#f1f1ef'; ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = '#d9d5cd'; ctx.lineWidth = 2; ctx.strokeRect(30, 30, W - 60, H - 60);
+
+    ctx.fillStyle = '#8a847c'; ctx.font = '20px "Noto Serif SC", serif'; ctx.textAlign = 'center';
+    ctx.fillText(isDaily ? '今 日 诗 签' : '随 机 诗 签', W / 2, 100);
+
+    // 印章
+    ctx.save(); ctx.translate(W - 110, 90); ctx.rotate(0.08);
+    ctx.fillStyle = '#ce1432'; ctx.fillRect(-30, -30, 60, 60);
+    ctx.fillStyle = '#fff'; ctx.font = '34px "Noto Serif SC", serif'; ctx.fillText('詩', 0, 12);
+    ctx.restore();
+
+    ctx.fillStyle = '#141210'; ctx.font = '36px "Noto Serif SC", serif';
+    current.lines.forEach((line, i) => ctx.fillText(line, W / 2, 200 + i * lineH));
+
+    const metaY = 220 + current.lines.length * lineH;
+    ctx.font = 'bold 30px "Noto Serif SC", serif';
+    ctx.fillText(`《${current.title}》`, W / 2, metaY + 20);
+    ctx.fillStyle = '#8a847c'; ctx.font = '24px "Noto Serif SC", serif';
+    ctx.fillText(`${current.dynasty} · ${current.author}`, W / 2, metaY + 66);
+    ctx.font = '16px "Noto Serif SC", serif';
+    ctx.fillText('玩具展馆 · 每日诗签', W / 2, H - 60);
+
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `诗签-${current.title}.png`; a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      toast('诗签卡已保存');
+    }, 'image/png');
+  });
+
+  show(dailyPoem(), true);
+</script>

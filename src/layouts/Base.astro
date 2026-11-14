@@ -1,0 +1,51 @@
+---
+// 全站基础布局：字体、令牌、主题、SEO、PWA
+interface Props {
+  title?: string;
+  description?: string;
+}
+const { title = '玩具展馆 · 一个网页的玩具大集合', description = 'AI 生成的单页玩具大集合。玄墨视觉，prompt 即展品，可装进手机。' } = Astro.props;
+---
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content={description} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta name="theme-color" content="#f1f1ef" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <title>{title}</title>
+    <script is:inline>
+      // 防闪烁：绘制前确定主题
+      (() => {
+        const saved = localStorage.getItem('opt-theme');
+        const dark = saved ? saved === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+        if (dark) document.documentElement.dataset.theme = 'dark';
+      })();
+    </script>
+  </head>
+  <body>
+    <slot />
+    <div class="toast-box" id="toast-box"></div>
+    <script>
+      // PWA 注册（仅生产环境，开发时避免缓存干扰）
+      if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
+        addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+      }
+    </script>
+  </body>
+</html>
+
+<style is:global>
+  @import '../styles/tokens.css';
+</style>

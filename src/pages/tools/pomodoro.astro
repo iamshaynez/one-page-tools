@@ -1,0 +1,179 @@
+---
+import ToolShell from '../../layouts/ToolShell.astro';
+---
+<ToolShell toolKey="pomodoro">
+  <div class="stage">
+    <div class="dial-wrap">
+      <svg viewBox="0 0 240 240" class="dial" aria-label="番茄钟">
+        <circle cx="120" cy="120" r="104" fill="none" stroke="var(--line-soft)" stroke-width="6" />
+        <circle id="progress" cx="120" cy="120" r="104" fill="none" stroke="var(--red)" stroke-width="6"
+          stroke-linecap="round" stroke-dasharray="653.45" stroke-dashoffset="0"
+          transform="rotate(-90 120 120)" />
+      </svg>
+      <div class="dial-center">
+        <p class="dial-mode serif" id="mode">专注</p>
+        <p class="dial-time mono" id="time">25:00</p>
+        <p class="muted small" id="round-label"></p>
+      </div>
+    </div>
+
+    <div class="row" style="justify-content:center;margin-top:24px;">
+      <button class="btn btn--red" id="toggle" style="min-width:140px;">开始专注</button>
+      <button class="btn btn--ghost" id="reset">重置</button>
+      <button class="btn btn--ghost" id="skip">跳过此段</button>
+    </div>
+
+    <div class="row" style="justify-content:center;margin-top:20px;">
+      <label class="small muted">专注 <input type="number" id="cfg-work" value="25" min="1" max="120" class="input cfg" /> 分钟</label>
+      <label class="small muted">休息 <input type="number" id="cfg-break" value="5" min="1" max="60" class="input cfg" /> 分钟</label>
+      <label class="small muted"><input type="checkbox" id="cfg-sound" checked /> 完成提示音</label>
+    </div>
+
+    <div class="card" style="margin-top:28px;padding:20px;text-align:center;">
+      <p class="muted small">今日番茄</p>
+      <p class="serif" style="font-size:2.4rem;" id="today-count">0</p>
+      <p class="muted small" id="today-minutes"></p>
+      <div id="tomato-row" style="margin-top:8px;font-size:1.2rem;letter-spacing:4px;"></div>
+    </div>
+  </div>
+</ToolShell>
+
+<style>
+  .stage { max-width: 460px; margin: 0 auto; }
+  .dial-wrap { position: relative; width: min(300px, 80vw); margin: 0 auto; }
+  .dial { width: 100%; height: auto; }
+  #progress { transition: stroke-dashoffset 0.5s linear; }
+  .dial-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .dial-mode { font-size: 1.1rem; color: var(--ink-muted); letter-spacing: 0.4em; margin: 0; }
+  .dial-time { font-size: 3.2rem; font-weight: 600; margin: 8px 0; font-variant-numeric: tabular-nums; }
+  .cfg { width: 56px; display: inline-block; padding: 4px 8px; text-align: center; }
+  body.breaking #progress { stroke: var(--gold); }
+</style>
+
+<script>
+  import { store, toast } from '../../scripts/ui';
+
+  interface Cfg { work: number; break: number; sound: boolean; }
+  let cfg = store.get<Cfg>('opt-pomodoro-cfg', { work: 25, break: 5, sound: true });
+  (document.getElementById('cfg-work') as HTMLInputElement).value = String(cfg.work);
+  (document.getElementById('cfg-break') as HTMLInputElement).value = String(cfg.break);
+  (document.getElementById('cfg-sound') as HTMLInputElement).checked = cfg.sound;
+
+  let mode: 'work' | 'break' = 'work';
+  let remaining = cfg.work * 60;   // 秒
+  let total = remaining;
+  let running = false;
+  let lastTick = 0;
+  let rafId = 0;
+  let completedRound = 0;
+
+  const CIRCUMFERENCE = 2 * Math.PI * 104;
+
+  function todayKey() { return new Date().toISOString().slice(0, 10); }
+  function todayStats(): { count: number; minutes: number } {
+    const all = store.get<Record<string, { count: number; minutes: number }>>('opt-pomodoro-stats', {});
+    return all[todayKey()] ?? { count: 0, minutes: 0 };
+  }
+  function addTomato() {
+    const all = store.get<Record<string, { count: number; minutes: number }>>('opt-pomodoro-stats', {});
+    const k = todayKey();
+    const cur = all[k] ?? { count: 0, minutes: 0 };
+    all[k] = { count: cur.count + 1, minutes: cur.minutes + cfg.work };
+    store.set('opt-pomodoro-stats', all);
+    renderStats();
+  }
+  function renderStats() {
+    const s = todayStats();
+    document.getElementById('today-count')!.textContent = String(s.count);
+    document.getElementById('today-minutes')!.textContent = s.count ? `累计专注 ${s.minutes} 分钟` : '还没有番茄，开始第一个吧';
+    document.getElementById('tomato-row')!.textContent = '🍅'.repeat(Math.min(s.count, 16));
+  }
+
+  function fmt(sec: number) {
+    const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+
+  function render() {
+    document.getElementById('time')!.textContent = fmt(remaining);
+    document.getElementById('mode')!.textContent = mode === 'work' ? '专注' : '休息';
+    document.getElementById('round-label')!.textContent = running ? (mode === 'work' ? '保持专注，勿碰手机' : '起来走走，喝口水') : '';
+    const progress = document.getElementById('progress') as unknown as SVGCircleElement;
+    progress.style.strokeDashoffset = String(CIRCUMFERENCE * (remaining / total));
+    document.body.classList.toggle('breaking', mode === 'break');
+    document.title = `${fmt(remaining)} ${mode === 'work' ? '专注中' : '休息中'} · 玄墨番茄钟`;
+  }
+
+  function beep() {
+    if (!cfg.sound) return;
+    try {
+      const ac = new AudioContext();
+      [523.25, 659.25, 783.99].forEach((freq, i) => {
+        const osc = ac.createOscillator();
+        const gain = ac.createGain();
+        osc.connect(gain); gain.connect(ac.destination);
+        osc.frequency.value = freq;
+        const t = ac.currentTime + i * 0.18;
+        gain.gain.setValueAtTime(0.0001, t);
+        gain.gain.exponentialRampToValueAtTime(0.25, t + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+        osc.start(t); osc.stop(t + 0.55);
+      });
+    } catch { /* 无音频环境 */ }
+  }
+
+  function switchMode() {
+    beep();
+    if (mode === 'work') {
+      addTomato();
+      completedRound++;
+      toast(`第 ${completedRound} 个番茄完成！休息一下吧`);
+      mode = 'break';
+      total = remaining = cfg.break * 60;
+    } else {
+      toast('休息结束，开始新的专注');
+      mode = 'work';
+      total = remaining = cfg.work * 60;
+    }
+    render();
+  }
+
+  function loop(t: number) {
+    if (!running) return;
+    const dt = (t - lastTick) / 1000;
+    lastTick = t;
+    remaining = Math.max(0, remaining - dt);
+    if (remaining <= 0) switchMode();
+    render();
+    rafId = requestAnimationFrame(loop);
+  }
+
+  document.getElementById('toggle')!.addEventListener('click', () => {
+    running = !running;
+    document.getElementById('toggle')!.textContent = running ? '暂停' : (mode === 'work' ? '开始专注' : '继续休息');
+    if (running) { lastTick = performance.now(); rafId = requestAnimationFrame(loop); }
+    else cancelAnimationFrame(rafId);
+  });
+  document.getElementById('reset')!.addEventListener('click', () => {
+    running = false; cancelAnimationFrame(rafId);
+    mode = 'work'; total = remaining = cfg.work * 60;
+    document.getElementById('toggle')!.textContent = '开始专注';
+    render();
+  });
+  document.getElementById('skip')!.addEventListener('click', () => { if (mode === 'work') switchMode(); else switchMode(); });
+
+  ['cfg-work', 'cfg-break', 'cfg-sound'].forEach(id => {
+    document.getElementById(id)!.addEventListener('change', () => {
+      cfg = {
+        work: Math.max(1, Number((document.getElementById('cfg-work') as HTMLInputElement).value)),
+        break: Math.max(1, Number((document.getElementById('cfg-break') as HTMLInputElement).value)),
+        sound: (document.getElementById('cfg-sound') as HTMLInputElement).checked,
+      };
+      store.set('opt-pomodoro-cfg', cfg);
+      if (!running) { total = remaining = (mode === 'work' ? cfg.work : cfg.break) * 60; render(); }
+    });
+  });
+
+  renderStats();
+  render();
+</script>

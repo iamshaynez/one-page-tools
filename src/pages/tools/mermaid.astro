@@ -1,0 +1,174 @@
+---
+import ToolShell from '../../layouts/ToolShell.astro';
+---
+<ToolShell toolKey="mermaid">
+  <div class="row" style="margin-bottom:14px;">
+    <select class="select" id="theme" style="width:auto;">
+      <option value="neutral">主题 · 玄墨</option>
+      <option value="default">主题 · Default</option>
+      <option value="dark">主题 · Dark</option>
+      <option value="forest">主题 · Forest</option>
+    </select>
+    <select class="select" id="sample" style="width:auto;">
+      <option value="">示例…</option>
+      <option value="flow">流程图</option>
+      <option value="seq">时序图</option>
+      <option value="gantt">甘特图</option>
+      <option value="er">ER 图</option>
+      <option value="mind">脑图</option>
+    </select>
+    <div class="grow"></div>
+    <button class="btn btn--ghost btn--sm" id="share">分享链接</button>
+    <button class="btn btn--ghost btn--sm" id="export-svg">导出 SVG</button>
+    <button class="btn btn--sm" id="export-png">导出 PNG</button>
+  </div>
+
+  <div class="tool-grid tool-grid--2 mmd">
+    <div class="card panel">
+      <textarea id="input" class="textarea textarea--mono" spellcheck="false" aria-label="Mermaid 代码"></textarea>
+      <p class="small" id="status" style="margin-top:10px;"></p>
+    </div>
+    <div class="card panel preview-panel">
+      <div id="output" class="center" aria-live="polite"></div>
+    </div>
+  </div>
+  <p class="muted small" style="margin-top:12px;">输入即渲染。分享链接把图表编码进 URL，无需服务器。代码保存在本机。</p>
+</ToolShell>
+
+<style>
+  .mmd { align-items: stretch; }
+  .panel { padding: 16px; display: flex; flex-direction: column; }
+  .panel .textarea { flex: 1; min-height: 380px; }
+  .preview-panel { overflow: auto; }
+  #output { flex: 1; display: grid; place-items: center; min-height: 380px; }
+  #output svg { max-width: 100%; height: auto; }
+  #status.ok { color: var(--ink-muted); }
+  #status.err { color: var(--red); white-space: pre-wrap; font-family: var(--font-mono); font-size: 0.8rem; }
+  @media (max-width: 859px) { .panel .textarea, #output { min-height: 280px; } }
+</style>
+
+<script>
+  import mermaid from 'mermaid'; // 版本锁定于 package-lock（11.4.1），构建时打包，无 CDN 依赖
+  import { store, toast, download } from '../../scripts/ui';
+
+  const SAMPLES: Record<string, string> = {
+    flow: `flowchart TD\n    A[开始] --> B{条件判断}\n    B -->|是| C[执行分支一]\n    B -->|否| D[执行分支二]\n    C --> E[结束]\n    D --> E`,
+    seq: `sequenceDiagram\n    participant U as 用户\n    participant S as 服务\n    participant D as 数据库\n    U->>S: 发起请求\n    S->>D: 查询数据\n    D-->>S: 返回结果\n    S-->>U: 响应`,
+    gantt: `gantt\n    title 项目计划\n    dateFormat  YYYY-MM-DD\n    section 设计\n    需求评审      :a1, 2026-11-15, 3d\n    视觉设计      :a2, after a1, 5d\n    section 开发\n    前端开发      :b1, after a2, 8d\n    联调测试      :b2, after b1, 4d`,
+    er: `erDiagram\n    USER ||--o{ ORDER : places\n    ORDER ||--|{ ITEM : contains\n    USER {\n        string id\n        string name\n    }\n    ORDER {\n        string id\n        date created\n    }`,
+    mind: `mindmap\n  root((玩具展馆))\n    经典玩具\n      贪食蛇\n      扫雷\n    创作工坊\n      每日诗签\n      印章生成\n    趣味游戏\n      2048\n      五子棋`,
+  };
+
+  const input = document.getElementById('input') as HTMLTextAreaElement;
+  const output = document.getElementById('output')!;
+  const status = document.getElementById('status')!;
+  const themeEl = document.getElementById('theme') as HTMLSelectElement;
+  let currentTheme = 'neutral';
+  let renderSeq = 0;
+
+  mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: 'strict',   // 无 XSS：禁 HTML/脚本
+    theme: 'neutral',
+    fontFamily: '"Noto Serif SC", serif',
+  });
+
+  function setStatus(msg: string, ok: boolean) {
+    status.textContent = msg;
+    status.className = `small ${ok ? 'ok' : 'err'}`;
+  }
+
+  async function render() {
+    const code = input.value.trim();
+    const seq = ++renderSeq;
+    if (!code) { output.innerHTML = '<p class="muted">在左侧输入 Mermaid 代码</p>'; setStatus('', true); return; }
+    try {
+      const { svg } = await mermaid.render(`mmd-${seq}`, code);
+      if (seq !== renderSeq) return; // 只保留最后一次渲染
+      output.innerHTML = svg;
+      setStatus('✓ 渲染成功', true);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setStatus('语法错误：\n' + msg.replace(/^Parse error on line /m, '第 '), false);
+      document.getElementById('mmd-' + seq)?.remove();
+    }
+  }
+
+  let debounce: ReturnType<typeof setTimeout>;
+  input.addEventListener('input', () => {
+    clearTimeout(debounce);
+    debounce = setTimeout(() => { store.set('opt-mermaid-code', input.value); render(); }, 350);
+  });
+
+  themeEl.addEventListener('change', () => {
+    currentTheme = themeEl.value;
+    mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: currentTheme as 'neutral', fontFamily: '"Noto Serif SC", serif' });
+    render();
+  });
+
+  document.getElementById('sample')!.addEventListener('change', (e) => {
+    const v = (e.target as HTMLSelectElement).value;
+    if (v && SAMPLES[v]) { input.value = SAMPLES[v]; render(); }
+    (e.target as HTMLSelectElement).value = '';
+  });
+
+  // URL hash 分享（LZ 简单 base64 编码）
+  function encode(code: string): string {
+    return btoa(unescape(encodeURIComponent(code))).replace(/=+$/, '');
+  }
+  function decode(s: string): string {
+    try { return decodeURIComponent(escape(atob(s))); } catch { return ''; }
+  }
+  document.getElementById('share')!.addEventListener('click', async () => {
+    const url = `${location.origin}${location.pathname}#c=${encode(input.value)}`;
+    await navigator.clipboard.writeText(url);
+    toast('分享链接已复制（图表在链接里）');
+  });
+
+  function getSVG(): string | null {
+    const svg = output.querySelector('svg');
+    if (!svg) { toast('请先成功渲染图表'); return null; }
+    return new XMLSerializer().serializeToString(svg);
+  }
+
+  document.getElementById('export-svg')!.addEventListener('click', () => {
+    const svg = getSVG();
+    if (svg) { download('diagram.svg', svg, 'image/svg+xml'); toast('SVG 已导出'); }
+  });
+
+  document.getElementById('export-png')!.addEventListener('click', () => {
+    const svgText = getSVG();
+    if (!svgText) return;
+    const svgEl = output.querySelector('svg')!;
+    const bbox = svgEl.getBBox();
+    const w = Math.ceil(bbox.width + 40), h = Math.ceil(bbox.height + 40);
+    const img = new Image();
+    const svgBlob = new Blob([svgText], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = w * 2; canvas.height = h * 2;   // 2x 高清
+      const ctx = canvas.getContext('2d')!;
+      ctx.fillStyle = document.documentElement.dataset.theme === 'dark' ? '#201d17' : '#fafaf8';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 20, 20, w * 2 - 40, h * 2 - 40);
+      URL.revokeObjectURL(url);
+      canvas.toBlob((blob) => {
+        if (!blob) return;
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'diagram.png'; a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+        toast('PNG 已导出（2x）');
+      }, 'image/png');
+    };
+    img.onerror = () => { toast('PNG 导出失败，请改用 SVG'); URL.revokeObjectURL(url); };
+    img.src = url;
+  });
+
+  // 初始：URL hash > 本地存储 > 示例
+  const hash = new URLSearchParams(location.hash.slice(1));
+  const fromHash = hash.get('c');
+  input.value = fromHash ? decode(fromHash) : store.get<string>('opt-mermaid-code', SAMPLES.flow);
+  render();
+</script>

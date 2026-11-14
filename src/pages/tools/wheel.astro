@@ -1,0 +1,185 @@
+---
+import ToolShell from '../../layouts/ToolShell.astro';
+---
+<ToolShell toolKey="wheel">
+  <div class="tool-grid tool-grid--2">
+    <div class="card panel center">
+      <div class="wheel-wrap">
+        <canvas id="wheel" width="560" height="560" aria-label="轮盘"></canvas>
+        <div class="pointer" aria-hidden="true">▼</div>
+      </div>
+      <button class="btn btn--red" id="spin" style="margin-top:18px;font-size:1.1rem;padding:14px 48px;">转！</button>
+      <p class="serif" id="result" style="font-size:1.5rem;margin-top:16px;min-height:1.6em;"></p>
+    </div>
+
+    <div class="card panel">
+      <h2>选项清单</h2>
+      <textarea class="textarea" id="options" style="min-height:200px;">火锅
+烧烤
+日料
+麻辣烫
+轻食沙拉
+兰州拉面
+麦当劳
+自己做饭</textarea>
+      <div class="row" style="margin-top:12px;">
+        <button class="btn btn--sm" id="apply">应用清单</button>
+        <button class="btn btn--ghost btn--sm" id="remove-mode">转中后移除该项：关</button>
+      </div>
+      <p class="muted small" style="margin-top:12px;">每行一个选项，清单自动保存在本机。「转中后移除」适合不重复地决定多个事项。</p>
+      <hr style="border:none;border-top:1px solid var(--line-soft);margin:20px 0;" />
+      <h3 style="font-size:0.95rem;">历史结果</h3>
+      <div id="history" class="muted small" style="margin-top:8px;"></div>
+    </div>
+  </div>
+</ToolShell>
+
+<style>
+  .panel { padding: 24px; }
+  .panel h2 { font-size: 1.1rem; margin-bottom: 14px; }
+  .wheel-wrap { position: relative; max-width: 420px; margin: 0 auto; }
+  #wheel { width: 100%; height: auto; }
+  .pointer {
+    position: absolute; top: -6px; left: 50%; transform: translateX(-50%);
+    color: var(--red); font-size: 2.2rem;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.2));
+  }
+  .hist-item { padding: 4px 0; border-bottom: 1px dashed var(--line-soft); }
+</style>
+
+<script>
+  import { store, toast } from '../../scripts/ui';
+
+  const canvas = document.getElementById('wheel') as HTMLCanvasElement;
+  const ctx = canvas.getContext('2d')!;
+  const optionsEl = document.getElementById('options') as HTMLTextAreaElement;
+  optionsEl.value = store.get('opt-wheel-options', optionsEl.value);
+
+  let options = optionsEl.value.split('\n').map(s => s.trim()).filter(Boolean);
+  let rotation = 0;         // 当前角度
+  let spinning = false;
+  let removeAfter = false;
+  let history: string[] = store.get('opt-wheel-history', []);
+
+  // 玄墨配色：灰阶 + 漆红间隔
+  function sliceColor(i: number, n: number): string {
+    const dark = document.documentElement.dataset.theme === 'dark';
+    if (i === 0) return '#ce1432';
+    const grays = dark ? ['#35302a', '#45403b', '#2a2620', '#5a5348'] : ['#e8e4da', '#dcd6c8', '#f1ede3', '#cfc7b4'];
+    return grays[i % grays.length];
+  }
+
+  function drawWheel() {
+    const n = options.length;
+    const cx = canvas.width / 2, cy = canvas.height / 2, R = canvas.width / 2 - 14;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (n === 0) {
+      ctx.fillStyle = '#8a847c'; ctx.font = '24px "Noto Serif SC", serif'; ctx.textAlign = 'center';
+      ctx.fillText('请先添加选项', cx, cy);
+      return;
+    }
+    const arc = (Math.PI * 2) / n;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(rotation);
+    for (let i = 0; i < n; i++) {
+      const start = i * arc - Math.PI / 2;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, R, start, start + arc);
+      ctx.closePath();
+      ctx.fillStyle = sliceColor(i, n);
+      ctx.fill();
+      ctx.strokeStyle = '#f1f1ef'; ctx.lineWidth = 2; ctx.stroke();
+
+      // 文字（沿半径方向）
+      ctx.save();
+      ctx.rotate(start + arc / 2);
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      const isRed = i === 0;
+      ctx.fillStyle = isRed ? '#fff' : (document.documentElement.dataset.theme === 'dark' ? '#ece7de' : '#141210');
+      const fontSize = Math.min(30, Math.max(16, 300 / n));
+      ctx.font = `600 ${fontSize}px "Noto Serif SC", serif`;
+      const label = options[i].length > 8 ? options[i].slice(0, 7) + '…' : options[i];
+      ctx.fillText(label, R - 20, 0);
+      ctx.restore();
+    }
+    ctx.restore();
+    // 中心圆
+    ctx.beginPath(); ctx.arc(cx, cy, 46, 0, Math.PI * 2);
+    ctx.fillStyle = '#141210'; ctx.fill();
+    ctx.fillStyle = '#f1f1ef'; ctx.font = '24px "Noto Serif SC", serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('玄', cx, cy);
+  }
+
+  function spin() {
+    if (spinning || options.length === 0) return;
+    spinning = true;
+    document.getElementById('result')!.textContent = '';
+    (document.getElementById('spin') as HTMLButtonElement).disabled = true;
+
+    // 目标：随机一项，转到指针（顶部 -90°）
+    const n = options.length;
+    const arc = (Math.PI * 2) / n;
+    const targetIdx = Math.floor(Math.random() * n);
+    // 指针位于 -π/2；切片中心需对齐
+    const targetAngle = -Math.PI / 2 - (targetIdx * arc + arc / 2) + Math.PI / 2;
+    const currentMod = rotation % (Math.PI * 2);
+    let delta = targetAngle - currentMod;
+    while (delta < Math.PI * 6) delta += Math.PI * 2;  // 至少转 3 圈
+    delta += Math.PI * 2 * (2 + Math.random());         // 再多 2-3 圈
+
+    const start = rotation;
+    const duration = 3800;
+    const t0 = performance.now();
+
+    function frame(t: number) {
+      const p = Math.min(1, (t - t0) / duration);
+      const ease = 1 - Math.pow(1 - p, 4);  // easeOutQuart 减速
+      rotation = start + delta * ease;
+      drawWheel();
+      if (p < 1) requestAnimationFrame(frame);
+      else {
+        const chosen = options[targetIdx];
+        document.getElementById('result')!.textContent = `今晚就吃：${chosen}`;
+        history.unshift(chosen);
+        history = history.slice(0, 10);
+        store.set('opt-wheel-history', history);
+        renderHistory();
+        if (removeAfter) {
+          options = options.filter((_, i) => i !== targetIdx);
+          optionsEl.value = options.join('\n');
+          store.set('opt-wheel-options', optionsEl.value);
+          if (options.length === 0) { toast('选项已全部转完，请补充清单'); }
+          drawWheel();
+        }
+        spinning = false;
+        (document.getElementById('spin') as HTMLButtonElement).disabled = false;
+      }
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function renderHistory() {
+    document.getElementById('history')!.innerHTML = history.length
+      ? history.map(h => `<div class="hist-item">${h}</div>`).join('')
+      : '<span class="muted">暂无</span>';
+  }
+
+  document.getElementById('spin')!.addEventListener('click', spin);
+  document.getElementById('apply')!.addEventListener('click', () => {
+    options = optionsEl.value.split('\n').map(s => s.trim()).filter(Boolean);
+    store.set('opt-wheel-options', optionsEl.value);
+    drawWheel();
+    toast(`已应用 ${options.length} 个选项`);
+  });
+  document.getElementById('remove-mode')!.addEventListener('click', (e) => {
+    removeAfter = !removeAfter;
+    (e.target as HTMLButtonElement).textContent = `转中后移除该项：${removeAfter ? '开' : '关'}`;
+  });
+
+  drawWheel();
+  renderHistory();
+</script>
