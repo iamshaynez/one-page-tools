@@ -1,13 +1,13 @@
 /**
  * 工具注册表 — 全站唯一数据源
  * 大厅卡片、分类筛选、Feel Lucky、页脚导航、统计全部由此生成。
- * 新增一个玩具 = 一个 .astro 页面 + 这里一条记录 + public/prompts/ 一个 txt。
+ * 新增一个玩具 = 一个 .astro 页面 + 这里一条记录。
  */
 
 export type Category = 'classic' | 'create' | 'dev' | 'play';
 
 export interface Tool {
-  key: string;          // URL: /tools/{key}/ ；prompt: /prompts/{key}.txt
+  key: string;          // URL: /tools/{key}/
   name: string;
   desc: string;
   icon: string;         // 单字符符号，玄墨风不用彩色 emoji

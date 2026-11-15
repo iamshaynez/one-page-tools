@@ -1,9 +1,0 @@
-请把 Mermaid 渲染器重构为第二代，要求：
-
-1. mermaid 锁定 11.4.1 并打包进构建（不再依赖 CDN），initialize 时 securityLevel: 'strict' 防 XSS
-2. 左右分栏：左侧 textarea 输入（等宽字体），右侧实时预览，350ms 防抖
-3. 错误处理：语法错误在左栏下方显示行内错误信息，预览区保留上次成功结果；渲染序号防止旧渲染覆盖新渲染
-4. 导出 SVG（XMLSerializer）与 PNG（Canvas 2x 高清，底色跟随主题）
-5. 主题切换：neutral（玄墨）/ default / dark / forest；衬线字体
-6. 分享链接：图表代码 base64 编码进 URL hash（#c=...），打开链接自动还原；代码同时 localStorage 保存
-7. 内置示例：流程图、时序图、甘特图、ER 图、脑图

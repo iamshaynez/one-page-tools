@@ -1,5 +1,5 @@
 ---
-// 工具页统一外壳：← 返回大厅 | 工具名 | Prompt 抽屉 | 主题切换
+// 工具页统一外壳：← 返回大厅 | 工具名 | 主题切换
 import Base from './Base.astro';
 import { byKey, CATEGORIES } from '../data/tools';
 
@@ -18,10 +18,7 @@ const cat = CATEGORIES[tool.category];
         <h1>{tool.name}</h1>
         <span class="tag">{cat.label}</span>
       </div>
-      <div class="row">
-        <button class="btn btn--ghost btn--sm" id="prompt-open" title="查看生成这个玩具的 Prompt">Prompt</button>
-        <button class="btn btn--ghost btn--sm" id="theme-toggle" title="切换深浅色" aria-label="切换深浅色">◐</button>
-      </div>
+      <button class="btn btn--ghost btn--sm" id="theme-toggle" title="切换深浅色" aria-label="切换深浅色">◐</button>
     </div>
   </header>
 
@@ -32,24 +29,8 @@ const cat = CATEGORIES[tool.category];
 
   <footer class="shell-foot wrap muted small">
     <span>玩具展馆 · 玄墨</span>
-    <span>自 {tool.since} · <a href="/about">每个玩具的 Prompt 都公开</a></span>
+    <span>自 {tool.since} · <a href="/about">关于这座展馆</a></span>
   </footer>
-
-  <!-- Prompt 抽屉：展品铭牌 -->
-  <div class="overlay hidden" id="prompt-overlay">
-    <aside class="drawer" role="dialog" aria-label="Prompt 铭牌">
-      <div class="row" style="justify-content: space-between;">
-        <h2>展品铭牌 · Prompt</h2>
-        <button class="btn btn--ghost btn--sm" id="prompt-close">✕</button>
-      </div>
-      <p class="muted small">这个玩具由 AI 生成。以下是它诞生的原始指令。</p>
-      <pre id="prompt-content" class="prompt-pre">载入中…</pre>
-      <div class="row">
-        <button class="btn btn--sm" id="prompt-copy">复制 Prompt</button>
-        <a class="btn btn--ghost btn--sm" href={`/prompts/${tool.key}.txt`} target="_blank" rel="noopener">原始文件 ↗</a>
-      </div>
-    </aside>
-  </div>
 </Base>
 
 <style>
@@ -72,12 +53,6 @@ const cat = CATEGORIES[tool.category];
   .shell-main { padding-top: 28px; padding-bottom: 48px; min-height: calc(100vh - 180px); }
   .shell-desc { margin: 0 0 24px; font-size: 0.95rem; }
   .shell-foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding-top: 20px; padding-bottom: 28px; border-top: 1px solid var(--line-soft); }
-  .prompt-pre {
-    white-space: pre-wrap; word-break: break-word;
-    font-family: var(--font-serif); font-size: 0.95rem; line-height: 1.9;
-    background: var(--paper-sunken); border: 1px solid var(--line-soft);
-    border-radius: var(--radius-m); padding: 20px; margin: 16px 0;
-  }
   @media (max-width: 560px) {
     .shell-title .tag { display: none; }
     .shell-back__text { display: none; }
@@ -85,7 +60,7 @@ const cat = CATEGORIES[tool.category];
   }
 </style>
 
-<script define:vars={{ toolKey: tool.key }}>
+<script>
   // 主题切换
   document.getElementById('theme-toggle')?.addEventListener('click', () => {
     const dark = document.documentElement.dataset.theme === 'dark';
@@ -93,31 +68,4 @@ const cat = CATEGORIES[tool.category];
     else document.documentElement.dataset.theme = 'dark';
     localStorage.setItem('opt-theme', dark ? 'light' : 'dark');
   });
-
-  // Prompt 抽屉
-  const overlay = document.getElementById('prompt-overlay');
-  const content = document.getElementById('prompt-content');
-  let loaded = false;
-  async function openDrawer() {
-    overlay.classList.remove('hidden');
-    if (!loaded) {
-      try {
-        const res = await fetch(`/prompts/${toolKey}.txt`);
-        content.textContent = res.ok ? await res.text() : '这个玩具的 Prompt 尚未归档。';
-      } catch { content.textContent = '载入失败。'; }
-      loaded = true;
-    }
-  }
-  document.getElementById('prompt-open')?.addEventListener('click', openDrawer);
-  document.getElementById('prompt-close')?.addEventListener('click', () => overlay.classList.add('hidden'));
-  overlay?.addEventListener('click', (e) => { if (e.target === overlay) overlay.classList.add('hidden'); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') overlay.classList.add('hidden'); });
-  document.getElementById('prompt-copy')?.addEventListener('click', async () => {
-    await navigator.clipboard.writeText(content.textContent ?? '');
-    const { toast } = await import('../scripts/ui');
-    toast('Prompt 已复制');
-  });
-
-  // 大厅卡片「Prompt ↗」链接带 #prompt 进入时自动展开铭牌
-  if (location.hash === '#prompt') openDrawer();
 </script>

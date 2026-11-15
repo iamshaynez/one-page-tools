@@ -11,16 +11,15 @@ import { TOOLS } from '../data/tools';
     <section class="card about__card">
       <h2>展馆宣言</h2>
       <p>
-        这里的 {TOOLS.length} 个玩具，每一个都由 AI 生成。它们诞生的原始指令 —— Prompt ——
-        全部公开，就挂在每个玩具右上角的「Prompt」按钮里，像博物馆展品的铭牌。
+        这里的 {TOOLS.length} 个玩具，每一个都由 AI 生成 —— 从需求到代码，一次对话就是一件展品。
       </p>
       <p>
         2024 年 7 月，第一代的七个玩具在一周内诞生：抽签、扫雷、贪食蛇、计分板……
-        那时的想法很简单：<strong>如果一个网页就是一个玩具，那写下需求的过程，本身就是展品。</strong>
+        那时的想法很简单：<strong>如果一个网页就是一个玩具，那每个网页都值得被认真做出来。</strong>
       </p>
       <p>
         2026 年 11 月，第二代重构完成。玄墨视觉接管了一切：冷灰为纸，玄黑为墨，冷漆红点睛。
-        玩具变多了，Prompt 的传统没变。你可以复制任何一个 Prompt，喂给你的 AI，造出你自己的版本。
+        玩具变多了，玩法更多了。
       </p>
     </section>
 
@@ -37,11 +36,10 @@ import { TOOLS } from '../data/tools';
 
     <section class="card about__card">
       <h2>如何造一个新玩具</h2>
-      <p>三件套：</p>
+      <p>两件套：</p>
       <ol class="about__list">
         <li>在 <code>src/pages/tools/</code> 写一个 .astro 页面</li>
         <li>在 <code>src/data/tools.ts</code> 注册表加一条记录</li>
-        <li>把生成它的 Prompt 存到 <code>public/prompts/你的名字.txt</code></li>
       </ol>
       <p class="muted small">然后它就出现在大厅里了。就这么简单。</p>
     </section>
