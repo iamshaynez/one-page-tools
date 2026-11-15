@@ -131,7 +131,7 @@ import ToolShell from '../../layouts/ToolShell.astro';
     const currentMod = rotation % (Math.PI * 2);
     let delta = targetAngle - currentMod;
     while (delta < Math.PI * 6) delta += Math.PI * 2;  // 至少转 3 圈
-    delta += Math.PI * 2 * (2 + Math.random());         // 再多 2-3 圈
+    delta += Math.PI * 2 * (2 + Math.floor(Math.random() * 2)); // 额外 2-3 整圈（必须整数圈，否则指针偏离目标切片）
 
     const start = rotation;
     const duration = 3800;
