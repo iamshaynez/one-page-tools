@@ -43,7 +43,7 @@ import ToolShell from '../../layouts/ToolShell.astro';
   </div>
 </ToolShell>
 
-<style>
+<style is:global>
   .panel { padding: 24px; }
   .panel h2 { font-size: 1.1rem; margin-bottom: 14px; }
   .group-box { margin-top: 12px; padding: 14px 18px; background: var(--paper-sunken); border-radius: var(--radius-m); }
@@ -100,7 +100,7 @@ import ToolShell from '../../layouts/ToolShell.astro';
     let pool = names();
     if (noRepeat) pool = pool.filter(n => !winners.includes(n));
     if (pool.length === 0) { toast('名单为空或所有人都已中过奖'); return; }
-    const count = Math.min(Number((document.getElementById('draw-count') as HTMLInputElement).value), pool.length);
+    const count = Math.min(Math.max(1, Number((document.getElementById('draw-count') as HTMLInputElement).value) || 1), pool.length);
 
     drawing = true;
     const box = document.getElementById('draw-result')!;

@@ -33,7 +33,7 @@ import ToolShell from '../../layouts/ToolShell.astro';
       <p class="muted small">今日番茄</p>
       <p class="serif" style="font-size:2.4rem;" id="today-count">0</p>
       <p class="muted small" id="today-minutes"></p>
-      <div id="tomato-row" style="margin-top:8px;font-size:1.2rem;letter-spacing:4px;"></div>
+      <div id="tomato-row" style="margin-top:8px;font-size:1.2rem;letter-spacing:4px;color:var(--red);"></div>
     </div>
   </div>
 </ToolShell>
@@ -69,7 +69,7 @@ import ToolShell from '../../layouts/ToolShell.astro';
 
   const CIRCUMFERENCE = 2 * Math.PI * 104;
 
-  function todayKey() { return new Date().toISOString().slice(0, 10); }
+  function todayKey() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
   function todayStats(): { count: number; minutes: number } {
     const all = store.get<Record<string, { count: number; minutes: number }>>('opt-pomodoro-stats', {});
     return all[todayKey()] ?? { count: 0, minutes: 0 };
@@ -86,7 +86,7 @@ import ToolShell from '../../layouts/ToolShell.astro';
     const s = todayStats();
     document.getElementById('today-count')!.textContent = String(s.count);
     document.getElementById('today-minutes')!.textContent = s.count ? `累计专注 ${s.minutes} 分钟` : '还没有番茄，开始第一个吧';
-    document.getElementById('tomato-row')!.textContent = '🍅'.repeat(Math.min(s.count, 16));
+    document.getElementById('tomato-row')!.textContent = '●'.repeat(Math.min(s.count, 16));
   }
 
   function fmt(sec: number) {
@@ -122,16 +122,20 @@ import ToolShell from '../../layouts/ToolShell.astro';
     } catch { /* 无音频环境 */ }
   }
 
-  function switchMode() {
+  function switchMode(natural = true) {
     beep();
     if (mode === 'work') {
-      addTomato();
-      completedRound++;
-      toast(`第 ${completedRound} 个番茄完成！休息一下吧`);
+      if (natural) {
+        addTomato();
+        completedRound++;
+        toast(`第 ${completedRound} 个番茄完成！休息一下吧`);
+      } else {
+        toast('已跳过本段专注');
+      }
       mode = 'break';
       total = remaining = cfg.break * 60;
     } else {
-      toast('休息结束，开始新的专注');
+      if (natural) toast('休息结束，开始新的专注');
       mode = 'work';
       total = remaining = cfg.work * 60;
     }
@@ -160,7 +164,7 @@ import ToolShell from '../../layouts/ToolShell.astro';
     document.getElementById('toggle')!.textContent = '开始专注';
     render();
   });
-  document.getElementById('skip')!.addEventListener('click', () => { if (mode === 'work') switchMode(); else switchMode(); });
+  document.getElementById('skip')!.addEventListener('click', () => switchMode(false));
 
   ['cfg-work', 'cfg-break', 'cfg-sound'].forEach(id => {
     document.getElementById(id)!.addEventListener('change', () => {

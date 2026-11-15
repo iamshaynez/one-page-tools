@@ -34,7 +34,7 @@ import ToolShell from '../../layouts/ToolShell.astro';
   </div>
 </ToolShell>
 
-<style>
+<style is:global>
   .panel { padding: 24px; }
   .panel h2 { font-size: 1.1rem; margin-bottom: 14px; }
   .wheel-wrap { position: relative; max-width: 420px; margin: 0 auto; }
@@ -92,17 +92,19 @@ import ToolShell from '../../layouts/ToolShell.astro';
       ctx.fill();
       ctx.strokeStyle = '#f1f1ef'; ctx.lineWidth = 2; ctx.stroke();
 
-      // 文字（沿半径方向）
+      // 文字（沿半径方向；左半侧翻转 180° 避免倒置）
       ctx.save();
-      ctx.rotate(start + arc / 2);
-      ctx.textAlign = 'right';
+      const mid = start + arc / 2;
+      const flip = Math.cos(mid) < 0;
+      ctx.rotate(flip ? mid + Math.PI : mid);
+      ctx.textAlign = flip ? 'left' : 'right';
       ctx.textBaseline = 'middle';
       const isRed = i === 0;
       ctx.fillStyle = isRed ? '#fff' : (document.documentElement.dataset.theme === 'dark' ? '#ece7de' : '#141210');
       const fontSize = Math.min(30, Math.max(16, 300 / n));
       ctx.font = `600 ${fontSize}px "Noto Serif SC", serif`;
       const label = options[i].length > 8 ? options[i].slice(0, 7) + '…' : options[i];
-      ctx.fillText(label, R - 20, 0);
+      ctx.fillText(label, flip ? -(R - 20) : R - 20, 0);
       ctx.restore();
     }
     ctx.restore();

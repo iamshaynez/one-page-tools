@@ -78,7 +78,7 @@ import ToolShell from '../../layouts/ToolShell.astro';
     guessEl.value = '';
     if (a === 4) {
       finished = true;
-      msg(`🎉 就是 ${secret}！你用了 ${attempts} 次猜中。`, true);
+      msg(`就是 ${secret}！你用了 ${attempts} 次猜中。`, true);
     } else {
       msg(`${a}A${b}B，继续推理`);
     }
@@ -96,7 +96,8 @@ import ToolShell from '../../layouts/ToolShell.astro';
   });
 
   document.getElementById('keypad')!.addEventListener('click', (e) => {
-    const btn = (e.target as HTMLElement).closest('button')!;
+    const btn = (e.target as HTMLElement).closest('button');
+    if (!btn) return;
     const act = btn.dataset.act;
     if (act === 'clear') guessEl.value = '';
     else if (act === 'back') guessEl.value = guessEl.value.slice(0, -1);

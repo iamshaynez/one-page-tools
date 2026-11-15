@@ -25,7 +25,7 @@ import ToolShell from '../../layouts/ToolShell.astro';
   </div>
 </ToolShell>
 
-<style>
+<style is:global>
   .stage { max-width: 420px; margin: 0 auto; }
   .board {
     display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
@@ -37,6 +37,7 @@ import ToolShell from '../../layouts/ToolShell.astro';
     border-radius: var(--radius-m);
     font-family: var(--font-serif); font-weight: 700; font-size: clamp(1.2rem, 5vw, 1.9rem);
     background: var(--paper-raised); color: var(--ink);
+    box-shadow: inset 0 0 0 1px var(--line-soft);
     transition: transform 0.08s;
   }
   .tile--pop { animation: pop 0.14s var(--ease); }
@@ -88,7 +89,7 @@ import ToolShell from '../../layouts/ToolShell.astro';
   function checkState() {
     if (hasWon(grid) && !wonShown && !freePlay) {
       wonShown = true;
-      document.getElementById('over-title')!.textContent = '🎉 合成 2048！';
+      document.getElementById('over-title')!.textContent = '合成 2048！';
       document.getElementById('over-score')!.textContent = `得分 ${score}。继续挑战更高数字？`;
       document.getElementById('continue-btn')!.classList.remove('hidden');
       overlay.classList.remove('hidden');

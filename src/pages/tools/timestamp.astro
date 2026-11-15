@@ -42,7 +42,7 @@ import ToolShell from '../../layouts/ToolShell.astro';
   </div>
 </ToolShell>
 
-<style>
+<style is:global>
   .panel { padding: 24px; }
   .panel h2 { font-size: 1.05rem; margin-bottom: 14px; }
   .result-line { font-family: var(--font-mono); font-size: 0.9rem; padding: 6px 0; display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dashed var(--line-soft); }
@@ -118,6 +118,14 @@ import ToolShell from '../../layouts/ToolShell.astro';
   });
 
   // 自然语言
+  const CN_NUM: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+  function parseHour(s: string): number | null {
+    const m = s.match(/([一二三四五六七八九十\d]+)\s*点/);
+    if (!m) return null;
+    const h = CN_NUM[m[1]] ?? Number(m[1]);
+    if (isNaN(h)) return null;
+    return /下午|晚上/.test(s) && h < 12 ? h + 12 : h;
+  }
   function parseNatural(input: string): Date | null {
     const s = input.trim().replace(/\s+/g, ' ');
     const now = new Date();
@@ -125,8 +133,8 @@ import ToolShell from '../../layouts/ToolShell.astro';
     if (/^(现在|now)$/i.test(s)) return now;
     if (/^今天/.test(s)) {
       const d = new Date(now); d.setHours(0, 0, 0, 0);
-      const m = s.match(/(\d+)\s*点/);
-      if (m) d.setHours(Number(m[1]));
+      const h = parseHour(s);
+      if (h !== null) d.setHours(h);
       return d;
     }
     if (/^明天/.test(s) || /^后天/.test(s) || /^昨天/.test(s)) {
@@ -134,18 +142,10 @@ import ToolShell from '../../layouts/ToolShell.astro';
       const d = new Date(now);
       d.setDate(d.getDate() + offset);
       d.setHours(0, 0, 0, 0);
-      if (/下午|晚上/.test(s)) d.setHours(15);
-      if (/上午|早上/.test(s)) d.setHours(9);
-      const m = s.match(/([一二三四五六七八九十\d]+)\s*点/);
-      if (m) {
-        const CN: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
-        const num = CN[m[1]] ?? Number(m[1]);
-        if (!isNaN(num)) {
-          let h = num;
-          if (/下午|晚上/.test(s) && h < 12) h += 12;
-          d.setHours(h);
-        }
-      }
+      if (/下午|晚上/.test(s) && !s.includes('点')) d.setHours(15);
+      if (/上午|早上/.test(s) && !s.includes('点')) d.setHours(9);
+      const h = parseHour(s);
+      if (h !== null) d.setHours(h);
       return d;
     }
     let m = s.match(/^(\d+)\s*(天|日|小时|分钟|周)\s*(后|前)$/);

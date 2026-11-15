@@ -96,7 +96,7 @@ import ToolShell from '../../layouts/ToolShell.astro';
     moves.push({ r, c, stone: turn });
     if (checkWin(board, r, c, turn)) {
       over = true;
-      document.getElementById('status')!.textContent = `🎉 ${turn === 1 ? '黑棋' : '白棋'}获胜！${moves.length} 手终局。`;
+      document.getElementById('status')!.textContent = `${turn === 1 ? '黑棋' : '白棋'}获胜！${moves.length} 手终局。`;
       document.getElementById('turn-label')!.textContent = '对局结束';
     } else if (moves.length === SIZE * SIZE) {
       over = true;

@@ -7,7 +7,7 @@ import ToolShell from '../../layouts/ToolShell.astro';
       <div class="hud__item">得分 <strong id="score">0</strong></div>
       <div class="hud__item muted">最高分 <strong id="best">0</strong></div>
       <div class="grow"></div>
-      <button class="btn btn--ghost btn--sm" id="pause">暂停</button>
+      <button class="btn btn--ghost btn--sm" id="pause" disabled>暂停</button>
       <button class="btn btn--sm" id="restart">重开</button>
     </div>
 
@@ -28,7 +28,7 @@ import ToolShell from '../../layouts/ToolShell.astro';
         <button data-dir="right" aria-label="右">→</button>
       </div>
     </div>
-    <p class="muted small center">每吃一个食物速度加快。别撞墙，别咬到自己。</p>
+    <p class="muted small center">撞墙、咬到自己都会结束本局。空格键暂停。</p>
   </div>
 </ToolShell>
 
@@ -42,8 +42,8 @@ import ToolShell from '../../layouts/ToolShell.astro';
   .board-veil {
     position: absolute; inset: 0; display: flex; flex-direction: column;
     align-items: center; justify-content: center; gap: 14px;
-    background: color-mix(in srgb, var(--paper) 82%, transparent);
-    backdrop-filter: blur(3px);
+    background: color-mix(in srgb, var(--paper) 92%, transparent);
+    backdrop-filter: blur(4px);
   }
   .board-veil.hidden { display: none; }
   .veil__title { font-size: 2rem; }
@@ -115,6 +115,7 @@ import ToolShell from '../../layouts/ToolShell.astro';
 
   function gameOver() {
     running = false;
+    pauseBtn.disabled = true;
     if (state.score > best) {
       best = state.score;
       store.set('opt-snake-best', best);
@@ -149,6 +150,7 @@ import ToolShell from '../../layouts/ToolShell.astro';
     state = createGame();
     acc = 0; paused = false; running = true;
     pauseBtn.textContent = '暂停';
+    pauseBtn.disabled = false;
     veil.classList.add('hidden');
     lastTime = performance.now();
     requestAnimationFrame(loop);

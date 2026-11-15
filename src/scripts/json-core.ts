@@ -14,8 +14,7 @@ export function jsonToYAML(value: unknown, indent = 0): string {
     if (value.length === 0) return '[]';
     return value.map(item => {
       if (typeof item === 'object' && item !== null) {
-        const inner = jsonToYAML(item, indent + 1);
-        return `${pad}-\n${inner}` + (indent === 0 && typeof item === 'object' ? '' : '');
+        return `${pad}-\n${jsonToYAML(item, indent + 1)}`;
       }
       return `${pad}- ${jsonToYAML(item, indent + 1)}`;
     }).join('\n');

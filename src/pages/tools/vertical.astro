@@ -100,24 +100,23 @@ import ToolShell from '../../layouts/ToolShell.astro';
       });
     });
 
-    // 落款（小字，位于最左列）
+    // 落款（小字，位于最左列）；无落款时印章落在留白列
+    const sigSize = Math.round(fontSize * 0.6);
+    const sigX = startX - paragraphs.length * colGap;
     if (signature) {
-      const x = startX - paragraphs.length * colGap;
-      ctx.font = `${Math.round(fontSize * 0.6)}px "Noto Serif SC", serif`;
-      const sigSize = Math.round(fontSize * 0.6);
+      ctx.font = `${sigSize}px "Noto Serif SC", serif`;
       [...signature].forEach((ch, row) => {
-        ctx.fillText(ch, x, H - 100 - (signature.length - row) * (sigSize + 6));
+        ctx.fillText(ch, sigX, H - 100 - (signature.length - row) * (sigSize + 6));
       });
-      // 朱文印
-      if (withSeal) {
-        const sealSize = sigSize + 20;
-        const sy = H - 100 + 16;
-        ctx.fillStyle = '#ce1432';
-        ctx.fillRect(x - sealSize / 2, sy, sealSize, sealSize);
-        ctx.fillStyle = '#f7f3e8';
-        ctx.font = `${sigSize}px "Noto Serif SC", serif`;
-        ctx.fillText(signature[signature.length - 1] ?? '印', x, sy + 10);
-      }
+    }
+    if (withSeal) {
+      const sealSize = sigSize + 20;
+      const sy = H - 100 + 16;
+      ctx.fillStyle = '#ce1432';
+      ctx.fillRect(sigX - sealSize / 2, sy, sealSize, sealSize);
+      ctx.fillStyle = '#f7f3e8';
+      ctx.font = `${sigSize}px "Noto Serif SC", serif`;
+      ctx.fillText(signature ? signature[signature.length - 1] : '印', sigX, sy + 10);
     }
     lastCanvas = canvas;
   }

@@ -6,7 +6,11 @@ import ToolShell from '../../layouts/ToolShell.astro';
     <div class="card panel">
       <div class="field">
         <label>上传图片</label>
-        <input type="file" id="upload" accept="image/*" class="input" />
+        <div class="row">
+          <label class="btn btn--sm" for="upload" id="upload-label">选择图片</label>
+          <span class="small muted" id="file-name">未选择文件</span>
+          <input type="file" id="upload" accept="image/*" hidden />
+        </div>
       </div>
       <div class="field" style="margin-top:14px;">
         <label>字幕文本（每行一条，图片向下延伸）</label>
@@ -62,7 +66,7 @@ import ToolShell from '../../layouts/ToolShell.astro';
     </div>
 
     <div class="card panel center">
-      <img id="preview" alt="预览" style="max-height:70vh;object-fit:contain;" />
+      <img id="preview" alt="预览" hidden style="max-height:70vh;object-fit:contain;" />
       <p class="muted small" id="preview-hint">上传图片并输入字幕后点「生成图片」</p>
     </div>
   </div>
@@ -82,12 +86,14 @@ import ToolShell from '../../layouts/ToolShell.astro';
   document.getElementById('upload')!.addEventListener('change', (e) => {
     const file = (e.target as HTMLInputElement).files?.[0];
     if (!file) return;
+    document.getElementById('file-name')!.textContent = file.name;
     if (objectURL) URL.revokeObjectURL(objectURL);
     objectURL = URL.createObjectURL(file);   // Blob URL，不占 base64 内存
     const img = new Image();
     img.onload = () => {
       originalImage = img;
       preview.src = objectURL!;
+      preview.hidden = false;
       document.getElementById('preview-hint')!.textContent = `${img.width} × ${img.height}`;
     };
     img.src = objectURL;
@@ -174,6 +180,7 @@ import ToolShell from '../../layouts/ToolShell.astro';
       if (objectURL) URL.revokeObjectURL(objectURL);
       objectURL = URL.createObjectURL(blob);
       preview.src = objectURL;
+      preview.hidden = false;
       (document.getElementById('download-btn') as HTMLButtonElement).disabled = false;
       document.getElementById('preview-hint')!.textContent = `已生成 ${W} × ${H}`;
       // 暂存供下载

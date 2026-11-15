@@ -14,8 +14,8 @@ import ToolShell from '../../layouts/ToolShell.astro';
     </div>
 
     <div class="hud card">
-      <div class="hud__item">💣 <strong id="mines-left">40</strong></div>
-      <div class="hud__item">⏱ <strong id="timer">0</strong>s</div>
+      <div class="hud__item serif">雷 <strong id="mines-left">40</strong></div>
+      <div class="hud__item serif">时 <strong id="timer">0</strong>s</div>
       <div class="hud__item muted small">最佳 <span id="best">—</span></div>
       <div class="grow"></div>
       <span class="muted small" id="hint">首击必安全</span>
@@ -41,7 +41,7 @@ import ToolShell from '../../layouts/ToolShell.astro';
   </div>
 </ToolShell>
 
-<style>
+<style is:global>
   .stage { max-width: 760px; margin: 0 auto; }
   .hud { display: flex; align-items: center; gap: 20px; padding: 12px 18px; margin-bottom: 14px; }
   .hud__item strong { font-family: var(--font-mono); }
@@ -141,7 +141,7 @@ import ToolShell from '../../layouts/ToolShell.astro';
     render();
     const elapsed = Math.round((Date.now() - startTime) / 1000);
     const bv = compute3BV(board);
-    document.getElementById('over-title')!.textContent = board.won ? '🎉 扫雷成功' : '踩雷了';
+    document.getElementById('over-title')!.textContent = board.won ? '扫雷成功' : '踩雷了';
     let stats = `用时 ${elapsed}s · 3BV ${bv}`;
     if (board.won) {
       const b = bests();
@@ -157,9 +157,6 @@ import ToolShell from '../../layouts/ToolShell.astro';
   }
 
   function tick() {
-    if (!board.started) {
-      board.started = true; // reveal 内部处理布雷；此处仅启动计时
-    }
     startTime = Date.now();
     timerId = setInterval(() => {
       timer++;
@@ -185,21 +182,24 @@ import ToolShell from '../../layouts/ToolShell.astro';
 
   boardEl.addEventListener('contextmenu', (e) => {
     e.preventDefault();
+    if (Date.now() - lastLongPress < 600) return; // 触屏长按已处理
     const el = (e.target as HTMLElement).closest('.cell') as HTMLElement | null;
     if (!el || board.over) return;
     toggleFlag(board, Number(el.dataset.index));
     render();
   });
 
-  // 移动端长按插旗
+  // 移动端长按插旗（lastLongPress 防止 iOS 同时触发 contextmenu 造成双切换）
   let pressTimer: ReturnType<typeof setTimeout> | null = null;
   let longPressed = false;
+  let lastLongPress = 0;
   boardEl.addEventListener('touchstart', (e) => {
     const el = (e.target as HTMLElement).closest('.cell') as HTMLElement | null;
     if (!el) return;
     longPressed = false;
     pressTimer = setTimeout(() => {
       longPressed = true;
+      lastLongPress = Date.now();
       toggleFlag(board, Number(el.dataset.index));
       render();
       if (navigator.vibrate) navigator.vibrate(30);

@@ -58,7 +58,7 @@ import ToolShell from '../../layouts/ToolShell.astro';
   </div>
 </ToolShell>
 
-<style>
+<style is:global>
   .panel { padding: 24px; }
   #preview svg { max-width: 280px; width: 100%; height: auto; }
 </style>
@@ -97,10 +97,10 @@ import ToolShell from '../../layouts/ToolShell.astro';
       { x: cx - 58, y: cy - 62, size: 92 }, { x: cx - 58, y: cy + 62, size: 92 },
     ];
 
-    let parts = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">`;
+    let inner = '';
     // 底
-    if (shape === 'round') parts += `<circle cx="${cx}" cy="${cy}" r="145" fill="${bg}"/>`;
-    else parts += `<rect x="5" y="5" width="${W - 10}" height="${H - 10}" rx="10" fill="${bg}"/>`;
+    if (shape === 'round') inner += `<circle cx="${cx}" cy="${cy}" r="145" fill="${bg}"/>`;
+    else inner += `<rect x="5" y="5" width="${W - 10}" height="${H - 10}" rx="10" fill="${bg}"/>`;
 
     // 边框
     const bc = zhu ? '#f7f3e8' : red;
@@ -108,31 +108,35 @@ import ToolShell from '../../layouts/ToolShell.astro';
       const widths = { thick: 10, thin: 3, double: 4 } as const;
       const bw = widths[border as 'thick' | 'thin' | 'double'];
       if (shape === 'round') {
-        parts += `<circle cx="${cx}" cy="${cy}" r="${140 - bw / 2}" fill="none" stroke="${bc}" stroke-width="${bw}"/>`;
-        if (border === 'double') parts += `<circle cx="${cx}" cy="${cy}" r="126" fill="none" stroke="${bc}" stroke-width="2"/>`;
+        inner += `<circle cx="${cx}" cy="${cy}" r="${140 - bw / 2}" fill="none" stroke="${bc}" stroke-width="${bw}"/>`;
+        if (border === 'double') inner += `<circle cx="${cx}" cy="${cy}" r="126" fill="none" stroke="${bc}" stroke-width="2"/>`;
       } else {
-        parts += `<rect x="${10 + bw / 2}" y="${10 + bw / 2}" width="${W - 20 - bw}" height="${H - 20 - bw}" rx="6" fill="none" stroke="${bc}" stroke-width="${bw}"/>`;
-        if (border === 'double') parts += `<rect x="26" y="26" width="${W - 52}" height="${H - 52}" rx="4" fill="none" stroke="${bc}" stroke-width="2"/>`;
+        inner += `<rect x="${10 + bw / 2}" y="${10 + bw / 2}" width="${W - 20 - bw}" height="${H - 20 - bw}" rx="6" fill="none" stroke="${bc}" stroke-width="${bw}"/>`;
+        if (border === 'double') inner += `<rect x="26" y="26" width="${W - 52}" height="${H - 52}" rx="4" fill="none" stroke="${bc}" stroke-width="2"/>`;
       }
     }
 
     // 字
     chars.forEach((ch, i) => {
       const p = positions[i];
-      parts += `<text x="${p.x}" y="${p.y}" font-family="'Noto Serif SC','Songti SC',serif" font-weight="700" font-size="${p.size}" fill="${fg}" text-anchor="middle" dominant-baseline="central">${ch}</text>`;
+      inner += `<text x="${p.x}" y="${p.y}" font-family="'Noto Serif SC','Songti SC',serif" font-weight="700" font-size="${p.size}" fill="${fg}" text-anchor="middle" dominant-baseline="central">${ch}</text>`;
     });
 
-    // 做旧：随机小缺口（底色覆盖）
+    let parts = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">`;
+    // 做旧：mask 蚀掉印泥（朱文红底、白文红字都真实留缺）
     if (aging !== 'none') {
       const n = aging === 'heavy' ? 90 : 30;
-      const holeColor = zhu ? '#f1f1ef' : '#f1f1ef';
-      parts += '<g opacity="0.85">';
+      let holes = '';
       for (let i = 0; i < n; i++) {
         const x = Math.random() * W, y = Math.random() * H;
         const r = Math.random() * (aging === 'heavy' ? 5 : 3) + 0.5;
-        parts += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" fill="${holeColor}" opacity="${(Math.random() * 0.5 + 0.3).toFixed(2)}"/>`;
+        holes += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r.toFixed(1)}" fill="#000" opacity="${(Math.random() * 0.5 + 0.3).toFixed(2)}"/>`;
       }
-      parts += '</g>';
+      parts += `<defs><mask id="seal-age" maskUnits="userSpaceOnUse" x="0" y="0" width="${W}" height="${H}">`
+        + `<rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>${holes}</mask></defs>`
+        + `<g mask="url(#seal-age)">${inner}</g>`;
+    } else {
+      parts += inner;
     }
     parts += '</svg>';
     return parts;
@@ -152,10 +156,12 @@ import ToolShell from '../../layouts/ToolShell.astro';
     const img = new Image();
     const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }));
     img.onload = () => {
+      // 按原始宽高比导出，避免长方形印章被压扁
+      const scale = 600 / img.width;
       const canvas = document.createElement('canvas');
-      canvas.width = 600; canvas.height = 600;
+      canvas.width = 600; canvas.height = Math.round(img.height * scale);
       const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(img, 0, 0, 600, 600);
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       URL.revokeObjectURL(url);
       canvas.toBlob((blob) => {
         if (!blob) return;
