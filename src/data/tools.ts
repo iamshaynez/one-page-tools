@@ -32,9 +32,11 @@ export const TOOLS: Tool[] = [
   { key: 'mermaid', name: 'Mermaid 图表', desc: '左右分栏实时渲染，PNG/SVG 导出，语法错误行内提示。', icon: '圖', category: 'classic', since: '2024-07' },
   { key: 'score', name: '牌局计分板', desc: '多人每轮记分与汇总，撤销重做、趋势图、CSV 导出、多局存档。', icon: '計', category: 'classic', since: '2024-07', featured: true },
   { key: 'subtitle', name: '字幕图片生成', desc: '多行字幕复合长图，模糊拉伸延伸，字体颜色全参数化。', icon: '幕', category: 'classic', since: '2024-07' },
+  { key: 'yijing', name: '周易铜钱卦', desc: '摇三枚铜钱六次成卦，六十四卦卦辞全本地，老阴老阳变之卦。', icon: '卦', category: 'classic', since: '2026-11' },
 
   // ---- 创作工坊 ----
   { key: 'poem', name: '每日诗签', desc: '唐诗宋词随机一首，玄墨卡片生成，一日一诗。', icon: '詩', category: 'create', since: '2026-11' },
+  { key: 'wordclock', name: '汉字时钟', desc: '一整版汉字方阵，时间到了谁，谁就亮起漆红。分钟一换。', icon: '刻', category: 'create', since: '2026-11' },
   { key: 'vertical', name: '竖排文字器', desc: '中文竖排版式，从右往左，杂志感长图一键导出。', icon: '排', category: 'create', since: '2026-11' },
   { key: 'seal', name: '印章生成器', desc: '朱文白文，一方小印。输入名字，得一枚 SVG 闲章。', icon: '印', category: 'create', since: '2026-11' },
   { key: 'party', name: '聚会抽奖分组', desc: '随机分组、幸运轮盘抽奖、名单记忆，聚会不冷场。', icon: '聚', category: 'create', since: '2026-11' },
@@ -53,6 +55,7 @@ export const TOOLS: Tool[] = [
   { key: 'wheel', name: '今晚吃什么轮盘', desc: '漆红指针转盘，编辑你的选项清单，让命运决定。', icon: '盤', category: 'play', since: '2026-11' },
   { key: 'noise', name: '白噪音小屋', desc: '雨声、篝火、风。Web Audio 纯合成，零素材离线可用。', icon: '音', category: 'play', since: '2026-11' },
   { key: 'gomoku', name: '五子棋', desc: '本地双人对弈，或挑战简单 AI。落子无悔。', icon: '棋', category: 'play', since: '2026-11' },
+  { key: 'twentyfour', name: '24 点扑克', desc: '四张牌算 24，输入式子即时判定，内置分数求解器看答案。', icon: '算', category: 'play', since: '2026-11' },
 ];
 
 export const byKey = (key: string) => TOOLS.find((t) => t.key === key);

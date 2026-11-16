@@ -1,0 +1,257 @@
+---
+import ToolShell from '../../layouts/ToolShell.astro';
+---
+<ToolShell toolKey="yijing">
+  <div class="tool-grid tool-grid--2">
+    <div class="card panel stage-left">
+      <p class="muted small" style="margin:0 0 16px;">默念所问之事，摇三枚铜钱，共摇六次成卦。背记阳，字记阴；三背三字为动爻。</p>
+
+      <div class="coins" id="coins">
+        {['一', '二', '三'].map(() => (
+          <svg viewBox="0 0 80 80" class="coin" aria-hidden="true">
+            <circle cx="40" cy="40" r="36" class="rim" />
+            <circle cx="40" cy="40" r="31" class="inner-ring" />
+            <rect x="32" y="32" width="16" height="16" class="hole" />
+            <g class="back-pattern" aria-hidden="true">
+              <path d="M 20 28 Q 15 40 20 52" />
+              <path d="M 60 28 Q 65 40 60 52" />
+              <path d="M 28 20 Q 40 15 52 20" />
+              <path d="M 28 60 Q 40 65 52 60" />
+            </g>
+            <g class="coin-face">
+              <text x="40" y="20">乾</text><text x="67" y="45">隆</text><text x="40" y="70">通</text><text x="12" y="45">寶</text>
+            </g>
+          </svg>
+        ))}
+      </div>
+      <p class="toss-note serif center" id="toss-note">铜钱已备</p>
+
+      <div class="row" style="justify-content:center;margin-top:14px;">
+        <button class="btn btn--red" id="toss">摇一爻</button>
+        <button class="btn btn--ghost" id="toss-all">一气六摇</button>
+      </div>
+
+      <div class="yao-stack" id="yao-stack"></div>
+      <p class="muted small center" id="progress-note" style="margin:10px 0 0;"></p>
+    </div>
+
+    <div class="card panel stage-right" id="result-panel">
+      <p class="muted center" id="placeholder" style="padding:60px 0;">六爻既成，卦象自现</p>
+      <div id="result" class="hidden">
+        <div class="hex-head">
+          <div class="hex-bars" id="hex-bars"></div>
+          <div class="hex-title">
+            <p class="muted small" style="margin:0;">本卦 · 第<span id="hex-no"></span>卦</p>
+            <h2 class="serif" style="font-size:2rem;margin:2px 0;" id="hex-name"></h2>
+            <p class="muted small" style="margin:0;"><span id="hex-nature"></span> · 上<span id="hex-upper"></span>下<span id="hex-lower"></span></p>
+          </div>
+        </div>
+        <blockquote class="judgement serif" id="judgement"></blockquote>
+
+        <div id="moving-block" class="hidden">
+          <p class="small" style="margin:14px 0 6px;">动爻 <span class="red serif" id="moving-lines"></span> · 老变而少不变</p>
+          <div class="hex-head">
+            <div class="hex-bars hex-bars--small" id="zhi-bars"></div>
+            <div class="hex-title">
+              <p class="muted small" style="margin:0;">之卦</p>
+              <h3 class="serif" style="margin:2px 0;" id="zhi-name"></h3>
+              <p class="muted small" style="margin:0;" id="zhi-nature"></p>
+            </div>
+          </div>
+          <blockquote class="judgement judgement--zhi serif" id="zhi-judgement"></blockquote>
+        </div>
+
+        <p class="muted small" style="margin-top:16px;">六爻安静，以本卦卦辞断之；有动爻则变而为之卦，两参之。卦辞为古籍原文，占以玩，勿以决。</p>
+        <div class="row" style="margin-top:14px;">
+          <button class="btn" id="again">再占一卦</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</ToolShell>
+
+<style is:global>
+  .panel { padding: 24px; }
+  .coins { display: flex; justify-content: center; gap: 18px; }
+  .coin { width: 72px; height: 72px; }
+  .coin .rim { fill: var(--paper-raised); stroke: var(--ink); stroke-width: 2.5; }
+  .coin .inner-ring { fill: none; stroke: var(--line); stroke-width: 1; }
+  .coin .hole { fill: none; stroke: var(--ink); stroke-width: 2; }
+  .coin .back-pattern { display: none; }
+  .coin:not(.coin-heads) .back-pattern { display: block; }
+  .coin .back-pattern path { fill: none; stroke: var(--ink-faint); stroke-width: 1.6; stroke-linecap: round; }
+  .coin .coin-face text {
+    fill: var(--ink-soft); font-size: 12px;
+    font-family: var(--font-serif); text-anchor: middle;
+  }
+  .coin:not(.coin-heads) .coin-face { display: none; } /* 无字面（背）不显字 */
+  .coin.flip { animation: coinFlip 0.5s var(--ease); }
+  @keyframes coinFlip {
+    0% { transform: rotateY(0) translateY(0); }
+    40% { transform: rotateY(180deg) translateY(-22px); }
+    100% { transform: rotateY(360deg) translateY(0); }
+  }
+  .toss-note { margin: 12px 0 0; min-height: 1.6em; letter-spacing: 0.1em; }
+
+  .yao-stack { display: flex; flex-direction: column-reverse; gap: 7px; margin-top: 22px; }
+  .yao { display: flex; align-items: center; gap: 12px; animation: yaoIn 0.3s var(--ease); }
+  @keyframes yaoIn { from { opacity: 0; transform: translateX(-8px); } }
+  .yao-label { width: 18px; font-size: 0.8rem; color: var(--ink-muted); text-align: right; }
+  .yao-bar { flex: 1; display: flex; gap: 26px; height: 13px; }
+  .yao-bar i { flex: 1; background: var(--ink); border-radius: 2px; }
+  .yao--yin .yao-bar i:last-child { visibility: hidden; }
+  .yao--moving .yao-bar i { background: var(--red); }
+  .yao-mark { font-size: 0.8rem; color: var(--red); width: 16px; text-align: center; }
+
+  .hex-head { display: flex; align-items: center; gap: 20px; }
+  .hex-bars { display: flex; flex-direction: column; gap: 5px; width: 84px; flex-shrink: 0; }
+  .hex-bars--small { width: 60px; gap: 4px; }
+  .hex-bars span { display: flex; gap: 12px; height: 8px; }
+  .hex-bars--small span { height: 6px; }
+  .hex-bars span i { flex: 1; background: var(--ink); border-radius: 1.5px; }
+  .hex-bars span.yin i:last-child { visibility: hidden; }
+  .hex-bars span.moving i { background: var(--red); }
+
+  .judgement {
+    margin: 18px 0 0; padding: 14px 18px;
+    border-left: 3px solid var(--red);
+    background: var(--paper-sunken);
+    border-radius: 0 var(--radius-m) var(--radius-m) 0;
+    font-size: 1.05rem; line-height: 1.9;
+  }
+  .judgement--zhi { border-left-color: var(--gold); }
+</style>
+
+<script>
+  import { toast } from '../../scripts/ui';
+  import {
+    lineFromCoins, isYang, isMoving, hexagramOf, changedOf, movingPositions, lineName, tossLabel,
+    type Line,
+  } from '../../scripts/yijing-core';
+
+  const coins = document.getElementById('coins')!;
+  const coinEls = Array.from(coins.children) as SVGSVGElement[];
+  const tossBtn = document.getElementById('toss') as HTMLButtonElement;
+  const tossAllBtn = document.getElementById('toss-all') as HTMLButtonElement;
+  const note = document.getElementById('toss-note')!;
+  const stack = document.getElementById('yao-stack')!;
+  const progressNote = document.getElementById('progress-note')!;
+
+  const LABELS = ['初', '二', '三', '四', '五', '上'];
+  let lines: Line[] = [];
+  let busy = false;
+
+  function renderCoins(backs: boolean[]) {
+    coinEls.forEach((el, i) => {
+      // 背面为阳（无字），字面为阴
+      el.classList.toggle('coin-heads', !backs[i]);
+      el.classList.remove('flip');
+      void el.getBoundingClientRect(); // 重置动画
+      el.style.animationDelay = `${i * 0.09}s`;
+      el.classList.add('flip');
+    });
+  }
+
+  function appendYao(line: Line) {
+    const yang = isYang(line);
+    const row = document.createElement('div');
+    row.className = `yao ${yang ? 'yao--yang' : 'yao--yin'}${isMoving(line) ? ' yao--moving' : ''}`;
+    const label = document.createElement('span');
+    label.className = 'yao-label';
+    label.textContent = LABELS[lines.length - 1];
+    const bar = document.createElement('span');
+    bar.className = 'yao-bar';
+    bar.innerHTML = '<i></i><i></i>';
+    const mark = document.createElement('span');
+    mark.className = 'yao-mark';
+    if (isMoving(line)) mark.textContent = yang ? '○' : '×';
+    row.append(label, bar, mark);
+    stack.appendChild(row);
+  }
+
+  function finish() {
+    const main = hexagramOf(lines);
+    const zhi = changedOf(lines);
+    const bars = (el: HTMLElement, ls: Line[], small = false) => {
+      el.innerHTML = '';
+      [...ls].reverse().forEach((l) => { // 上爻在顶
+        const s = document.createElement('span');
+        s.className = isYang(l) ? 'yang' : 'yin';
+        if (isMoving(l)) s.classList.add('moving');
+        s.innerHTML = '<i></i><i></i>';
+        el.appendChild(s);
+      });
+    };
+    document.getElementById('hex-no')!.textContent = String(main.no);
+    document.getElementById('hex-name')!.textContent = main.name;
+    document.getElementById('hex-nature')!.textContent = main.nature;
+    document.getElementById('hex-upper')!.textContent = main.upper;
+    document.getElementById('hex-lower')!.textContent = main.lower;
+    document.getElementById('judgement')!.textContent = `「${main.judgement}」`;
+    bars(document.getElementById('hex-bars')!, lines);
+
+    const moving = movingPositions(lines);
+    const block = document.getElementById('moving-block')!;
+    if (zhi && moving.length) {
+      block.classList.remove('hidden');
+      document.getElementById('moving-lines')!.textContent = moving.map((p) => lineName(p, isYang(lines[p]))).join('、');
+      document.getElementById('zhi-name')!.textContent = zhi.name;
+      document.getElementById('zhi-nature')!.textContent = `${zhi.nature} · 上${zhi.upper}下${zhi.lower}`;
+      document.getElementById('zhi-judgement')!.textContent = `「${zhi.judgement}」`;
+      bars(document.getElementById('zhi-bars')!, lines.map((l) => (isMoving(l) ? (isYang(l) ? 6 : 9) : l)) as Line[], true);
+    } else {
+      block.classList.add('hidden');
+    }
+
+    document.getElementById('placeholder')!.classList.add('hidden');
+    document.getElementById('result')!.classList.remove('hidden');
+  }
+
+  async function tossOnce(): Promise<void> {
+    const faces = [0, 1, 2].map(() => Math.random() < 0.5); // true = 背（阳面）
+    renderCoins(faces);
+    note.textContent = '铜钱落定……';
+    await new Promise((r) => setTimeout(r, 780));
+    const backs = faces.filter(Boolean).length;
+    const line = lineFromCoins(backs);
+    lines.push(line);
+    appendYao(line);
+    note.textContent = tossLabel(backs);
+    progressNote.textContent = `已得 ${lines.length} 爻`;
+    if (lines.length === 6) {
+      busy = false;
+      tossBtn.disabled = true;
+      tossAllBtn.disabled = true;
+      finish();
+      toast('六爻既成，卦象已现');
+    }
+  }
+
+  tossBtn.addEventListener('click', async () => {
+    if (busy || lines.length >= 6) return;
+    busy = true;
+    await tossOnce();
+    busy = false;
+  });
+
+  tossAllBtn.addEventListener('click', async () => {
+    if (busy || lines.length >= 6) return;
+    busy = true;
+    tossBtn.disabled = true;
+    tossAllBtn.disabled = true;
+    while (lines.length < 6) await tossOnce();
+    tossBtn.disabled = lines.length >= 6;
+    tossAllBtn.disabled = lines.length >= 6;
+  });
+
+  document.getElementById('again')!.addEventListener('click', () => {
+    lines = [];
+    stack.innerHTML = '';
+    note.textContent = '铜钱已备';
+    progressNote.textContent = '';
+    document.getElementById('result')!.classList.add('hidden');
+    document.getElementById('placeholder')!.classList.remove('hidden');
+    tossBtn.disabled = false;
+    tossAllBtn.disabled = false;
+  });
+</script>

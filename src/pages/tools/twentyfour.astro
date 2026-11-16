@@ -1,0 +1,181 @@
+---
+import ToolShell from '../../layouts/ToolShell.astro';
+---
+<ToolShell toolKey="twentyfour">
+  <div class="stage">
+    <div class="hand" id="hand"></div>
+
+    <div class="card panel">
+      <div class="row">
+        <input class="input grow mono" id="expr" placeholder="用 + − × ÷ ( ) 写出 = 24 的式子，如 (1+2+3)×4" autocomplete="off" spellcheck="false" />
+        <button class="btn btn--red" id="submit">检验</button>
+      </div>
+      <p class="fb small" id="fb"></p>
+      <div class="bar" id="timer-bar" style="display:none;"><i id="timer-fill"></i></div>
+      <div class="row" style="margin-top:14px;">
+        <button class="btn btn--ghost" id="next">换一题</button>
+        <button class="btn btn--ghost" id="reveal">看答案</button>
+        <label class="small muted row" style="gap:6px;"><input type="checkbox" id="timed" /> 限时 60 秒</label>
+      </div>
+    </div>
+
+    <div class="stats row">
+      <div class="stat"><p class="serif stat-n" id="st-streak">0</p><p class="muted small">当前连对</p></div>
+      <div class="stat"><p class="serif stat-n" id="st-best">0</p><p class="muted small">最长连对</p></div>
+      <div class="stat"><p class="serif stat-n" id="st-solved">0</p><p class="muted small">累计解开</p></div>
+    </div>
+    <p class="muted small center">本馆只发有解的牌；式子里每张牌的数字恰好各用一次。J=11，Q=12，K=13。</p>
+  </div>
+</ToolShell>
+
+<style is:global>
+  .stage { max-width: 560px; margin: 0 auto; }
+  .hand { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+  .pcard {
+    aspect-ratio: 5 / 7;
+    background: var(--paper-raised);
+    border: 1.5px solid var(--ink);
+    border-radius: var(--radius-m);
+    box-shadow: var(--shadow-card);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    animation: dealIn 0.35s var(--ease) backwards;
+  }
+  .pcard:nth-child(2) { animation-delay: 0.07s; }
+  .pcard:nth-child(3) { animation-delay: 0.14s; }
+  .pcard:nth-child(4) { animation-delay: 0.21s; }
+  @keyframes dealIn { from { opacity: 0; transform: translateY(-14px) rotate(-3deg); } }
+  .pcard__rank { font-family: var(--font-serif); font-size: clamp(1.6rem, 7vw, 2.4rem); font-weight: 700; line-height: 1; }
+  .pcard__suit { font-size: 1.2rem; margin-top: 4px; }
+  .pcard--red { color: var(--red); border-color: var(--red); }
+
+  .panel { padding: 20px; }
+  .fb { min-height: 1.5em; margin: 10px 0 0; }
+  .fb.ok { color: var(--ink); font-weight: 600; }
+  .fb.bad { color: var(--red); }
+  .bar { height: 4px; margin-top: 12px; background: var(--line-soft); border-radius: 2px; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 100%; background: var(--red); transition: width 1s linear; }
+
+  .stats { justify-content: center; gap: 40px; margin-top: 26px; }
+  .stat { text-align: center; }
+  .stat-n { font-size: 2rem; margin: 0; }
+</style>
+
+<script>
+  import { store, toast } from '../../scripts/ui';
+  import { hasSolution, solve24, checkAnswer } from '../../scripts/twentyfour-core';
+
+  const RANKS = ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K'];
+  const SUITS = [
+    { s: '♠', red: false }, { s: '♥', red: true },
+    { s: '♣', red: false }, { s: '♦', red: true },
+  ];
+
+  interface Card { v: number; suit: number; }
+  interface Stats { streak: number; best: number; solved: number; }
+  let stats = store.get<Stats>('opt-tf-stats', { streak: 0, best: 0, solved: 0 });
+  let hand: Card[] = [];
+  let solvedNow = false;
+  let deadline = 0;
+  let timerId = 0;
+
+  const handEl = document.getElementById('hand')!;
+  const exprEl = document.getElementById('expr') as HTMLInputElement;
+  const fbEl = document.getElementById('fb')!;
+  const timedEl = document.getElementById('timed') as HTMLInputElement;
+
+  function renderStats() {
+    document.getElementById('st-streak')!.textContent = String(stats.streak);
+    document.getElementById('st-best')!.textContent = String(stats.best);
+    document.getElementById('st-solved')!.textContent = String(stats.solved);
+  }
+  function saveStats() { store.set('opt-tf-stats', stats); renderStats(); }
+
+  function deal() {
+    do {
+      hand = Array.from({ length: 4 }, () => ({ v: 1 + Math.floor(Math.random() * 13), suit: Math.floor(Math.random() * 4) }));
+    } while (!hasSolution(hand.map((c) => c.v)));
+
+    handEl.innerHTML = '';
+    hand.forEach((c, i) => {
+      const el = document.createElement('div');
+      const suit = SUITS[c.suit];
+      el.className = `pcard${suit.red ? ' pcard--red' : ''}`;
+      el.style.animationDelay = `${i * 0.06}s`;
+      el.innerHTML = `<span class="pcard__rank">${RANKS[c.v - 1]}</span><span class="pcard__suit">${suit.s}</span>`;
+      handEl.appendChild(el);
+    });
+    exprEl.value = '';
+    fbEl.textContent = '';
+    fbEl.className = 'fb small';
+    solvedNow = false;
+    exprEl.disabled = false;
+    exprEl.focus();
+    if (timedEl.checked) startTimer();
+  }
+
+  function startTimer() {
+    stopTimer();
+    deadline = Date.now() + 60_000;
+    document.getElementById('timer-bar')!.style.display = '';
+    tickTimer();
+    timerId = window.setInterval(tickTimer, 1000);
+  }
+  function stopTimer() {
+    clearInterval(timerId);
+    document.getElementById('timer-bar')!.style.display = 'none';
+  }
+  function tickTimer() {
+    const left = Math.max(0, deadline - Date.now());
+    (document.getElementById('timer-fill') as HTMLElement).style.width = `${(left / 60000) * 100}%`;
+    if (left <= 0) {
+      stopTimer();
+      if (!solvedNow) {
+        stats.streak = 0;
+        saveStats();
+        toast('时间到，这局算了');
+        deal();
+      }
+    }
+  }
+
+  function submit() {
+    if (solvedNow) return;
+    const r = checkAnswer(exprEl.value, hand.map((c) => c.v));
+    if (r.ok) {
+      solvedNow = true;
+      stopTimer();
+      fbEl.textContent = `${r.expr} = 24 ✓`;
+      fbEl.className = 'fb small ok';
+      stats.streak++;
+      stats.best = Math.max(stats.best, stats.streak);
+      stats.solved++;
+      saveStats();
+      exprEl.disabled = true;
+      setTimeout(deal, 900);
+    } else {
+      fbEl.textContent = r.reason;
+      fbEl.className = 'fb small bad';
+    }
+  }
+
+  document.getElementById('submit')!.addEventListener('click', submit);
+  exprEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
+  document.getElementById('next')!.addEventListener('click', () => {
+    if (stats.streak > 0) { stats.streak = 0; saveStats(); }
+    deal();
+  });
+  document.getElementById('reveal')!.addEventListener('click', () => {
+    const s = solve24(hand.map((c) => c.v));
+    if (!s) return;
+    solvedNow = true;
+    stopTimer();
+    fbEl.textContent = `答案：${s}`;
+    fbEl.className = 'fb small';
+    if (stats.streak > 0) { stats.streak = 0; saveStats(); }
+    exprEl.disabled = true;
+  });
+  timedEl.addEventListener('change', () => { if (timedEl.checked && !solvedNow) startTimer(); else stopTimer(); });
+
+  renderStats();
+  deal();
+</script>

@@ -1,0 +1,97 @@
+---
+import ToolShell from '../../layouts/ToolShell.astro';
+---
+<ToolShell toolKey="wordclock">
+  <div class="stage" id="stage">
+    <div class="clock card" id="clock">
+      <span class="clock__seal" aria-hidden="true">刻</span>
+      <div class="grid" id="grid" aria-live="off"></div>
+      <div class="hairline"><i id="hairline"></i></div>
+      <p class="read serif" id="reading"></p>
+      <p class="muted small mono" id="digital"></p>
+    </div>
+    <div class="row" style="justify-content:center;margin-top:20px;">
+      <button class="btn btn--ghost" id="fs">全屏当摆件</button>
+    </div>
+    <p class="muted small center" style="margin-top:14px;">一整版汉字，时间到了谁，谁就亮起。分钟一换，整点只读「几点」。</p>
+  </div>
+</ToolShell>
+
+<style is:global>
+  .stage { max-width: 640px; margin: 0 auto; }
+  .clock { position: relative; padding: clamp(16px, 4vw, 36px); overflow: hidden; }
+  .clock__seal {
+    position: absolute; right: 14px; bottom: 10px;
+    font-family: var(--font-serif); font-size: 2rem; line-height: 1;
+    color: color-mix(in srgb, var(--red) 14%, transparent);
+    user-select: none; pointer-events: none;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(11, 1fr);
+    gap: clamp(2px, 0.6vw, 6px);
+  }
+  .cell {
+    display: grid; place-items: center;
+    aspect-ratio: 1;
+    font-family: var(--font-serif);
+    font-size: clamp(1rem, 4.2vw, 1.9rem);
+    color: var(--ink-faint);
+    border-radius: var(--radius-s);
+    transition: color 0.45s var(--ease), transform 0.45s var(--ease), background 0.45s var(--ease);
+    user-select: none;
+  }
+  .cell--blank { visibility: hidden; }
+  .cell.on { color: var(--red); font-weight: 700; transform: scale(1.12); }
+  .hairline { height: 2px; margin-top: 18px; background: var(--line-soft); border-radius: 2px; overflow: hidden; }
+  .hairline i { display: block; height: 100%; width: 0; background: var(--red); transition: width 0.9s linear; }
+  .read { text-align: center; margin: 18px 0 4px; font-size: 1.05rem; letter-spacing: 0.15em; min-height: 1.6em; }
+  .digital-center { text-align: center; margin: 0; font-variant-numeric: tabular-nums; }
+
+  /* 全屏摆件模式 */
+  .clock:fullscreen { display: flex; flex-direction: column; justify-content: center; border-radius: 0; max-width: min(92vw, 1100px); margin: 0 auto; }
+  .clock:fullscreen .grid { max-width: 900px; margin: 0 auto; }
+</style>
+
+<script>
+  import { GRID, litPositions, reading } from '../../scripts/wordclock-core';
+
+  const grid = document.getElementById('grid')!;
+  const cells: HTMLElement[] = [];
+  GRID.forEach((row) => {
+    row.forEach((ch) => {
+      const s = document.createElement('span');
+      s.className = ch ? 'cell' : 'cell cell--blank';
+      s.textContent = ch;
+      grid.appendChild(s);
+      cells.push(s);
+    });
+  });
+
+  const WEEK = ['日', '一', '二', '三', '四', '五', '六'];
+  const pad = (n: number) => String(n).padStart(2, '0');
+  let sig = '';
+
+  function tick() {
+    const now = new Date();
+    const pos = litPositions(now);
+    const next = pos.map((p) => p.r * 11 + p.c).join(',');
+    if (next !== sig) {
+      sig = next;
+      cells.forEach((c) => c.classList.remove('on'));
+      pos.forEach(({ r, c }) => cells[r * 11 + c].classList.add('on'));
+      document.getElementById('reading')!.textContent = reading(now);
+    }
+    document.getElementById('hairline')!.style.width = `${(now.getSeconds() / 60) * 100}%`;
+    document.getElementById('digital')!.textContent =
+      `${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 星期${WEEK[now.getDay()]} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+  }
+  tick();
+  setInterval(tick, 1000);
+
+  document.getElementById('fs')!.addEventListener('click', () => {
+    const clock = document.getElementById('clock')!;
+    if (document.fullscreenElement) document.exitFullscreen();
+    else clock.requestFullscreen?.().catch(() => {});
+  });
+</script>
