@@ -28,6 +28,7 @@ import Base from '../../layouts/Base.astro';
       <div class="hud__actions">
         <button class="hud__btn" id="btn-time" title="宇宙时间流速（T 键切换）">6时/秒</button>
         <button class="hud__btn" id="btn-sound" aria-pressed="false" title="环境音">音 · 关</button>
+        <button class="hud__btn" id="btn-cinema" aria-pressed="false" title="屏保模式：隐藏全部界面（H 键）">屏</button>
         <button class="hud__btn" id="btn-full" title="全屏">⛶ 全屏</button>
       </div>
 
@@ -43,7 +44,7 @@ import Base from '../../layouts/Base.astro';
       <div class="hud__score" id="hud-score"></div>
 
       <div class="hud__hint shown" id="hud-hint">
-        <b>WASD</b> 航行 · <b>拖拽</b> 视角 · <b>滚轮</b> 调速 · 空格/Q 上升 · C 下降 · Shift 加速 · 点击行星前往
+        <b>WASD</b> 航行 · <b>拖拽</b> 视角 · <b>滚轮</b> 调速 · 空格/Q 上升 · C 下降 · Shift 加速 · <b>H</b> 屏保 · 点击行星前往
       </div>
     </div>
 
@@ -113,6 +114,9 @@ import Base from '../../layouts/Base.astro';
   .cosmos-label.egg span { color: rgba(255, 224, 178, 0.95); }
   .cosmos-label.egg.found span { color: rgba(160, 205, 160, 0.9); }
   .cosmos-label.egg.reveal { opacity: 1 !important; }
+  /* 屏保模式：纯净画面，一键壁纸 */
+  body.cinema .hud, body.cinema .labels, body.cinema .card, body.cinema .discovery,
+  body.cinema .speed-toast, body.cinema #cosmos-stick { display: none !important; }
   /* 触屏摇杆 */
   #cosmos-stick {
     position: fixed; width: 108px; height: 108px; border-radius: 50%;
@@ -360,7 +364,26 @@ import Base from '../../layouts/Base.astro';
   const btnTime = document.getElementById('btn-time') as HTMLButtonElement;
   const btnSound = document.getElementById('btn-sound') as HTMLButtonElement;
   const btnFull = document.getElementById('btn-full') as HTMLButtonElement;
+  const btnCinema = document.getElementById('btn-cinema') as HTMLButtonElement;
   const coarse = matchMedia('(pointer: coarse)').matches;
+
+  // ---- 屏保模式：隐藏全部界面，纯净画面（H 键切换） ----
+  function toggleCinema() {
+    const on = !document.body.classList.contains('cinema');
+    document.body.classList.toggle('cinema', on);
+    btnCinema.setAttribute('aria-pressed', String(on));
+    btnCinema.textContent = on ? '屏·开' : '屏';
+  }
+  btnCinema.textContent = '屏';
+  btnCinema.addEventListener('click', toggleCinema);
+  if (new URLSearchParams(location.search).has('cinema')) {
+    setTimeout(toggleCinema, 100); // 调试/壁纸截图：无头验证用
+  }
+  addEventListener('keydown', (e) => {
+    if (e.key.toLowerCase() === 'h' && !(e.target as HTMLElement)?.closest('button, a, input, textarea')) {
+      toggleCinema();
+    }
+  });
 
   function die(msg: string) {
     fatal.hidden = false;
