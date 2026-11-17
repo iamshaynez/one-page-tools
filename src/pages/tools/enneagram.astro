@@ -1,0 +1,398 @@
+---
+import ToolShell from '../../layouts/ToolShell.astro';
+import { RATING_LABELS } from '../../data/enneagram-questions';
+import { CENTERS } from '../../data/enneagram-types';
+---
+<ToolShell toolKey="enneagram">
+  <!-- 答题视图 -->
+  <div class="tool-grid tool-grid--2" id="quiz-view">
+    <div class="card panel stage-left">
+      <div class="q-top">
+        <span class="muted small" id="q-no">第 1 / 36 条</span>
+        <span class="tag tag--red hidden" id="q-dim">中心</span>
+      </div>
+      <div class="q-progress"><i id="q-progress-fill"></i></div>
+
+      <h2 class="q-text serif" id="q-text">陈述</h2>
+
+      <div class="rating-row" id="rating-row">
+        {([1, 2, 3, 4, 5] as const).map((r) => (
+          <button class="rate" data-rate={r} id={`rate-${r}`}>
+            <span class="rate-key mono">{r}</span>
+            <span class="rate-label">{RATING_LABELS[r]}</span>
+          </button>
+        ))}
+      </div>
+
+      <div class="row q-foot">
+        <button class="btn btn--ghost btn--sm" id="prev">← 上一条</button>
+        <span class="muted small">凭第一直觉，像不像自己 · 键盘 1–5</span>
+      </div>
+    </div>
+
+    <div class="card panel stage-right">
+      <p class="muted small" style="margin:0 0 12px;">逐条读陈述，按「像不像你」打分。答满三十六条，得主型、翼型与九型全谱。诚实一点，结果才有意思。</p>
+      <div class="dots" id="dots"></div>
+      <div class="center-guide">
+        {(Object.keys(CENTERS) as (keyof typeof CENTERS)[]).map((c) => (
+          <div class="center-guide__row" data-center={c}>
+            <span class="center-guide__name serif">{CENTERS[c].label}</span>
+            <span class="center-guide__members mono">{CENTERS[c].members}</span>
+            <span class="small muted">{CENTERS[c].note}</span>
+          </div>
+        ))}
+      </div>
+      <p class="muted small" style="margin:14px 0 0;">本馆原创题库 · 九型见倾向，识人须岁月。</p>
+    </div>
+  </div>
+
+  <!-- 结果视图 -->
+  <div class="card panel result hidden" id="result-view">
+    <div class="r-head">
+      <div class="r-code serif" id="r-code">玖</div>
+      <div class="r-title">
+        <div class="row" style="gap:8px;">
+          <span class="tag tag--red" id="r-center"></span>
+          <span class="tag" id="r-wing"></span>
+        </div>
+        <h2 class="serif r-name" id="r-name"></h2>
+        <p class="muted small" id="r-alias" style="margin:2px 0 0;"></p>
+      </div>
+    </div>
+    <div class="r-fd">
+      <p class="small"><span class="fd-k serif">核心恐惧</span><span id="r-fear"></span></p>
+      <p class="small"><span class="fd-k serif">核心欲望</span><span id="r-desire"></span></p>
+    </div>
+    <blockquote class="r-motto serif" id="r-motto"></blockquote>
+    <p class="muted small hidden" id="r-tied" style="margin:12px 0 0;"></p>
+
+    <div class="r-spectrum" id="r-spectrum"></div>
+
+    <section class="r-sec">
+      <h3 class="serif">概述</h3>
+      <p id="r-summary"></p>
+    </section>
+    <section class="r-sec">
+      <h3 class="serif">性格切片</h3>
+      <ul class="r-list r-list--cols" id="r-traits"></ul>
+    </section>
+    <section class="r-sec r-duo">
+      <div>
+        <h3 class="serif">优势</h3>
+        <ul class="r-list r-list--win" id="r-strengths"></ul>
+      </div>
+      <div>
+        <h3 class="serif">盲区</h3>
+        <ul class="r-list r-list--dim" id="r-blinds"></ul>
+      </div>
+    </section>
+    <section class="r-sec">
+      <h3 class="serif">职业倾向</h3>
+      <p id="r-careers"></p>
+    </section>
+    <section class="r-sec">
+      <h3 class="serif">相处之道</h3>
+      <p id="r-relations"></p>
+    </section>
+    <section class="r-sec">
+      <h3 class="serif">成长与压力</h3>
+      <p id="r-growth" class="arrow-p"></p>
+      <p id="r-stress" class="arrow-p"></p>
+    </section>
+
+    <p class="muted small" style="margin-top:18px;">九型学说的类型结构为通行公域理论，图鉴皆本馆自撰；人格复杂，快测仅供玩味，勿以贴标签。</p>
+    <div class="row" style="margin-top:14px;">
+      <button class="btn btn--red" id="restart">重测一次</button>
+      <button class="btn btn--ghost" id="review">回看作答</button>
+    </div>
+  </div>
+</ToolShell>
+
+<style is:global>
+  .panel { padding: 24px; }
+
+  /* ---- 答题 ---- */
+  .q-top { display: flex; justify-content: space-between; align-items: center; }
+  .q-progress { height: 3px; background: var(--paper-sunken); border-radius: 99px; margin: 10px 0 22px; overflow: hidden; }
+  .q-progress i { display: block; height: 100%; width: 0; background: var(--red); transition: width 0.3s var(--ease); }
+  .q-text { font-size: 1.3rem; line-height: 1.8; margin: 0 0 24px; min-height: 4.2em; }
+
+  .rating-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+  .rate {
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    padding: 14px 6px;
+    background: var(--paper-raised); color: var(--ink);
+    border: 1.5px solid var(--line); border-radius: var(--radius-m);
+    transition: border-color 0.15s, transform 0.15s var(--ease), box-shadow 0.15s;
+    animation: optIn 0.28s var(--ease);
+  }
+  @keyframes optIn { from { opacity: 0; transform: translateY(6px); } }
+  .rate:hover { border-color: var(--ink); transform: translateY(-2px); box-shadow: var(--shadow-card); }
+  .rate:hover .rate-key { background: var(--red); border-color: var(--red); color: #fff; }
+  .rate-key {
+    display: grid; place-items: center;
+    width: 28px; height: 28px; font-size: 0.85rem;
+    border: 1.5px solid var(--ink); border-radius: var(--radius-s);
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .rate-label { font-size: 0.85rem; white-space: nowrap; }
+  .q-foot { justify-content: space-between; margin-top: 20px; }
+
+  .dots { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 20px; }
+  .dot {
+    width: 11px; height: 11px; border-radius: 50%;
+    border: 1.5px solid var(--line); background: transparent;
+    padding: 0; cursor: pointer; transition: background 0.15s, border-color 0.15s;
+  }
+  .dot.done { background: var(--ink); border-color: var(--ink); }
+  .dot.cur { border-color: var(--red); background: var(--red-soft); }
+  .dot.done.cur { background: var(--red); border-color: var(--red); }
+
+  .center-guide { display: flex; flex-direction: column; gap: 10px; }
+  .center-guide__row {
+    padding: 8px 12px; border-left: 2px solid var(--line);
+    display: flex; flex-direction: column; gap: 2px;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .center-guide__row.hot { border-left-color: var(--red); background: var(--red-soft); }
+  .center-guide__name { font-size: 0.9rem; }
+  .center-guide__members { font-size: 0.8rem; color: var(--ink-muted); letter-spacing: 0.3em; }
+
+  /* ---- 结果 ---- */
+  .result { max-width: 760px; margin: 0 auto; }
+  .r-head { display: flex; align-items: center; gap: 24px; }
+  .r-code {
+    font-size: 3.2rem; font-weight: 700;
+    padding: 6px 22px; border: 2px solid var(--ink); border-radius: var(--radius-m);
+    flex-shrink: 0; line-height: 1.5;
+  }
+  .r-name { font-size: 2rem; margin: 6px 0 0; }
+  .r-fd { margin-top: 16px; display: flex; flex-direction: column; gap: 4px; }
+  .r-fd p { margin: 0; display: flex; gap: 12px; align-items: baseline; }
+  .fd-k { color: var(--ink-muted); flex-shrink: 0; }
+  .r-motto {
+    margin: 18px 0 0; padding: 12px 18px;
+    border-left: 3px solid var(--red);
+    background: var(--paper-sunken);
+    border-radius: 0 var(--radius-m) var(--radius-m) 0;
+    font-size: 1.05rem; line-height: 1.9;
+  }
+  .r-spectrum { margin-top: 24px; display: flex; flex-direction: column; gap: 8px; }
+  .spec-row { display: grid; grid-template-columns: 118px 1fr 44px; gap: 12px; align-items: center; }
+  .spec-row__name { font-size: 0.85rem; color: var(--ink-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .spec-row__name b { font-family: var(--font-mono); color: var(--ink-soft); margin-right: 6px; }
+  .spec-row.is-main .spec-row__name { color: var(--red); }
+  .spec-row.is-main .spec-row__name b { color: var(--red); }
+  .spec-row__mark { font-size: 0.7rem; color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 40%, transparent); border-radius: 99px; padding: 0 6px; margin-left: 6px; }
+  .spec-bar { position: relative; height: 8px; background: var(--paper-sunken); border-radius: 99px; }
+  .spec-fill { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--ink); border-radius: 99px; transition: width 0.5s var(--ease); }
+  .spec-row.is-main .spec-fill { background: var(--red); }
+  .spec-row.is-tie .spec-fill { background: color-mix(in srgb, var(--red) 45%, var(--ink)); }
+  .spec-pct { font-family: var(--font-mono); font-size: 0.8rem; color: var(--ink-muted); text-align: right; }
+
+  .r-sec { margin-top: 26px; }
+  .r-sec h3 { font-size: 1.1rem; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .r-sec h3::after { content: ''; flex: 1; height: 1px; background: var(--line-soft); }
+  .r-sec p { margin: 0; line-height: 1.9; }
+  .r-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .r-list li { position: relative; padding-left: 16px; line-height: 1.7; }
+  .r-list li::before { content: ''; position: absolute; left: 0; top: 0.65em; width: 6px; height: 6px; border-radius: 50%; }
+  .r-list--cols { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 20px; }
+  .r-list--win li::before { background: var(--red); }
+  .r-list--dim li::before { background: var(--ink-faint); }
+  .r-list--cols li::before { background: var(--ink); }
+  .r-duo { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; }
+  .arrow-p + .arrow-p { margin-top: 8px; }
+  .arrow-p::first-letter { color: var(--red); }
+
+  @media (max-width: 640px) {
+    .r-code { font-size: 2.2rem; padding: 2px 16px; }
+    .r-name { font-size: 1.5rem; }
+    .r-list--cols { grid-template-columns: 1fr; }
+    .r-duo { grid-template-columns: 1fr; gap: 20px 0; }
+    .q-text { font-size: 1.15rem; min-height: 3.6em; }
+    .rating-row { gap: 6px; }
+    .rate { padding: 10px 2px; }
+    .rate-label { font-size: 0.75rem; }
+    .spec-row { grid-template-columns: 92px 1fr 38px; gap: 8px; }
+  }
+</style>
+
+<script>
+  import { STATEMENTS, RATING_LABELS, type Rating } from '../../data/enneagram-questions';
+  import { CENTERS, CN_NO, ENNEA_TYPES, type Center } from '../../data/enneagram-types';
+  import { scoreEnn, wingsOf, type EnnAnswers, type EnnResult } from '../../scripts/enneagram-core';
+  import { store, toast } from '../../scripts/ui';
+
+  const KEY = 'opt-ennea-last';
+  const N = STATEMENTS.length;
+  const CENTER_OF: Record<number, Center> = { 1: 'gut', 2: 'heart', 3: 'heart', 4: 'heart', 5: 'head', 6: 'head', 7: 'head', 8: 'gut', 9: 'gut' };
+  const typeByNo = (no: number) => ENNEA_TYPES.find((t) => t.no === no)!;
+
+  const quizView = document.getElementById('quiz-view')!;
+  const resultView = document.getElementById('result-view')!;
+  const qNo = document.getElementById('q-no')!;
+  const qDim = document.getElementById('q-dim')!;
+  const qText = document.getElementById('q-text')!;
+  const rateBtns = Array.from(document.querySelectorAll<HTMLButtonElement>('.rate'));
+  const prevBtn = document.getElementById('prev') as HTMLButtonElement;
+  const progressFill = document.getElementById('q-progress-fill')!;
+  const dotsBox = document.getElementById('dots')!;
+  const guideRows = Array.from(document.querySelectorAll<HTMLElement>('.center-guide__row'));
+
+  let answers: EnnAnswers = Array(N).fill(null);
+  let idx = 0;
+
+  // ---- 答题视图 ----
+  function renderStatement() {
+    const s = STATEMENTS[idx];
+    qNo.textContent = `第 ${idx + 1} / ${N} 条`;
+    const c = CENTER_OF[s.no];
+    qDim.textContent = CENTERS[c].label.split(' · ')[0];
+    qDim.classList.remove('hidden');
+    qText.textContent = s.text;
+    rateBtns.forEach((el) => {
+      el.classList.remove('rate'); void el.offsetWidth; el.classList.add('rate'); // 重播动画
+    });
+    prevBtn.disabled = idx === 0;
+    progressFill.style.width = `${(answers.filter((a) => a !== null).length / N) * 100}%`;
+    guideRows.forEach((r) => r.classList.toggle('hot', r.dataset.center === c));
+    renderDots();
+  }
+
+  function renderDots() {
+    dotsBox.innerHTML = '';
+    STATEMENTS.forEach((_, i) => {
+      const d = document.createElement('button');
+      d.className = 'dot' + (answers[i] !== null ? ' done' : '') + (i === idx ? ' cur' : '');
+      d.title = `第 ${i + 1} 条`;
+      if (answers[i] !== null) d.addEventListener('click', () => { idx = i; renderStatement(); });
+      else d.disabled = true;
+      dotsBox.appendChild(d);
+    });
+  }
+
+  function rate(r: Rating) {
+    answers[idx] = r;
+    if (idx === N - 1) finish();
+    else { idx++; renderStatement(); }
+  }
+
+  function prev() {
+    if (idx > 0) { idx--; renderStatement(); }
+  }
+
+  rateBtns.forEach((btn) => btn.addEventListener('click', () => rate(Number(btn.dataset.rate) as Rating)));
+  prevBtn.addEventListener('click', prev);
+
+  document.addEventListener('keydown', (e) => {
+    if (resultView.offsetParent !== null) return;
+    const r = Number(e.key);
+    if (r >= 1 && r <= 5) rate(r as Rating);
+    else if (e.key === 'ArrowLeft') prev();
+  });
+
+  // ---- 结果视图 ----
+  const el = (id: string) => document.getElementById(id)!;
+
+  /** 九型全谱：按分数降序，主型/并列/翼标记 */
+  function spectrumHTML(res: EnnResult): string {
+    const wingNo = res.wing?.type.no;
+    const tieNos = new Set(res.tiedWith.map((t) => t.no));
+    return [...res.scores]
+      .sort((a, b) => b.raw - a.raw)
+      .map((s) => {
+        const isMain = s.no === res.main.no;
+        const isTie = tieNos.has(s.no);
+        const isWing = !!res.wing && s.no === wingNo && !isMain && !isTie;
+        const mark = isMain ? '主型' : isTie ? '并列' : isWing ? '翼' : '';
+        const t = typeByNo(s.no);
+        // 条长与百分比同基准（归一化），仅留 2% 最小可视
+        const w = Math.max(2, s.pct);
+        return `
+          <div class="spec-row ${isMain ? 'is-main' : ''} ${isTie ? 'is-tie' : ''}">
+            <span class="spec-row__name"><b>${s.no}</b>${t.name}${mark ? `<span class="spec-row__mark">${mark}</span>` : ''}</span>
+            <div class="spec-bar"><i class="spec-fill" style="width:${w}%"></i></div>
+            <span class="spec-pct">${s.pct}%</span>
+          </div>`;
+      })
+      .join('');
+  }
+
+  function wingLabel(res: EnnResult): string {
+    if (!res.wing) return '';
+    const t = res.main;
+    if (res.wing.both) {
+      const [a, b] = wingsOf(t.no);
+      return `双翼 ${t.no}w${a} · ${t.no}w${b}`;
+    }
+    return `翼 ${res.wing.type.name}（${t.no}w${res.wing.type.no}）`;
+  }
+
+  function renderResult(res: EnnResult) {
+    const t = res.main;
+    el('r-code').textContent = CN_NO[t.no];
+    el('r-name').textContent = t.name;
+    el('r-alias').textContent = `${t.no} 号 · ${t.alias} · 九型图鉴`;
+    el('r-center').textContent = CENTERS[t.center].label;
+    el('r-wing').textContent = wingLabel(res);
+    el('r-fear').textContent = t.fear;
+    el('r-desire').textContent = t.desire;
+    el('r-motto').textContent = t.motto;
+    const tied = el('r-tied');
+    if (res.tiedWith.length) {
+      tied.classList.remove('hidden');
+      tied.textContent = `与「${res.tiedWith.map((x) => `${CN_NO[x.no]} ${x.name}`).join('、')}」同分并列——两型图鉴都值得一读，哪个让你心里一沉，哪个就是。`;
+    } else tied.classList.add('hidden');
+    el('r-spectrum').innerHTML = spectrumHTML(res);
+    el('r-summary').textContent = t.summary;
+    el('r-traits').innerHTML = t.traits.map((x) => `<li>${x}</li>`).join('');
+    el('r-strengths').innerHTML = t.strengths.map((x) => `<li>${x}</li>`).join('');
+    el('r-blinds').innerHTML = t.blindSpots.map((x) => `<li>${x}</li>`).join('');
+    el('r-careers').textContent = t.careers;
+    el('r-relations').textContent = t.relations;
+    el('r-growth').textContent = `成长 ▸ ${t.growth}`;
+    el('r-stress').textContent = `压力 ▸ ${t.stress}`;
+    quizView.classList.add('hidden');
+    resultView.classList.remove('hidden');
+    resultView.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function finish() {
+    const res = scoreEnn(answers);
+    if (!res) { toast('还有陈述未作答'); return; }
+    store.set(KEY, { answers, main: res.main.no });
+    renderResult(res);
+  }
+
+  document.getElementById('restart')!.addEventListener('click', () => {
+    answers = Array(N).fill(null);
+    idx = 0;
+    resultView.classList.add('hidden');
+    quizView.classList.remove('hidden');
+    renderStatement();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  document.getElementById('review')!.addEventListener('click', () => {
+    const firstBlank = answers.findIndex((a) => a === null);
+    idx = firstBlank >= 0 ? firstBlank : N - 1;
+    resultView.classList.add('hidden');
+    quizView.classList.remove('hidden');
+    renderStatement();
+  });
+
+  // ---- 载入上次结果 ----
+  interface Saved { answers: EnnAnswers; main: number }
+  const saved = store.get<Saved | null>(KEY, null);
+  if (saved?.answers?.length === N) {
+    const res = scoreEnn(saved.answers);
+    if (res && res.main.no === saved.main) {
+      answers = saved.answers;
+      renderResult(res);
+      toast('已载入上次测试结果，可点「重测一次」重来');
+    }
+  }
+
+  if (resultView.classList.contains('hidden')) renderStatement();
+</script>

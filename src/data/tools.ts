@@ -28,6 +28,7 @@ export const TOOLS: Tool[] = [
   { key: 'asakusa', name: '浅草观音寺抽签', desc: '观音灵签一百首，签文与解曰全本地化，摇签筒求一支今日运。', icon: '籤', category: 'classic', since: '2024-07', featured: true },
   { key: 'randomrole', name: '角色随机分配器', desc: '剧本杀选择困难症专用。角色库记忆、狼人杀模板、结果卡片。', icon: '角', category: 'classic', since: '2024-07' },
   { key: 'mbti', name: '人格四维快测', desc: '三十六题 MBTI 式快测：四维倾向强度、十六型人格图鉴，全本地作答，结果不出浏览器。', icon: '格', category: 'classic', since: '2026-11' },
+  { key: 'enneagram', name: '九型人格快测', desc: '三十六条陈述五档打分：主型、翼型、成长与压力箭头、九型全谱，图鉴全本地。', icon: '九', category: 'classic', since: '2026-11' },
   { key: 'snake', name: '贪食蛇', desc: '速度渐进、滑动手势、最高分记忆。别咬到自己。', icon: '蛇', category: 'classic', since: '2024-07' },
   { key: 'mine', name: '扫雷', desc: '首击必安全，三档难度，双击快开，长按插旗，最佳时间。', icon: '雷', category: 'classic', since: '2024-07' },
   { key: 'mermaid', name: 'Mermaid 图表', desc: '左右分栏实时渲染，PNG/SVG 导出，语法错误行内提示。', icon: '圖', category: 'classic', since: '2024-07' },
