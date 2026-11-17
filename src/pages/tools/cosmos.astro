@@ -55,6 +55,7 @@ import Base from '../../layouts/Base.astro';
         <label class="beauty__row"><span>辉光</span><input type="range" id="be-bloom" min="0" max="1.6" step="0.05" value="1"><b>1.00×</b></label>
         <label class="beauty__row"><span>Halo</span><input type="range" id="be-halo" min="0" max="1.5" step="0.05" value="1"><b>1.00×</b></label>
         <label class="beauty__row"><span>大气</span><input type="range" id="be-atmo" min="0.4" max="1.6" step="0.05" value="1"><b>1.00×</b></label>
+        <label class="beauty__row"><span>银河</span><input type="range" id="be-milky" min="0" max="1.5" step="0.05" value="1"><b>1.00×</b></label>
         <p class="beauty__tune">动</p>
         <label class="beauty__row"><span>转速</span><input type="range" id="be-spin" min="0" max="5" step="0.1" value="1"><b>1.0×</b></label>
         <p class="beauty__tune">示</p>
@@ -529,11 +530,11 @@ import Base from '../../layouts/Base.astro';
   const beautyPanel = document.getElementById('beauty')!;
   const labelsEl = document.getElementById('labels')!;
   const beautyState: CosmosBeauty & { labels: boolean; belt: boolean; orbits: boolean } = {
-    sun: 1, bloom: 1, halo: 1, atmo: 1, spin: 1, labels: true, belt: true, orbits: true,
+    sun: 1, bloom: 1, halo: 1, atmo: 1, spin: 1, milky: 1, labels: true, belt: true, orbits: true,
   };
   const sliderMap: [string, keyof CosmosBeauty][] = [
     ['be-sun', 'sun'], ['be-bloom', 'bloom'], ['be-halo', 'halo'],
-    ['be-atmo', 'atmo'], ['be-spin', 'spin'],
+    ['be-atmo', 'atmo'], ['be-milky', 'milky'], ['be-spin', 'spin'],
   ];
   btnBeauty.addEventListener('click', () => {
     const show = beautyPanel.hidden;
@@ -579,7 +580,7 @@ import Base from '../../layouts/Base.astro';
     } catch { /* 私隐模式 */ }
     handle.setBeauty({
       sun: beautyState.sun, bloom: beautyState.bloom, halo: beautyState.halo,
-      atmo: beautyState.atmo, spin: beautyState.spin,
+      atmo: beautyState.atmo, spin: beautyState.spin, milky: beautyState.milky,
     });
     handle.setBeltVisible(beautyState.belt);
     handle.setOrbitsVisible(beautyState.orbits);

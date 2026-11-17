@@ -77,6 +77,7 @@ export interface CosmosBeauty {
   halo: number;   // 行星 Halo 路标强度（0 = 关）
   atmo: number;   // 大气边缘散射亮度
   spin: number;   // 星球自转/云层/碎石带公转速率（0 = 停）
+  milky: number;  // 银河带亮度（天球/英雄星云/粒子带同吃）
 }
 
 export interface CosmosOptions extends CosmosEvents {
@@ -472,21 +473,22 @@ function milkyWayTexture(): THREE.Texture {
     const lat = (0.5 - py / H) * Math.PI;
     for (let px = 0; px < W; px++) {
       const lon = (px / W) * Math.PI * 2;
-      // 银纬高斯带 + 沿带密度起伏（圆域采样保证经度无缝）
+      // 银纬高斯带 + 沿带密度起伏（圆域采样保证经度无缝）——柔化档：
+      // 对比收敛、银心不再炸亮、暗隙只是隐约的纹
       const clump = wrapped(lon, lat, 2.6, 5.5);
-      const sigma = 0.11 + 0.06 * Math.exp(-(lon * lon) / 1.2);
-      let b = Math.exp(-(lat * lat) / (sigma * sigma)) * (0.35 + 0.85 * clump);
+      const sigma = 0.12 + 0.05 * Math.exp(-(lon * lon) / 1.2);
+      let b = Math.exp(-(lat * lat) / (sigma * sigma)) * (0.45 + 0.6 * clump);
       // 银心方向（经度 0）增亮成核球
       const core = Math.exp(-(lon * lon + lat * lat * 6) / 0.5);
-      b *= 1 + core * 2.4;
+      b *= 1 + core * 1.3;
       // 尘埃暗隙：贴着带中心的一串暗纹（真实银河的大暗隙）
       const rift = Math.max(0, Math.exp(-(lat * lat) / 0.006) * wrapped(lon, lat, 4.2, 16, 3) - 0.42);
-      b *= Math.max(0.08, 1 - rift * 1.5);
+      b *= Math.max(0.15, 1 - rift * 1.0);
       // 恒星形成区：带内稀疏的粉色结
       const knot = Math.max(0, wrapped(lon + 2.2, lat, 7.5, 22, 3) - 0.74) * Math.exp(-(lat * lat) / 0.02);
-      const r = Math.min(1, b * 0.62 + core * 0.5) * 255;
-      const gg = Math.min(1, b * 0.68 + core * 0.46) * 255;
-      const bl = Math.min(1, b * 0.92 + core * 0.3) * 255;
+      const r = Math.min(1, b * 0.52 + core * 0.4) * 255;
+      const gg = Math.min(1, b * 0.57 + core * 0.38) * 255;
+      const bl = Math.min(1, b * 0.8 + core * 0.26) * 255;
       const o = (py * W + px) * 4;
       img.data[o] = r + knot * 260;
       img.data[o + 1] = gg + knot * 150;
@@ -721,12 +723,15 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
   scene.add(sunLight);
 
   // ---- 美观参数（「美」面板实时写这里） ----
-  const beauty: CosmosBeauty = { sun: 1, bloom: 1, halo: 1, atmo: 1, spin: 1 };
+  const beauty: CosmosBeauty = { sun: 1, bloom: 1, halo: 1, atmo: 1, spin: 1, milky: 1 };
 
   // ---- 星野：双层恒星 + 光谱色 + 亮星衍射十字 + 银河带 + 星云 ----
   const skyRng = rng(42);
   const sky = new THREE.Group();
   scene.add(sky);
+  let milkySkyMat: THREE.MeshBasicMaterial | null = null; // 「银河」滑杆的旋钮（hi）
+  const heroNebulas: THREE.Sprite[] = [];                 // 同上（英雄星云）
+  let bandMilkyU: { value: number } | null = null;        // 同上（粒子带 uniform，作用域提升）
   {
     const mkStars = (count: number, rMin: number, rMax: number, size: number, tint: [number, number, number]) => {
       const pos = new Float32Array(count * 3);
@@ -803,20 +808,27 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     mkFlares(30, 44, 0.78, 2400);  // 次级群星
     mkFlares(46, 26, 0.55, 2200);  // 群星背景耀斑
 
-    // 银河带：低配用粒子近似；hi 档由「银河天球」接管（见下）
-    const bandN = hi ? 2200 : 2200;
+    // 银河真实取向（天球/粒子带/星云/雾霭共用同一姿态——不许再出现两条银河）
+    const gPole = radecToScene(192.8595, 27.1284);  // 银北极
+    const gCenter = radecToScene(266.405, -28.936); // 银心（人马座）
+    const gQ1 = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), gPole);
+    const gC1 = new THREE.Vector3(-1, 0, 0).applyQuaternion(gQ1);
+    const gAng = Math.atan2(new THREE.Vector3().crossVectors(gC1, gCenter).dot(gPole), gC1.dot(gCenter));
+    const galacticQuat = new THREE.Quaternion().setFromAxisAngle(gPole, gAng).multiply(gQ1);
+
+    // 银河带粒子：贴着真实银道面的微光尘埃（hi 档作天球的视差点缀，低配当主角）
+    const bandN = hi ? 1100 : 2200;
     const bpos = new Float32Array(bandN * 3);
     const bseed = new Float32Array(bandN);
-    const bandTilt = 1.05;
     for (let i = 0; i < bandN; i++) {
       const a = skyRng() * Math.PI * 2;
       const spread = (skyRng() + skyRng() + skyRng() - 1.5) * 0.2;
       const dust = skyRng() < 0.28; // 尘埃裂隙
       const R = range(skyRng, 2400, 3200);
-      const x = Math.cos(a), y = spread * (dust ? 0.5 : 1), z = Math.sin(a);
-      const y2 = y * Math.cos(bandTilt) - z * Math.sin(bandTilt);
-      const z2 = y * Math.sin(bandTilt) + z * Math.cos(bandTilt);
-      bpos[i * 3] = x * R; bpos[i * 3 + 1] = y2 * R; bpos[i * 3 + 2] = z2 * R;
+      const y = spread * (dust ? 0.5 : 1) * 0.35;
+      bpos[i * 3] = Math.cos(a) * R;
+      bpos[i * 3 + 1] = y * R;
+      bpos[i * 3 + 2] = Math.sin(a) * R;
       bseed[i] = dust ? skyRng() * 0.15 : 0.35 + skyRng() * 0.65;
     }
     const bgeo = new THREE.BufferGeometry();
@@ -824,7 +836,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     bgeo.setAttribute('aSeed', new THREE.BufferAttribute(bseed, 1));
     const bandMat = new THREE.ShaderMaterial({
       transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
-      uniforms: { uPx: { value: DPR * 620 } },
+      uniforms: { uPx: { value: DPR * 620 }, uMilky: { value: 1 } },
       vertexShader: /* glsl */ `
         uniform float uPx;
         attribute float aSeed;
@@ -837,26 +849,29 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
         }
       `,
       fragmentShader: /* glsl */ `
+        uniform float uMilky;
         varying float vA;
         void main() {
           vec2 d = gl_PointCoord - 0.5;
           float m = smoothstep(0.5, 0.05, length(d));
-          gl_FragColor = vec4(vec3(0.68, 0.73, 0.92), vA * m * 3.0);
+          gl_FragColor = vec4(vec3(0.68, 0.73, 0.92), vA * m * 2.0 * uMilky);
         }
       `,
     });
-    sky.add(new THREE.Points(bgeo, bandMat));
+    const bandGroupSky = new THREE.Group();
+    bandGroupSky.quaternion.copy(galacticQuat);
+    bandGroupSky.add(new THREE.Points(bgeo, bandMat));
+    sky.add(bandGroupSky);
+    bandMilkyU = bandMat.uniforms.uMilky;
 
-    // 银河雾霭：低配沿带铺几片大尺度低透明辉光（hi 由银河天球接管）
+    // 银河雾霭：低配沿真实银道面铺几片大尺度低透明辉光（hi 由银河天球接管）
     for (let i = 0; i < (hi ? 0 : 5); i++) {
-      const a = (i / 5) * Math.PI * 2 + 0.9;
-      const y2 = Math.sin(a) * Math.sin(1.05);
-      const z2 = Math.sin(a) * Math.cos(1.05);
       const sp = new THREE.Sprite(new THREE.SpriteMaterial({
         map: glowTextureRGB('rgba(150,165,205,0.10)', 'rgba(70,84,130,0.035)'),
         blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.85,
       }));
-      sp.position.set(Math.cos(a) * 2900, y2 * 2900, z2 * 2900);
+      const a = (i / 5) * Math.PI * 2 + 0.9;
+      sp.position.set(Math.cos(a) * 2900, 0, Math.sin(a) * 2900).applyQuaternion(galacticQuat);
       sp.scale.set(range(skyRng, 1200, 1700), range(skyRng, 700, 950), 1);
       sky.add(sp);
     }
@@ -883,13 +898,12 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
       };
       const sp = new THREE.Sprite(new THREE.SpriteMaterial({
         map: hero ? heroNebulaTexture(heroPairs[i][0], heroPairs[i][1], 900 + i) : glowTextureRGB(inner, outer),
-        blending: THREE.AdditiveBlending, depthWrite: false, opacity: hero ? 0.8 : 0.92,
+        blending: THREE.AdditiveBlending, depthWrite: false, opacity: hero ? 0.55 : 0.8,
       }));
       const a = (i / nebulaColors.length) * Math.PI * 2 + 0.35;
-      const y2 = Math.sin(a) * Math.sin(1.05);
-      const z2 = Math.sin(a) * Math.cos(1.05);
-      sp.position.set(Math.cos(a) * 3100, y2 * 3100, z2 * 3100);
-      sp.scale.setScalar(hero ? range(skyRng, 1250, 1750) : range(skyRng, 520, 840));
+      sp.position.set(Math.cos(a) * 3100, 0, Math.sin(a) * 3100).applyQuaternion(galacticQuat);
+      sp.scale.setScalar(hero ? range(skyRng, 820, 1150) : range(skyRng, 520, 840));
+      if (hero) heroNebulas.push(sp);
       sky.add(sp);
     });
 
@@ -916,22 +930,14 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
       })));
     }
 
-    // 银河天球（hi）：真实银道面取向 + 尘埃暗隙 + 银心核球
+    // 银河天球（hi）：柔化后的整幅银河（姿态与粒子带/星云同源）
     if (hi) {
-      const pole = radecToScene(192.8595, 27.1284);   // 银北极
-      const gc = radecToScene(266.405, -28.936);      // 银心（人马座）
-      const skySphere = new THREE.Mesh(
-        new THREE.SphereGeometry(5400, 64, 40),
-        new THREE.MeshBasicMaterial({
-          map: milkyWayTexture(), side: THREE.BackSide,
-          blending: THREE.AdditiveBlending, depthWrite: false, transparent: true,
-        }),
-      );
-      // 贴图银心画在经度 0（球面局部 -X 方向）→ 用两步旋转对齐真实银道与银心
-      const q1 = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), pole);
-      const c1 = new THREE.Vector3(-1, 0, 0).applyQuaternion(q1);
-      const ang = Math.atan2(new THREE.Vector3().crossVectors(c1, gc).dot(pole), c1.dot(gc));
-      skySphere.quaternion.copy(new THREE.Quaternion().setFromAxisAngle(pole, ang).multiply(q1));
+      milkySkyMat = new THREE.MeshBasicMaterial({
+        map: milkyWayTexture(), side: THREE.BackSide,
+        blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.62,
+      });
+      const skySphere = new THREE.Mesh(new THREE.SphereGeometry(5400, 64, 40), milkySkyMat);
+      skySphere.quaternion.copy(galacticQuat);
       skySphere.renderOrder = -10;
       sky.add(skySphere);
     }
@@ -2123,6 +2129,8 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     Object.assign(beauty, p);
     for (const h of haloSprites) h.material.opacity = 0.11 * beauty.halo;
     for (const m of atmoMats) m.uniforms.uBoost.value = beauty.atmo;
+    if (milkySkyMat) milkySkyMat.opacity = 0.62 * beauty.milky;
+    for (const n of heroNebulas) n.material.opacity = 0.55 * beauty.milky;
   }
   function setBeltVisible(v: boolean) {
     beltGroup.visible = v;
@@ -2764,6 +2772,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     const distSun = camera.position.length(); // 太阳在原点
     grade.uniforms.uZone.value = THREE.MathUtils.smoothstep(distSun, 90, 320); // 内暖外冷
     zodiacalMat.uniforms.uIntensity.value = 0.32 * (0.4 + 0.6 * beauty.sun);
+    if (bandMilkyU) bandMilkyU.value = (hi ? 0.8 : 1) * beauty.milky; // 粒子带随银河滑杆
     // 远眺时轨道线淡出：剧场结尾只剩星与尘，示意图线不抢戏
     {
       const orbitFade = 1 - THREE.MathUtils.smoothstep(distSun, 700, 1900);
