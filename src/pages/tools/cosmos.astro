@@ -30,7 +30,21 @@ import Base from '../../layouts/Base.astro';
         <button class="hud__btn" id="btn-sound" aria-pressed="false" title="环境音">音 · 关</button>
         <button class="hud__btn" id="btn-cinema" aria-pressed="false" title="屏保模式：隐藏全部界面（H 键）">屏</button>
         <button class="hud__btn" id="btn-tour" aria-pressed="false" title="巡航模式：自动逐站漫游太阳系（任意手动操作即退出）">巡航</button>
+        <button class="hud__btn" id="btn-beauty" aria-pressed="false" title="美观调节：光晕 / 转速 / 显示项">美</button>
         <button class="hud__btn" id="btn-full" title="全屏">⛶ 全屏</button>
+      </div>
+
+      <div class="beauty" id="beauty" hidden>
+        <p class="beauty__tune">光</p>
+        <label class="beauty__row"><span>太阳光</span><input type="range" id="be-sun" min="0.4" max="2" step="0.05" value="1"><b>1.00×</b></label>
+        <label class="beauty__row"><span>辉光</span><input type="range" id="be-bloom" min="0" max="1.6" step="0.05" value="1"><b>1.00×</b></label>
+        <label class="beauty__row"><span>Halo</span><input type="range" id="be-halo" min="0" max="1.5" step="0.05" value="1"><b>1.00×</b></label>
+        <label class="beauty__row"><span>大气</span><input type="range" id="be-atmo" min="0.4" max="1.6" step="0.05" value="1"><b>1.00×</b></label>
+        <p class="beauty__tune">动</p>
+        <label class="beauty__row"><span>转速</span><input type="range" id="be-spin" min="0" max="5" step="0.1" value="1"><b>1.0×</b></label>
+        <p class="beauty__tune">示</p>
+        <label class="beauty__row check"><span>天体文字</span><input type="checkbox" id="be-labels" checked></label>
+        <label class="beauty__row check"><span>碎石带</span><input type="checkbox" id="be-belt" checked></label>
       </div>
 
       <!-- 行星导航坞 -->
@@ -183,6 +197,50 @@ import Base from '../../layouts/Base.astro';
   }
   .hud__btn:hover { border-color: rgba(232, 56, 79, 0.7); color: #fff; }
   .hud__btn[aria-pressed='true'] { border-color: var(--red); color: #ff8a97; }
+
+  .beauty {
+    position: absolute; top: 64px; right: 20px; z-index: 14;
+    width: 216px; padding: 14px 16px 10px;
+    background: rgba(8, 10, 18, 0.72);
+    border: 1px solid rgba(232, 236, 244, 0.14);
+    border-radius: 14px;
+    backdrop-filter: blur(14px);
+    pointer-events: auto;
+  }
+  .beauty__tune {
+    margin: 4px 0 8px; font-size: 0.62rem; letter-spacing: 0.42em;
+    color: rgba(255, 217, 160, 0.72);
+  }
+  .beauty__row {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 9px;
+    font-size: 0.78rem; color: rgba(232, 236, 244, 0.82);
+  }
+  .beauty__row span { flex: 0 0 52px; }
+  .beauty__row b {
+    flex: 0 0 44px; text-align: right;
+    font-family: var(--font-mono); font-size: 0.68rem; font-weight: 400;
+    color: rgba(255, 217, 160, 0.9); font-variant-numeric: tabular-nums;
+  }
+  .beauty__row input[type='range'] {
+    flex: 1; height: 3px; appearance: none; -webkit-appearance: none;
+    background: linear-gradient(90deg, rgba(255, 200, 120, 0.5), rgba(232, 236, 244, 0.18));
+    border-radius: 2px; outline: none; cursor: pointer;
+  }
+  .beauty__row input[type='range']::-webkit-slider-thumb {
+    appearance: none; -webkit-appearance: none;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: #ffd9a0; border: 1px solid rgba(0, 0, 0, 0.4);
+    box-shadow: 0 0 8px rgba(255, 200, 120, 0.6);
+  }
+  .beauty__row input[type='range']::-moz-range-thumb {
+    width: 12px; height: 12px; border-radius: 50%; border: none;
+    background: #ffd9a0; box-shadow: 0 0 8px rgba(255, 200, 120, 0.6);
+  }
+  .beauty__row.check { justify-content: space-between; }
+  .beauty__row.check span { flex: none; }
+  .beauty__row input[type='checkbox'] {
+    width: 15px; height: 15px; accent-color: #e8384f; cursor: pointer;
+  }
 
   /* 行星导航坞 */
   .hud__dock {
@@ -337,7 +395,7 @@ import Base from '../../layouts/Base.astro';
 </style>
 
 <script>
-  import { createCosmos, type CosmosTick } from '../../scripts/cosmos-scene';
+  import { createCosmos, type CosmosTick, type CosmosBeauty } from '../../scripts/cosmos-scene';
   import { CosmosAudio } from '../../scripts/cosmos-audio';
   import { PLANETS, SUN, MOON, byKey, fmtDist, TIME_LABELS } from '../../scripts/cosmos-core';
 
@@ -381,6 +439,69 @@ import Base from '../../layouts/Base.astro';
     handle.setTour(tourOn);
     syncTourButton();
   });
+
+  // ---- 美观调节面板：滑杆实时生效，设置本地留存 ----
+  const BEAUTY_STORE = 'opt-cosmos-beauty';
+  const btnBeauty = document.getElementById('btn-beauty') as HTMLButtonElement;
+  const beautyPanel = document.getElementById('beauty')!;
+  const labelsEl = document.getElementById('labels')!;
+  const beautyState: CosmosBeauty & { labels: boolean; belt: boolean } = {
+    sun: 1, bloom: 1, halo: 1, atmo: 1, spin: 1, labels: true, belt: true,
+  };
+  const sliderMap: [string, keyof CosmosBeauty][] = [
+    ['be-sun', 'sun'], ['be-bloom', 'bloom'], ['be-halo', 'halo'],
+    ['be-atmo', 'atmo'], ['be-spin', 'spin'],
+  ];
+  btnBeauty.addEventListener('click', () => {
+    const show = beautyPanel.hidden;
+    beautyPanel.hidden = !show;
+    btnBeauty.setAttribute('aria-pressed', String(show));
+  });
+  function saveBeauty() {
+    try { localStorage.setItem(BEAUTY_STORE, JSON.stringify(beautyState)); } catch { /* 私隐模式 */ }
+  }
+  for (const [id, key] of sliderMap) {
+    const input = document.getElementById(id) as HTMLInputElement;
+    const readout = input.parentElement!.querySelector('b')!;
+    input.addEventListener('input', () => {
+      beautyState[key] = Number(input.value);
+      readout.textContent = `${beautyState[key].toFixed(key === 'spin' ? 1 : 2)}×`;
+      handle?.setBeauty({ [key]: beautyState[key] });
+      saveBeauty();
+    });
+  }
+  const beLabels = document.getElementById('be-labels') as HTMLInputElement;
+  const beBelt = document.getElementById('be-belt') as HTMLInputElement;
+  beLabels.addEventListener('change', () => {
+    beautyState.labels = beLabels.checked;
+    labelsEl.style.display = beLabels.checked ? '' : 'none';
+    saveBeauty();
+  });
+  beBelt.addEventListener('change', () => {
+    beautyState.belt = beBelt.checked;
+    handle?.setBeltVisible(beBelt.checked);
+    saveBeauty();
+  });
+  function restoreBeauty() {
+    try {
+      const saved = JSON.parse(localStorage.getItem(BEAUTY_STORE) || 'null') as Partial<typeof beautyState> | null;
+      if (saved) Object.assign(beautyState, saved);
+    } catch { /* 私隐模式 */ }
+    handle.setBeauty({
+      sun: beautyState.sun, bloom: beautyState.bloom, halo: beautyState.halo,
+      atmo: beautyState.atmo, spin: beautyState.spin,
+    });
+    handle.setBeltVisible(beautyState.belt);
+    labelsEl.style.display = beautyState.labels ? '' : 'none';
+    for (const [id, key] of sliderMap) {
+      const input = document.getElementById(id) as HTMLInputElement;
+      input.value = String(beautyState[key]);
+      const readout = input.parentElement!.querySelector('b')!;
+      readout.textContent = `${beautyState[key].toFixed(key === 'spin' ? 1 : 2)}×`;
+    }
+    beLabels.checked = beautyState.labels;
+    beBelt.checked = beautyState.belt;
+  }
 
   // ---- 屏保模式：隐藏全部界面，纯净画面（H 键切换） ----
   function toggleCinema() {
@@ -541,6 +662,7 @@ import Base from '../../layouts/Base.astro';
       btnTime.addEventListener('click', () => {
         btnTime.textContent = TIME_LABELS[handle.cycleTime()];
       });
+      restoreBeauty();
     }
   } catch (err) {
     die(err instanceof Error ? `${err.message}` : String(err));

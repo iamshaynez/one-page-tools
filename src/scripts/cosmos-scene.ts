@@ -20,9 +20,13 @@
  *  · 调色：饱和/对比/冷暖分离（青影暖调）+ 色散 + 暗角 + 颗粒
  *  · 行星光环 halo：远处也能看见目的地的微光，漫游有了路标
  *  · 轨道线按行星着色提亮：太阳系的结构一眼可读
- *  · 彗星：高偏心掠日轨道 + 背阳粒子尾（演出时钟，独立于宇宙历）
+ *  · 彗星 ×3：不同倾角/周期的掠日轨道 + 背阳粒子尾（演出时钟，独立于宇宙历）
  *  · 曲速流光：高速航行时星流拉丝
+ *  · 流星雨：持续随机流星 + 每 20–50 秒一阵同辐射点流星雨
+ *  · 彩色星尘：相机周围的闪烁彩尘（青/紫/暖白，随航速增亮）
+ *  · 远方星系：几枚微小椭圆光斑，给深空再添纵深
  *  · 巡航模式：自动逐站漫游（月→内行星→太阳→外行星），任意手动操作退出
+ *  · 美观调节：太阳光/辉光/Halo/大气/转速实时可调（页面侧「美」面板）
  */
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
@@ -51,6 +55,15 @@ export interface CosmosTick {
   tour: boolean;            // 巡航模式进行中
 }
 
+/** 美观调节参数（「美」面板滑杆，实时生效，1 = 默认） */
+export interface CosmosBeauty {
+  sun: number;    // 太阳光亮度（点光源强度倍率）
+  bloom: number;  // 辉光强度（bloom 总倍率）
+  halo: number;   // 行星 Halo 路标强度（0 = 关）
+  atmo: number;   // 大气边缘散射亮度
+  spin: number;   // 星球自转/云层/碎石带公转速率（0 = 停）
+}
+
 export interface CosmosEvents {
   onTick?(t: CosmosTick): void;
   onReady?(): void;
@@ -64,6 +77,7 @@ export interface CosmosOptions extends CosmosEvents {
 }
 
 const EGG_STORE = 'opt-cosmos-eggs';
+const SUN_LIGHT_BASE = 190;   // 太阳点光基础强度（× beauty.sun）
 
 // ═══════════════════════════════════════════════════════════════
 // 程序化纹理（可平铺经度方向；颜色 + 高度同步生成）
@@ -514,8 +528,11 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
 
   // ---- 灯光 ----
   scene.add(new THREE.AmbientLight(0x28304a, 0.45));
-  const sunLight = new THREE.PointLight(0xfff0dd, 190, 0, 1);
+  const sunLight = new THREE.PointLight(0xfff0dd, SUN_LIGHT_BASE, 0, 1);
   scene.add(sunLight);
+
+  // ---- 美观参数（「美」面板实时写这里） ----
+  const beauty: CosmosBeauty = { sun: 1, bloom: 1, halo: 1, atmo: 1, spin: 1 };
 
   // ---- 星野：双层恒星 + 光谱色 + 亮星衍射十字 + 银河带 + 星云 ----
   const skyRng = rng(42);
@@ -680,6 +697,35 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
       sp.scale.setScalar(range(skyRng, 520, 840));
       sky.add(sp);
     });
+
+    // 远方星系：几枚微小的拉长光斑，深空再多一层纵深
+    {
+      const gals: [number, number][] = [
+        [0xf2e2c4, 1.0],   // 暖白椭圆星系
+        [0xc6d6f4, 0.72],  // 冷蓝盘星系（更扁）
+        [0xdcc8ee, 0.88],  // 淡紫
+      ];
+      const gTex = (tint: number) => canvasTex(96, 96, (g) => {
+        const grad = g.createRadialGradient(48, 48, 0, 48, 48, 48);
+        grad.addColorStop(0, 'rgba(255,255,255,0.95)');
+        grad.addColorStop(0.25, `rgba(${tint >> 16 & 255},${tint >> 8 & 255},${tint & 255},0.45)`);
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = grad;
+        g.fillRect(0, 0, 96, 96);
+      });
+      gals.forEach(([tint, elong], i) => {
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: gTex(tint), blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.6,
+        }));
+        const u = range(skyRng, -0.55, 0.55); // 远离银河带，散在高纬
+        const t = i * 2.3 + 0.7;
+        const s = Math.sqrt(1 - u * u);
+        sp.position.set(Math.cos(t) * s * 3350, u * 3350, Math.sin(t) * s * 3350);
+        sp.scale.set(range(skyRng, 90, 130), range(skyRng, 90, 130) * elong * 0.5, 1);
+        sp.material.rotation = range(skyRng, -0.6, 0.6);
+        sky.add(sp);
+      });
+    }
   }
 
   // ---- 太阳：细米粒光球着色器 + 日冕 + 耀斑十字 ----
@@ -746,6 +792,8 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     mercury: 0x9a948e, venus: 0xd9b77e, earth: 0x4f8fd9, mars: 0xc07a5a,
     jupiter: 0xd8b58a, saturn: 0xd9c9a5, uranus: 0x9fd4d9, neptune: 0x5478d2, pluto: 0xbfae9a,
   };
+  const haloSprites: THREE.Sprite[] = [];       // 「美」面板 halo 滑杆的旋钮
+  const atmoMats: THREE.ShaderMaterial[] = [];  // 「美」面板大气滑杆的旋钮
   const TEXROCK: Record<string, () => { map: THREE.Texture; bump: THREE.Texture }> = {
     mercury: () => rockyTextures(11, 0x8a8580, 0x55504b, { craters: 150 }),
     mars: () => rockyTextures(41, 0xb5613c, 0x7a3a24, { craters: 80, caps: 0.24, capColor: 0xf0ece6 }),
@@ -826,6 +874,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
         uniforms: {
           uColor: { value: new THREE.Color(atmoColor) },
           uSunDir: { value: new THREE.Vector3(1, 0, 0) },
+          uBoost: { value: 1 },
         },
         vertexShader: /* glsl */ `
           varying vec3 vWN; varying vec3 vWV;
@@ -837,7 +886,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
           }
         `,
         fragmentShader: /* glsl */ `
-          uniform vec3 uColor; uniform vec3 uSunDir;
+          uniform vec3 uColor; uniform vec3 uSunDir; uniform float uBoost;
           varying vec3 vWN; varying vec3 vWV;
           void main() {
             float rim = pow(1.0 - abs(dot(normalize(vWN), normalize(vWV))), 1.7);
@@ -848,10 +897,11 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
             // 晨昏线：更宽更亮的橙红散射带
             float term = 1.0 - abs(sun - 0.4) / 0.3;
             col += vec3(1.0, 0.38, 0.12) * clamp(term, 0.0, 1.0) * clamp(term, 0.0, 1.0) * 1.35;
-            gl_FragColor = vec4(col, rim * 0.85);
+            gl_FragColor = vec4(col * uBoost, rim * 0.85);
           }
         `,
       });
+      atmoMats.push(atmoMat);
       const atmo = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.06, SEG, SEG / 2), atmoMat);
       atmo.name = 'atmo';
       axis.add(atmo);
@@ -869,6 +919,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
       }));
       halo.scale.setScalar(radius * 2.4);
       group.add(halo);
+      haloSprites.push(halo);
     }
 
     // 地球：云层 + 月球
@@ -1050,87 +1101,156 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     scene.add(new THREE.Points(kgeo, kmat));
   }
 
-  // ---- 彗星：高偏心掠日轨道 + 背阳粒子尾 ----
+  // ---- 彗星 ×3：不同倾角/周期的掠日轨道 + 背阳粒子尾 ----
   // 轨道根数走真实开普勒求解（复用行星同一套代码），但驱动用
   // 「演出时钟」（elapsed × 6 模拟日/秒）：宇宙历停在 6时/秒 档时，
-  // 彗星仍在天上缓缓赶路——它是这场漫游的演员，不是历法的一部分。
-  const COMET_SPEC: BodySpec = {
-    key: 'comet', name: '彗星', en: 'Comet', kind: 'dwarf',
-    radiusKm: 4, rotationHours: 100, tiltDeg: 0,
-    aAU: 2.4, e: 0.84, iDeg: 25, omDeg: 58, poDeg: 118, L0Deg: 118, // M0=0
-    periodDays: Math.pow(2.4, 1.5) * 365.25,
-    desc: '', facts: [],
-  };
-  const COMET_TAIL = hi ? 260 : 140;
-  const cometGroup = new THREE.Group();
-  scene.add(cometGroup);
-  const cometNucleus = new THREE.Mesh(
-    new THREE.SphereGeometry(0.2, 16, 12),
-    new THREE.MeshBasicMaterial({ color: 0xeaf6ff }),
-  );
-  cometGroup.add(cometNucleus);
-  const cometComa = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: glowTextureRGB('rgba(210,240,255,0.9)', 'rgba(90,180,200,0.25)'),
-    blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.85,
-  }));
-  cometGroup.add(cometComa);
-  const cometGeo = new THREE.BufferGeometry();
-  const cometPos = new Float32Array(COMET_TAIL * 3);
-  const cometCol = new Float32Array(COMET_TAIL * 3);
-  const cometJit: THREE.Vector3[] = [];
-  {
-    const cr = rng(777);
-    for (let i = 0; i < COMET_TAIL; i++) {
-      const j = new THREE.Vector3(cr() - 0.5, cr() - 0.5, cr() - 0.5).normalize()
-        .multiplyScalar(0.25 + Math.pow(cr(), 1.6) * 0.75);
-      cometJit.push(j);
-      const s = i / COMET_TAIL;
-      // 加性混合下颜色趋黑即透明：头白热 → 中段青蓝 → 尾熄灭
-      const r = Math.max(0, 1.0 - s * 1.1), g = Math.max(0, 0.96 - s * 0.55), b = Math.max(0, 0.9 - s * 0.3);
-      cometCol[i * 3] = r; cometCol[i * 3 + 1] = g; cometCol[i * 3 + 2] = b;
-    }
+  // 彗星仍在天上缓缓赶路——它们是这场漫游的演员，不是历法的一部分。
+  interface CometRig {
+    spec: BodySpec;
+    tail: number;
+    phase: number;                 // 演出时钟相位错开，三颗不会同时过近日点
+    nucleus: THREE.Mesh;
+    coma: THREE.Sprite;
+    pos: THREE.Vector3;
+    away: THREE.Vector3;
+    jit: THREE.Vector3[];
+    attr: THREE.BufferAttribute;
+    mat: THREE.PointsMaterial;
   }
-  cometGeo.setAttribute('position', new THREE.BufferAttribute(cometPos, 3));
-  cometGeo.setAttribute('color', new THREE.BufferAttribute(cometCol, 3));
-  const cometTail = new THREE.Points(cometGeo, new THREE.PointsMaterial({
-    size: 0.62, vertexColors: true, transparent: true, opacity: 0.9,
-    map: softDotTexture(),
-    blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
-  }));
-  cometTail.frustumCulled = false;
-  scene.add(cometTail);
-  const cometP = new THREE.Vector3();
-  const cometAway = new THREE.Vector3();
-  function updateComet(cometDays: number) {
-    const c = eclipticToScene(heliocentricAU(COMET_SPEC, cometDays));
-    cometP.set(c.x, c.y, c.z);
-    cometNucleus.position.copy(cometP);
-    const dSun = cometP.length();
-    cometAway.copy(cometP).multiplyScalar(1 / Math.max(dSun, 1e-6));
-    // 近日拉长、远日收束的尾巴
-    const L = Math.min(30, Math.max(2, 430 / dSun));
-    for (let i = 0; i < COMET_TAIL; i++) {
-      const s = Math.pow(i / COMET_TAIL, 0.85);
-      cometPos[i * 3] = cometP.x + cometAway.x * (s * L) + cometJit[i].x * (0.5 + s * 2.4);
-      cometPos[i * 3 + 1] = cometP.y + cometAway.y * (s * L) + cometJit[i].y * (0.5 + s * 2.4);
-      cometPos[i * 3 + 2] = cometP.z + cometAway.z * (s * L) + cometJit[i].z * (0.5 + s * 2.4);
+  const cometRigs: CometRig[] = [];
+  {
+    const defs: { a: number; e: number; i: number; om: number; po: number; tail: number }[] = [
+      { a: 2.4, e: 0.84, i: 25, om: 58, po: 118, tail: hi ? 260 : 140 },  // 主角：中等倾角
+      { a: 1.9, e: 0.78, i: 62, om: 205, po: 340, tail: hi ? 170 : 90 },  // 高倾角短周期
+      { a: 3.1, e: 0.87, i: 12, om: 310, po: 75, tail: hi ? 300 : 150 },  // 近掠日，尾巴最长
+    ];
+    defs.forEach((d, ci) => {
+      const spec: BodySpec = {
+        key: `comet${ci}`, name: '彗星', en: 'Comet', kind: 'dwarf',
+        radiusKm: 4, rotationHours: 100, tiltDeg: 0,
+        aAU: d.a, e: d.e, iDeg: d.i, omDeg: d.om, poDeg: d.po, L0Deg: d.po, // M0=0
+        periodDays: Math.pow(d.a, 1.5) * 365.25,
+        desc: '', facts: [],
+      };
+      const nucleus = new THREE.Mesh(
+        new THREE.SphereGeometry(0.2, 16, 12),
+        new THREE.MeshBasicMaterial({ color: 0xeaf6ff }),
+      );
+      scene.add(nucleus);
+      const coma = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: glowTextureRGB('rgba(210,240,255,0.9)', 'rgba(90,180,200,0.25)'),
+        blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.85,
+      }));
+      scene.add(coma);
+      const pos = new Float32Array(d.tail * 3);
+      const col = new Float32Array(d.tail * 3);
+      const jit: THREE.Vector3[] = [];
+      const cr = rng(777 + ci * 131);
+      for (let i = 0; i < d.tail; i++) {
+        jit.push(new THREE.Vector3(cr() - 0.5, cr() - 0.5, cr() - 0.5).normalize()
+          .multiplyScalar(0.25 + Math.pow(cr(), 1.6) * 0.75));
+        const s = i / d.tail;
+        // 加性混合下颜色趋黑即透明：头白热 → 中段青蓝 → 尾熄灭
+        col[i * 3] = Math.max(0, 1.0 - s * 1.1);
+        col[i * 3 + 1] = Math.max(0, 0.96 - s * 0.55);
+        col[i * 3 + 2] = Math.max(0, 0.9 - s * 0.3);
+      }
+      const geo = new THREE.BufferGeometry();
+      const attr = new THREE.BufferAttribute(pos, 3);
+      geo.setAttribute('position', attr);
+      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      const mat = new THREE.PointsMaterial({
+        size: 0.62, vertexColors: true, transparent: true, opacity: 0.9,
+        map: softDotTexture(),
+        blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
+      });
+      const tail = new THREE.Points(geo, mat);
+      tail.frustumCulled = false;
+      scene.add(tail);
+      cometRigs.push({
+        spec, tail: d.tail, phase: ci * 371, nucleus, coma,
+        pos: new THREE.Vector3(), away: new THREE.Vector3(), jit, attr, mat,
+      });
+    });
+  }
+  function updateComets(cometDays: number) {
+    for (const rig of cometRigs) {
+      const c = eclipticToScene(heliocentricAU(rig.spec, cometDays + rig.phase));
+      rig.pos.set(c.x, c.y, c.z);
+      rig.nucleus.position.copy(rig.pos);
+      const dSun = rig.pos.length();
+      rig.away.copy(rig.pos).multiplyScalar(1 / Math.max(dSun, 1e-6));
+      // 近日拉长、远日收束的尾巴
+      const L = Math.min(30, Math.max(2, 430 / dSun));
+      for (let i = 0; i < rig.tail; i++) {
+        const s = Math.pow(i / rig.tail, 0.85);
+        rig.attr.setXYZ(i,
+          rig.pos.x + rig.away.x * (s * L) + rig.jit[i].x * (0.5 + s * 2.4),
+          rig.pos.y + rig.away.y * (s * L) + rig.jit[i].y * (0.5 + s * 2.4),
+          rig.pos.z + rig.away.z * (s * L) + rig.jit[i].z * (0.5 + s * 2.4),
+        );
+      }
+      rig.attr.needsUpdate = true;
+      rig.coma.scale.setScalar(1.2 + L * 0.18);
+      rig.coma.position.copy(rig.pos);
     }
-    cometGeo.attributes.position.needsUpdate = true;
-    cometComa.scale.setScalar(1.2 + L * 0.18);
-    cometComa.position.copy(cometP);
   }
 
-  // ---- 宇宙尘：相机周围的包裹速度场 ----
-  const DUST = hi ? 420 : 220;
+  // ---- 彩色星尘：相机周围的包裹速度场（青/紫/暖白，各自呼吸闪烁） ----
+  const DUST = hi ? 460 : 240;
   const DUST_R = 130;
   const dustGeo = new THREE.BufferGeometry();
   const dustPos = new Float32Array(DUST * 3);
-  for (let i = 0; i < DUST * 3; i++) dustPos[i] = (Math.random() - 0.5) * 2 * DUST_R;
+  const dustSeed = new Float32Array(DUST);
+  const dustCol = new Float32Array(DUST * 3);
+  {
+    const palette = [
+      [0.62, 0.82, 1.0],   // 冰青
+      [0.78, 0.68, 1.0],   // 星紫
+      [1.0, 0.9, 0.72],    // 暖白
+      [0.62, 1.0, 0.9],    // 薄荷
+    ];
+    for (let i = 0; i < DUST; i++) {
+      dustPos[i * 3] = (Math.random() - 0.5) * 2 * DUST_R;
+      dustPos[i * 3 + 1] = (Math.random() - 0.5) * 2 * DUST_R;
+      dustPos[i * 3 + 2] = (Math.random() - 0.5) * 2 * DUST_R;
+      dustSeed[i] = Math.random();
+      const c = palette[Math.floor(Math.random() * palette.length)];
+      dustCol[i * 3] = c[0]; dustCol[i * 3 + 1] = c[1]; dustCol[i * 3 + 2] = c[2];
+    }
+  }
   dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
-  const dustMat = new THREE.PointsMaterial({
-    color: 0x9aa8c0, size: 0.09, transparent: true, opacity: 0.32,
-    map: softDotTexture(),
-    blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
+  dustGeo.setAttribute('aSeed', new THREE.BufferAttribute(dustSeed, 1));
+  dustGeo.setAttribute('aColor', new THREE.BufferAttribute(dustCol, 3));
+  const dustMat = new THREE.ShaderMaterial({
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+    uniforms: {
+      uTime: { value: 0 },
+      uAlpha: { value: 0.14 },
+      uPx: { value: 90 },
+    },
+    vertexShader: /* glsl */ `
+      uniform float uTime, uPx;
+      attribute float aSeed;
+      attribute vec3 aColor;
+      varying float vA; varying vec3 vC;
+      void main() {
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vC = aColor;
+        vA = 0.35 + 0.65 * (0.5 + 0.5 * sin(uTime * (0.9 + aSeed * 2.2) + aSeed * 96.0));
+        gl_PointSize = (0.6 + aSeed * 1.1) * uPx / max(-mv.z, 1.0);
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uAlpha;
+      varying float vA; varying vec3 vC;
+      void main() {
+        vec2 d = gl_PointCoord - 0.5;
+        float m = smoothstep(0.5, 0.08, length(d));
+        gl_FragColor = vec4(vC * 1.35, vA * m * uAlpha * 2.6);
+      }
+    `,
   });
   const dust = new THREE.Points(dustGeo, dustMat);
   dust.frustumCulled = false;
@@ -1184,11 +1304,16 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     warpGeo.attributes.position.needsUpdate = true;
   }
 
-  // ---- 流星池（渐变尾迹） ----
+  // ---- 流星池（渐变尾迹）+ 阵发流星雨 ----
   interface Meteor { line: THREE.Line; head: THREE.Sprite; vel: THREE.Vector3; life: number; total: number }
   const meteors: Meteor[] = [];
-  let meteorTimer = 1.5;
-  function spawnMeteor(big = false) {
+  let meteorTimer = 1.2;
+  // 流星雨：每 20–50 秒一阵，从同一辐射点成群划过（真实流星雨的观感）
+  let showerTimer = 14 + Math.random() * 16;
+  let showerQueue = 0;
+  let showerTick = 0;
+  const showerRadial = new THREE.Vector3();
+  function spawnMeteor(big = false, dirOverride?: THREE.Vector3) {
     const r = 60 + Math.random() * 90;
     const a = Math.random() * Math.PI * 2;
     const b = Math.acos(Math.random() * 2 - 1);
@@ -1197,23 +1322,23 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
       camera.position.y + r * Math.cos(b),
       camera.position.z + r * Math.sin(b) * Math.sin(a),
     );
-    const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
-    const speed = big ? 130 : 70 + Math.random() * 50;
-    const total = big ? 2.2 : 1.1 + Math.random() * 0.7;
+    const dir = (dirOverride ?? new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5)).normalize();
+    const speed = big ? 150 : 85 + Math.random() * 70;
+    const total = big ? 2.8 : 1.4 + Math.random() * 1.0;
     const geo = new THREE.BufferGeometry().setFromPoints([start, start]);
     // 顶点色渐变：头白热 → 尾熄灭（加性混合下即淡出）
     geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array([
-      1.0, 0.95, 0.85,
-      0.1, 0.05, 0.0,
+      1.0, 0.98, 0.92,
+      0.08, 0.04, 0.0,
     ]), 3));
     const line = new THREE.Line(geo, new THREE.LineBasicMaterial({
       vertexColors: true, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending,
     }));
     const head = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: glowTextureRGB('rgba(255,240,210,0.95)', 'rgba(255,170,90,0.35)'),
+      map: glowTextureRGB('rgba(255,246,220,0.98)', 'rgba(255,175,95,0.4)'),
       blending: THREE.AdditiveBlending, depthWrite: false,
     }));
-    head.scale.setScalar(big ? 3.4 : 1.4);
+    head.scale.setScalar(big ? 4.2 : 2.2);
     scene.add(line, head);
     meteors.push({ line, head, vel: dir.multiplyScalar(speed), life: total, total });
   }
@@ -1222,8 +1347,25 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     const inBelt = camR > auToScene(2.0) && camR < auToScene(3.6);
     meteorTimer -= dt;
     if (meteorTimer <= 0) {
-      spawnMeteor(Math.random() < 0.12);
-      meteorTimer = inBelt ? 0.5 + Math.random() * 1.2 : 2.5 + Math.random() * 4;
+      spawnMeteor(Math.random() < 0.18);
+      meteorTimer = inBelt ? 0.45 + Math.random() * 0.9 : 0.9 + Math.random() * 1.4;
+    }
+    // 流星雨调度
+    showerTimer -= dt;
+    if (showerTimer <= 0 && showerQueue === 0) {
+      showerQueue = 6 + Math.floor(Math.random() * 8);
+      showerRadial.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+      showerTimer = 26 + Math.random() * 30;
+    }
+    if (showerQueue > 0) {
+      showerTick -= dt;
+      if (showerTick <= 0) {
+        showerTick = 0.12 + Math.random() * 0.25;
+        showerQueue--;
+        const jitter = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5)
+          .multiplyScalar(0.55);
+        spawnMeteor(Math.random() < 0.1, showerRadial.clone().add(jitter).normalize());
+      }
     }
     for (let i = meteors.length - 1; i >= 0; i--) {
       const mt = meteors[i];
@@ -1231,7 +1373,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
       const p = mt.line.geometry.attributes.position;
       const head = new THREE.Vector3().fromBufferAttribute(p, 0);
       head.addScaledVector(mt.vel, dt);
-      const tail = head.clone().addScaledVector(mt.vel, -0.16);
+      const tail = head.clone().addScaledVector(mt.vel, -0.22);
       p.setXYZ(0, head.x, head.y, head.z);
       p.setXYZ(1, tail.x, tail.y, tail.z);
       p.needsUpdate = true;
@@ -1486,6 +1628,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
 
   const startDays = Date.now() / 86400000 - 10957.5;
   let simDays = startDays;
+  let spinDays = startDays; // 自转时钟：与宇宙历同源，但吃 beauty.spin 倍率
   let timeScaleIdx = 2;
   let elapsed = 0;
 
@@ -1535,6 +1678,16 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
   function setTour(on: boolean) {
     tour.on = on;
     if (on) tourGoto(TOUR[0]);
+  }
+
+  // 「美」面板：滑杆实时写入；太阳光/辉光/转速在渲染循环里吃倍率
+  function setBeauty(p: Partial<CosmosBeauty>) {
+    Object.assign(beauty, p);
+    for (const h of haloSprites) h.material.opacity = 0.11 * beauty.halo;
+    for (const m of atmoMats) m.uniforms.uBoost.value = beauty.atmo;
+  }
+  function setBeltVisible(v: boolean) {
+    beltGroup.visible = v;
   }
   function tourNext() {
     tourGoto(TOUR[(TOUR.indexOf(tour.key) + 1) % TOUR.length]);
@@ -1668,17 +1821,18 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     const t = clock.elapsedTime;
     elapsed += dt;
     simDays += dt * TIME_SCALES[timeScaleIdx];
+    spinDays += dt * TIME_SCALES[timeScaleIdx] * beauty.spin;
 
     // ---- 行星位置 / 自转 / 大气与环的太阳方向 ----
     for (const b of bodies) {
-      if (b.key === 'sun') { b.mesh.rotation.y = rotationAngle(609.12, simDays) * 0.02; continue; }
+      if (b.key === 'sun') { b.mesh.rotation.y = rotationAngle(609.12, spinDays) * 0.02; continue; }
       const spec = byKey(b.key)!;
       const p = bodyScenePos(spec, simDays);
       b.pos.set(p.x, p.y, p.z);
       b.group.position.copy(b.pos);
-      b.mesh.rotation.y = rotationAngle(spec.rotationHours, simDays) + (spinOffsets[b.key] ?? 0);
+      b.mesh.rotation.y = rotationAngle(spec.rotationHours, spinDays) + (spinOffsets[b.key] ?? 0);
       const clouds = b.axis.getObjectByName('earthClouds');
-      if (clouds) clouds.rotation.y = rotationAngle(28, simDays);
+      if (clouds) clouds.rotation.y = rotationAngle(28, spinDays);
       const atmoMat = (b.axis.getObjectByName('atmo') as THREE.Mesh | undefined)?.material as THREE.ShaderMaterial | undefined;
       if (atmoMat) {
         atmoMat.uniforms.uSunDir.value.copy(b.pos).multiplyScalar(-1).normalize();
@@ -1700,7 +1854,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
       rm.mat.uniforms.uSunLocal.value.copy(tmpV);
       rm.mat.uniforms.uLight.value = Math.min(230 / Math.max(b.pos.length(), 1), 1.0);
     }
-    beltGroup.rotation.y = (simDays / 1622) * Math.PI * 2;
+    beltGroup.rotation.y = (spinDays / 1622) * Math.PI * 2;
 
     // ---- 摇杆 → 移动向量 ----
     let fwd = 0, side = 0, lift = 0;
@@ -1784,7 +1938,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     camera.fov += (targetFov - camera.fov) * Math.min(dt * 4, 1);
     camera.updateProjectionMatrix();
 
-    // ---- 宇宙尘包裹 ----
+    // ---- 星尘包裹（闪烁 + 随航速增亮） ----
     {
       const p = dustGeo.attributes.position;
       for (let i = 0; i < p.count; i++) {
@@ -1796,7 +1950,8 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
         p.setXYZ(i, x, y, z);
       }
       p.needsUpdate = true;
-      dustMat.opacity = 0.1 + Math.min(sp / 500, 1) * 0.35;
+      dustMat.uniforms.uTime.value = t;
+      dustMat.uniforms.uAlpha.value = 0.1 + Math.min(sp / 500, 1) * 0.35;
     }
 
     // ---- 太阳动画 ----
@@ -1853,18 +2008,20 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     }
 
     // ---- 彗星 / 曲速流光 ----
-    updateComet(elapsed * 6); // 演出时钟：6 模拟日/秒，独立于宇宙历
+    updateComets(elapsed * 6); // 演出时钟：6 模拟日/秒，独立于宇宙历
     updateWarp(sp);
 
     // ---- 后期：动态辉光 + 太阳光轴 ----
     grade.uniforms.uTime.value = t;
     grade.uniforms.uSpeed.value = Math.min(sp / 900, 1);
+    sunLight.intensity = SUN_LIGHT_BASE * beauty.sun;
     flash *= Math.pow(0.22, dt);
     const distSun = camera.position.length(); // 太阳在原点
-    bloom.strength = 0.75
+    bloom.strength = (0.75
       + Math.min(70 / Math.max(distSun, 10), 1) * 0.45 // 靠近太阳：辉光盛放
       + Math.min(sp / 1500, 1) * 0.3                   // 高速航行：光晕拉丝
-      + flash * 1.5;                                   // 事件闪光（发现/到站）
+      + flash * 1.5)                                   // 事件闪光（发现/到站）
+      * beauty.bloom;
     {
       const fwd = tmpV.set(0, 0, -1).applyQuaternion(camera.quaternion);
       const toSun = tmpV2.copy(camera.position).multiplyScalar(-1);
@@ -1978,6 +2135,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     composer.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    dustMat.uniforms.uPx.value = canvas.height * 0.05; // 星尘点径随缓冲高度换算
   }
   addEventListener('resize', resize);
   resize();
@@ -1994,6 +2152,8 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
   return {
     flyTo,
     setTour,
+    setBeauty,
+    setBeltVisible,
     cycleTime(): number {
       timeScaleIdx = (timeScaleIdx + 1) % TIME_SCALES.length;
       return timeScaleIdx;
