@@ -1335,7 +1335,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
   });
 
   // ---- 行星的随从们：伽利略卫星 / 提坦 / 火卫（真实半径与周期，轨距压缩） ----
-  interface MoonNode { spec: MoonExtraSpec; mesh: THREE.Mesh; pos: THREE.Vector3; r: number }
+  interface MoonNode { spec: MoonExtraSpec; mesh: THREE.Mesh; pos: THREE.Vector3; r: number; glint: THREE.Sprite }
   const moonNodes: MoonNode[] = [];
   for (const spec of MOONS) {
     const r = Math.max(kmToUnits(spec.radiusKm), 0.045);
@@ -1349,7 +1349,14 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     mesh.name = `moon:${spec.key}`;
     scene.add(mesh);
     clickTargets.push(mesh);
-    moonNodes.push({ spec, mesh, pos: new THREE.Vector3(), r });
+    // 可见性微光：真实尺度的小卫星在远处只是一粒暗点，给它一盏灯
+    const glint = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTextureRGB('rgba(255,250,240,0.65)', 'rgba(255,240,220,0.16)'),
+      blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.32,
+    }));
+    glint.scale.setScalar(Math.max(r * 9, 3));
+    scene.add(glint);
+    moonNodes.push({ spec, mesh, pos: new THREE.Vector3(), r, glint });
   }
   const moonLabelNodes: { node: MoonNode; el: HTMLDivElement }[] = [];
   if (labelLayer) {
@@ -2402,6 +2409,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
       );
       mn.mesh.position.copy(mn.pos);
       mn.mesh.rotation.y = -a; // 近似潮汐锁定
+      mn.glint.position.copy(mn.pos);
     }
     for (const dw of dwarfNodes) {
       const p = bodyScenePos(dw.spec, simDays);
