@@ -34,6 +34,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { mergeVertices } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
   rng, range, PLANETS, MOON, EGGS, byKey,
@@ -1023,6 +1024,38 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     orbitGroup.add(line);
   }
 
+  // ---- 黄道光：黄道面上行星际尘埃的散射光锥（天文摄影的招牌纵深） ----
+  // 越贴近黄道面看越亮，正对看渐隐——一张加性圆盘 + 视角衰减就是全部
+  const zodiacalMat = new THREE.ShaderMaterial({
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    uniforms: { uIntensity: { value: 0.32 } },
+    vertexShader: /* glsl */ `
+      varying vec3 vW; varying vec3 vCam;
+      void main() {
+        vec4 w = modelMatrix * vec4(position, 1.0);
+        vW = w.xyz;
+        vCam = cameraPosition - w.xyz;
+        gl_Position = projectionMatrix * viewMatrix * w;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform float uIntensity;
+      varying vec3 vW; varying vec3 vCam;
+      void main() {
+        float r = length(vW.xz);
+        float band = exp(-r / 300.0) * smoothstep(26.0, 70.0, r); // 近日盛、穿日遮
+        float edge = 1.0 - abs(normalize(vCam).y);                // 掠射角才看得见尘埃带
+        float near = smoothstep(16.0, 60.0, length(vCam));        // 贴脸渐隐，不做雾墙
+        float a = band * pow(edge, 2.4) * near * uIntensity;
+        gl_FragColor = vec4(vec3(1.0, 0.88, 0.66) * a, a);
+      }
+    `,
+  });
+  const zodiacal = new THREE.Mesh(new THREE.RingGeometry(26, 640, 180, 1), zodiacalMat);
+  zodiacal.rotation.x = -Math.PI / 2;
+  zodiacal.renderOrder = 1;
+  scene.add(zodiacal);
+
   // ---- 小行星带：四种顶点位移圆润岩石，非均匀拉伸 + 逐实例颜色 ----
   const beltGroup = new THREE.Group();
   scene.add(beltGroup);
@@ -1588,12 +1621,16 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
   if (hi) composer.addPass(raysPass);
   composer.addPass(new OutputPass());
 
-  // 调色：饱和/对比/冷暖分离（青影暖调）+ 高速色散 + 暗角 + 颗粒
+  // FXAA：轨道线与岩石边缘的抗锯齿（LDR 上做，颗粒之前）
+  const fxaaPass = new ShaderPass(FXAAShader);
+  if (hi) composer.addPass(fxaaPass);
+
+  // 调色：分区影调（内系暖金 / 外系冷蓝）+ 饱和/对比/冷暖分离 + 高速色散 + 暗角 + 颗粒
   const grade = new ShaderPass({
-    uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uSpeed: { value: 0 } },
+    uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uSpeed: { value: 0 }, uZone: { value: 0 } },
     vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: /* glsl */ `
-      uniform sampler2D tDiffuse; uniform float uTime, uSpeed;
+      uniform sampler2D tDiffuse; uniform float uTime, uSpeed, uZone;
       varying vec2 vUv;
       float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
       void main() {
@@ -1604,12 +1641,14 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
         col.r = texture2D(tDiffuse, vUv + kick).r;
         col.g = texture2D(tDiffuse, vUv).g;
         col.b = texture2D(tDiffuse, vUv - kick).b;
-        // 影调三件套
+        // 影调三件套（饱和度随区域收敛：外系更冷更素）
         float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
-        col = mix(vec3(luma), col, 1.22);                                        // 饱和度
+        col = mix(vec3(luma), col, mix(1.22, 1.13, uZone));                     // 饱和度
         col = (col - 0.5) * 1.07 + 0.5;                                          // 对比度
         col += vec3(-0.012, 0.004, 0.028) * (1.0 - smoothstep(0.0, 0.55, luma)); // 阴影偏青
         col += vec3(0.028, 0.014, -0.010) * smoothstep(0.45, 1.0, luma);        // 高光偏暖
+        // 分区影调：水星轨道之内是暖金的正午，柯伊伯之外是冷蓝的长夜
+        col *= mix(vec3(1.045, 1.0, 0.945), vec3(0.94, 0.985, 1.075), uZone);
         col *= 1.0 - smoothstep(0.2, 0.65, r2) * 0.4;                            // 暗角
         col += (hash(vUv * 1731.0 + fract(uTime) * 7.7) - 0.5) * 0.03;          // 颗粒
         gl_FragColor = vec4(col, 1.0);
@@ -2025,6 +2064,8 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     sunLight.intensity = SUN_LIGHT_BASE * beauty.sun;
     flash *= Math.pow(0.22, dt);
     const distSun = camera.position.length(); // 太阳在原点
+    grade.uniforms.uZone.value = THREE.MathUtils.smoothstep(distSun, 90, 320); // 内暖外冷
+    zodiacalMat.uniforms.uIntensity.value = 0.32 * (0.4 + 0.6 * beauty.sun);
     bloom.strength = (0.7
       + Math.min(70 / Math.max(distSun, 10), 1) * 0.32 * beauty.sun // 靠近太阳：辉光盛放
       + Math.min(sp / 1500, 1) * 0.3                   // 高速航行：光晕拉丝
@@ -2144,6 +2185,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     dustMat.uniforms.uPx.value = canvas.height * 0.05; // 星尘点径随缓冲高度换算
+    if (hi) fxaaPass.material.uniforms.resolution.value.set(1 / canvas.width, 1 / canvas.height);
   }
   addEventListener('resize', resize);
   resize();
