@@ -1,0 +1,164 @@
+import { describe, it, expect } from 'vitest';
+import { QUESTIONS, DIM_INFO } from '../src/data/mbti-questions';
+import { MBTI_TYPES, ROLES } from '../src/data/mbti-types';
+import {
+  tally, dimScores, typeCode, roleOf, scoreMbti,
+  OPPOSITE, TIE_DEFAULT, type Pole, type Answers,
+} from '../src/scripts/mbti-core';
+
+const POLES_OF: Record<string, [Pole, Pole]> = {
+  EI: ['E', 'I'], SN: ['S', 'N'], TF: ['T', 'F'], JP: ['J', 'P'],
+};
+
+describe('mbti · 题库结构', () => {
+  it('共三十六题，每维度恰九题', () => {
+    expect(QUESTIONS).toHaveLength(36);
+    for (const dim of Object.keys(POLES_OF) as (keyof typeof POLES_OF)[]) {
+      expect(QUESTIONS.filter((q) => q.dim === dim)).toHaveLength(9);
+    }
+  });
+
+  it('四维轮转排布：相邻四题不重维', () => {
+    for (let i = 0; i < QUESTIONS.length; i += 4) {
+      const group = QUESTIONS.slice(i, i + 4).map((q) => q.dim);
+      expect(new Set(group).size).toBe(4);
+    }
+  });
+
+  it('aPole 与维度匹配，文案非空且不重复', () => {
+    const seen = new Set<string>();
+    for (const q of QUESTIONS) {
+      expect(POLES_OF[q.dim]).toContain(q.aPole);
+      expect(q.text.length).toBeGreaterThan(4);
+      expect(q.a.length).toBeGreaterThan(2);
+      expect(q.b).not.toBe(q.a);
+      expect(seen.has(q.text)).toBe(false);
+      seen.add(q.text);
+    }
+  });
+
+  it('A/B 极性交错：每维度 9 题中 A 极不全部倒向一端', () => {
+    for (const dim of Object.keys(POLES_OF) as (keyof typeof POLES_OF)[]) {
+      const aPoles = QUESTIONS.filter((q) => q.dim === dim).map((q) => q.aPole);
+      const [l, r] = POLES_OF[dim];
+      const lc = aPoles.filter((p) => p === l).length;
+      expect(lc).toBeGreaterThan(0);
+      expect(lc).toBeLessThan(aPoles.length + 1);
+      expect(aPoles.filter((p) => p === r).length).toBeGreaterThan(0);
+    }
+  });
+
+  it('DIM_INFO 左右极互为相反', () => {
+    for (const dim of Object.keys(DIM_INFO) as (keyof typeof DIM_INFO)[]) {
+      const info = DIM_INFO[dim];
+      expect(info.left).not.toBe(info.right);
+      expect(OPPOSITE[info.left]).toBe(info.right);
+      expect(POLES_OF[dim]).toContain(info.left);
+    }
+  });
+});
+
+describe('mbti · 十六型图鉴', () => {
+  it('十六型齐全无重复，四字母合法', () => {
+    expect(MBTI_TYPES).toHaveLength(16);
+    const codes = MBTI_TYPES.map((t) => t.code);
+    expect(new Set(codes).size).toBe(16);
+    const pattern = /^([EI])([SN])([TF])([JP])$/;
+    for (const c of codes) expect(pattern.test(c)).toBe(true);
+  });
+
+  it('文案字段详实：概述/画像/切片/优势/盲区/职业/相处皆非空', () => {
+    for (const t of MBTI_TYPES) {
+      expect(t.name.length).toBeGreaterThan(1);
+      expect(t.motto.length).toBeGreaterThan(5);
+      expect(t.summary.length).toBeGreaterThan(60);
+      expect(t.traits).toHaveLength(4);
+      expect(t.strengths).toHaveLength(4);
+      expect(t.blindSpots.length).toBeGreaterThanOrEqual(3);
+      expect(t.careers.length).toBeGreaterThan(30);
+      expect(t.relations.length).toBeGreaterThan(30);
+    }
+  });
+
+  it('code 与四大角色匹配（NT/NF/SJ/SP），ROLES 字母一致', () => {
+    for (const t of MBTI_TYPES) {
+      expect(roleOf(t.code)).toBe(t.role);
+      expect(ROLES[t.role].letters).toBe(
+        t.code[1] === 'N' ? t.code.slice(1, 3) : t.code[1] + t.code[3],
+      );
+    }
+  });
+});
+
+describe('mbti-core · 计分', () => {
+  it('tally：全选 A 的计票与题库推导一致', () => {
+    const allA = QUESTIONS.map(() => 'a' as const);
+    const t = tally(allA);
+    const expect0: Record<Pole, number> = { E: 0, I: 0, S: 0, N: 0, T: 0, F: 0, J: 0, P: 0 };
+    QUESTIONS.forEach((q) => expect0[q.aPole]++);
+    expect(t).toEqual(expect0);
+  });
+
+  it('tally：null 跳过不计', () => {
+    const answers: Answers = QUESTIONS.map((_, i) => (i % 2 ? null : 'a'));
+    const t = tally(answers);
+    const total = Object.values(t).reduce((s, n) => s + n, 0);
+    expect(total).toBe(18);
+  });
+
+  it('同分裁决沿用惯例 I/N/F/P', () => {
+    expect(TIE_DEFAULT).toEqual({ EI: 'I', SN: 'N', TF: 'F', JP: 'P' });
+    const t: Record<Pole, number> = { E: 5, I: 5, S: 4, N: 5, T: 3, F: 6, J: 2, P: 7 };
+    const ds = dimScores(t);
+    expect(ds[0].tie).toBe(true);
+    expect(ds[0].winner).toBe('I');
+    expect(ds[1].winner).toBe('N');
+    expect(ds[2].winner).toBe('F');
+    expect(ds[3].winner).toBe('P');
+    expect(typeCode(ds)).toBe('INFP');
+  });
+
+  it('清晰度分档：9:0 显著 · 7:2 显著 · 6:3 分明 · 5:4 略偏', () => {
+    const mk = (l: number, r: number) => dimScores({ E: l, I: r, S: 0, N: 9, T: 0, F: 9, J: 0, P: 9 })[0];
+    expect(mk(9, 0).clarity).toBe('显著');
+    expect(mk(7, 2).clarity).toBe('显著');
+    expect(mk(6, 3).clarity).toBe('分明');
+    expect(mk(5, 4).clarity).toBe('略偏');
+    expect(mk(9, 0).ratio).toBeCloseTo(1);
+    expect(mk(6, 3).ratio).toBeCloseTo(2 / 3);
+  });
+
+  it('scoreMbti：未答完或长度不符返回 null', () => {
+    expect(scoreMbti(Array(36).fill('a'))).not.toBeNull();
+    expect(scoreMbti(Array(35).fill('a'))).toBeNull();
+    expect(scoreMbti([...Array(35).fill('a'), null])).toBeNull();
+  });
+
+  it('十六型皆可由构造答案得出（typeByCode 全命中）', () => {
+    for (const t of MBTI_TYPES) {
+      const target: Record<string, Pole> = {
+        EI: t.code[0] as Pole, SN: t.code[1] as Pole, TF: t.code[2] as Pole, JP: t.code[3] as Pole,
+      };
+      const built: Answers = QUESTIONS.map((q) => (q.aPole === target[q.dim] ? 'a' : 'b'));
+      const r = scoreMbti(built);
+      expect(r, t.code).not.toBeNull();
+      expect(r!.code).toBe(t.code);
+      expect(r!.type.name).toBe(t.name);
+    }
+  });
+
+  it('全选 A 的结果与计票多数自洽', () => {
+    const allA: Answers = QUESTIONS.map(() => 'a');
+    const t = tally(allA);
+    const ds = dimScores(t);
+    for (const d of ds) {
+      const win = d.leftCount === d.rightCount
+        ? TIE_DEFAULT[d.dim]
+        : d.leftCount > d.rightCount ? d.left : d.right;
+      expect(d.winner).toBe(win);
+      expect(d.leftCount + d.rightCount).toBe(9);
+    }
+    const r = scoreMbti(allA)!;
+    expect(r.code).toBe(ds.map((d) => d.winner).join(''));
+  });
+});

@@ -1,0 +1,387 @@
+---
+import ToolShell from '../../layouts/ToolShell.astro';
+import { QUESTIONS, DIM_INFO } from '../../data/mbti-questions';
+---
+<ToolShell toolKey="mbti">
+  <!-- 答题视图 -->
+  <div class="tool-grid tool-grid--2" id="quiz-view">
+    <div class="card panel stage-left">
+      <div class="q-top">
+        <span class="muted small" id="q-no">第 1 / 36 题</span>
+        <span class="tag tag--red hidden" id="q-dim">维度</span>
+      </div>
+      <div class="q-progress"><i id="q-progress-fill"></i></div>
+
+      <h2 class="q-text serif" id="q-text">题面</h2>
+
+      <div class="opts">
+        <button class="opt" id="opt-a">
+          <span class="opt-key mono">A</span>
+          <span class="opt-text" id="opt-a-text"></span>
+        </button>
+        <button class="opt" id="opt-b">
+          <span class="opt-key mono">B</span>
+          <span class="opt-text" id="opt-b-text"></span>
+        </button>
+      </div>
+
+      <div class="row q-foot">
+        <button class="btn btn--ghost btn--sm" id="prev">← 上一题</button>
+        <span class="muted small">键盘 A / B 作答 · ← 回退</span>
+      </div>
+    </div>
+
+    <div class="card panel stage-right">
+      <p class="muted small" style="margin:0 0 12px;">凭直觉快答，别想太久；更贴近哪一个就选哪一个。答满三十六题即出图鉴。</p>
+      <div class="dots" id="dots"></div>
+      <div class="dim-guide">
+        {(Object.keys(DIM_INFO) as (keyof typeof DIM_INFO)[]).map((d) => (
+          <div class="dim-guide__row" data-dim={d}>
+            <span class="dim-guide__name serif">{DIM_INFO[d].label}</span>
+            <span class="dim-guide__poles small">
+              <span>{DIM_INFO[d].leftDesc}</span>
+              <span class="dim-guide__vs">·</span>
+              <span>{DIM_INFO[d].rightDesc}</span>
+            </span>
+          </div>
+        ))}
+      </div>
+      <p class="muted small" style="margin:14px 0 0;">本馆原创题库 · 简版快测，玩以识己，勿以断人。</p>
+    </div>
+  </div>
+
+  <!-- 结果视图 -->
+  <div class="card panel result hidden" id="result-view">
+    <div class="r-head">
+      <div class="r-code mono" id="r-code">INTJ</div>
+      <div class="r-title">
+        <div class="row" style="gap:8px;">
+          <span class="tag tag--red" id="r-role"></span>
+          <span class="tag" id="r-clarity-avg"></span>
+        </div>
+        <h2 class="serif r-name" id="r-name"></h2>
+        <p class="muted small" id="r-role-note" style="margin:2px 0 0;"></p>
+      </div>
+    </div>
+    <blockquote class="r-motto serif" id="r-motto"></blockquote>
+
+    <div class="r-dims" id="r-dims"></div>
+
+    <section class="r-sec">
+      <h3 class="serif">概述</h3>
+      <p id="r-summary"></p>
+    </section>
+    <section class="r-sec">
+      <h3 class="serif">性格切片</h3>
+      <ul class="r-list r-list--cols" id="r-traits"></ul>
+    </section>
+    <section class="r-sec r-duo">
+      <div>
+        <h3 class="serif">优势</h3>
+        <ul class="r-list r-list--win" id="r-strengths"></ul>
+      </div>
+      <div>
+        <h3 class="serif">盲区</h3>
+        <ul class="r-list r-list--dim" id="r-blinds"></ul>
+      </div>
+    </section>
+    <section class="r-sec">
+      <h3 class="serif">职业倾向</h3>
+      <p id="r-careers"></p>
+    </section>
+    <section class="r-sec">
+      <h3 class="serif">相处之道</h3>
+      <p id="r-relations"></p>
+    </section>
+
+    <p class="muted small" id="r-note" style="margin-top:18px;">四维类型学为公域理论之通俗应用，十六型图鉴皆本馆自撰；人格复杂，快测仅供玩味，勿以贴标签。</p>
+    <div class="row" style="margin-top:14px;">
+      <button class="btn btn--red" id="restart">重测一次</button>
+      <button class="btn btn--ghost" id="review">回看答题</button>
+    </div>
+  </div>
+</ToolShell>
+
+<style is:global>
+  .panel { padding: 24px; }
+
+  /* ---- 答题 ---- */
+  .q-top { display: flex; justify-content: space-between; align-items: center; }
+  .q-progress { height: 3px; background: var(--paper-sunken); border-radius: 99px; margin: 10px 0 22px; overflow: hidden; }
+  .q-progress i { display: block; height: 100%; width: 0; background: var(--red); transition: width 0.3s var(--ease); }
+  .q-text { font-size: 1.3rem; line-height: 1.75; margin: 0 0 22px; min-height: 4.6em; }
+  .opts { display: flex; flex-direction: column; gap: 12px; }
+  .opt {
+    display: flex; align-items: center; gap: 14px; width: 100%;
+    padding: 14px 16px; text-align: left;
+    background: var(--paper-raised); color: var(--ink);
+    border: 1.5px solid var(--line); border-radius: var(--radius-m);
+    transition: border-color 0.15s, transform 0.15s var(--ease), box-shadow 0.15s;
+    animation: optIn 0.28s var(--ease);
+  }
+  .opt:nth-child(2) { animation-delay: 0.05s; }
+  @keyframes optIn { from { opacity: 0; transform: translateY(6px); } }
+  .opt:hover { border-color: var(--ink); transform: translateY(-1px); box-shadow: var(--shadow-card); }
+  .opt-key {
+    display: grid; place-items: center; flex-shrink: 0;
+    width: 30px; height: 30px; font-size: 0.85rem;
+    border: 1.5px solid var(--ink); border-radius: var(--radius-s);
+  }
+  .opt:hover .opt-key { background: var(--red); border-color: var(--red); color: #fff; }
+  .opt-text { line-height: 1.6; font-size: 1rem; }
+  .q-foot { justify-content: space-between; margin-top: 18px; }
+
+  .dots { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 20px; }
+  .dot {
+    width: 11px; height: 11px; border-radius: 50%;
+    border: 1.5px solid var(--line); background: transparent;
+    padding: 0; cursor: pointer; transition: background 0.15s, border-color 0.15s;
+  }
+  .dot.done { background: var(--ink); border-color: var(--ink); }
+  .dot.cur { border-color: var(--red); background: var(--red-soft); }
+  .dot.done.cur { background: var(--red); border-color: var(--red); }
+
+  .dim-guide { display: flex; flex-direction: column; gap: 10px; }
+  .dim-guide__row {
+    padding: 8px 12px; border-left: 2px solid var(--line);
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .dim-guide__row.hot { border-left-color: var(--red); background: var(--red-soft); }
+  .dim-guide__name { font-size: 0.9rem; display: block; }
+  .dim-guide__poles { display: flex; flex-wrap: wrap; gap: 6px; color: var(--ink-muted); }
+  .dim-guide__vs { color: var(--ink-faint); }
+
+  /* ---- 结果 ---- */
+  .result { max-width: 760px; margin: 0 auto; }
+  .r-head { display: flex; align-items: center; gap: 24px; }
+  .r-code {
+    font-size: 2.6rem; font-weight: 700; letter-spacing: 0.08em;
+    padding: 14px 20px; border: 2px solid var(--ink); border-radius: var(--radius-m);
+    flex-shrink: 0;
+  }
+  .r-name { font-size: 2rem; margin: 6px 0 0; }
+  .r-motto {
+    margin: 20px 0 0; padding: 12px 18px;
+    border-left: 3px solid var(--red);
+    background: var(--paper-sunken);
+    border-radius: 0 var(--radius-m) var(--radius-m) 0;
+    font-size: 1.05rem; line-height: 1.9;
+  }
+  .r-dims { margin-top: 24px; display: flex; flex-direction: column; gap: 16px; }
+  .dim-row { display: flex; flex-direction: column; gap: 4px; }
+  .dim-row__meta { display: flex; justify-content: space-between; align-items: center; }
+  .dim-row__sides { display: flex; justify-content: space-between; font-size: 0.85rem; }
+  .dim-row__side { color: var(--ink-muted); display: flex; gap: 6px; align-items: baseline; }
+  .dim-row__side b { font-family: var(--font-mono); font-weight: 700; }
+  .dim-row__side.win { color: var(--ink); }
+  .dim-row__side.win b { color: var(--red); }
+  .dim-row__side em { font-style: normal; font-weight: 600; }
+  .dim-bar { position: relative; height: 10px; background: var(--paper-sunken); border-radius: 99px; }
+  .dim-fill { position: absolute; top: 0; bottom: 0; background: var(--ink); border-radius: 99px; }
+  .dim-fill--tie { background: var(--ink-faint); }
+  .dim-mid { position: absolute; top: -3px; bottom: -3px; left: 50%; width: 1.5px; background: var(--line); }
+
+  .r-sec { margin-top: 26px; }
+  .r-sec h3 { font-size: 1.1rem; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .r-sec h3::after { content: ''; flex: 1; height: 1px; background: var(--line-soft); }
+  .r-sec p { margin: 0; line-height: 1.9; }
+  .r-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .r-list li { position: relative; padding-left: 16px; line-height: 1.7; }
+  .r-list li::before { content: ''; position: absolute; left: 0; top: 0.65em; width: 6px; height: 6px; border-radius: 50%; }
+  .r-list--cols { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 20px; }
+  .r-list--win li::before { background: var(--red); }
+  .r-list--dim li::before { background: var(--ink-faint); }
+  .r-list--cols li::before { background: var(--ink); }
+  .r-duo { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; }
+
+  @media (max-width: 640px) {
+    .r-code { font-size: 1.8rem; padding: 10px 14px; }
+    .r-name { font-size: 1.5rem; }
+    .r-list--cols { grid-template-columns: 1fr; }
+    .r-duo { grid-template-columns: 1fr; gap: 20px 0; }
+    .q-text { font-size: 1.15rem; min-height: 3.9em; }
+  }
+</style>
+
+<script>
+  import { QUESTIONS, DIM_INFO, type Dim, type Pick } from '../../data/mbti-questions';
+  import { ROLES } from '../../data/mbti-types';
+  import { scoreMbti, type Answers, type MbtiResult, type DimScore } from '../../scripts/mbti-core';
+  import { store, toast } from '../../scripts/ui';
+
+  const KEY = 'opt-mbti-last';
+  const N = QUESTIONS.length;
+
+  const quizView = document.getElementById('quiz-view')!;
+  const resultView = document.getElementById('result-view')!;
+  const qNo = document.getElementById('q-no')!;
+  const qDim = document.getElementById('q-dim')!;
+  const qText = document.getElementById('q-text')!;
+  const optA = document.getElementById('opt-a') as HTMLButtonElement;
+  const optB = document.getElementById('opt-b') as HTMLButtonElement;
+  const optAText = document.getElementById('opt-a-text')!;
+  const optBText = document.getElementById('opt-b-text')!;
+  const prevBtn = document.getElementById('prev') as HTMLButtonElement;
+  const progressFill = document.getElementById('q-progress-fill')!;
+  const dotsBox = document.getElementById('dots')!;
+  const guideRows = Array.from(document.querySelectorAll<HTMLElement>('.dim-guide__row'));
+
+  const DIM_LABEL: Record<Dim, string> = {
+    EI: '能量所在', SN: '如何认知', TF: '如何决断', JP: '如何生活',
+  };
+
+  let answers: Answers = Array(N).fill(null);
+  let idx = 0;
+
+  // ---- 答题视图 ----
+  function renderQuestion() {
+    const q = QUESTIONS[idx];
+    qNo.textContent = `第 ${idx + 1} / ${N} 题`;
+    qDim.textContent = DIM_LABEL[q.dim];
+    qDim.classList.remove('hidden');
+    qText.textContent = q.text;
+    optAText.textContent = q.a;
+    optBText.textContent = q.b;
+    // 重播入场动画
+    [optA, optB].forEach((el) => { el.classList.remove('opt'); void el.offsetWidth; el.classList.add('opt'); });
+    prevBtn.disabled = idx === 0;
+    progressFill.style.width = `${(answers.filter(Boolean).length / N) * 100}%`;
+    guideRows.forEach((r) => r.classList.toggle('hot', r.dataset.dim === q.dim));
+    renderDots();
+  }
+
+  function renderDots() {
+    dotsBox.innerHTML = '';
+    QUESTIONS.forEach((_, i) => {
+      const d = document.createElement('button');
+      d.className = 'dot' + (answers[i] ? ' done' : '') + (i === idx ? ' cur' : '');
+      d.title = `第 ${i + 1} 题`;
+      // 已答的题可回跳修改
+      if (answers[i]) d.addEventListener('click', () => { idx = i; renderQuestion(); });
+      else d.disabled = true;
+      dotsBox.appendChild(d);
+    });
+  }
+
+  function pick(p: Pick) {
+    answers[idx] = p;
+    if (idx === N - 1) {
+      finish();
+    } else {
+      idx++;
+      renderQuestion();
+    }
+  }
+
+  function prev() {
+    if (idx > 0) { idx--; renderQuestion(); }
+  }
+
+  optA.addEventListener('click', () => pick('a'));
+  optB.addEventListener('click', () => pick('b'));
+  prevBtn.addEventListener('click', prev);
+
+  document.addEventListener('keydown', (e) => {
+    if (resultView.offsetParent !== null) return; // 结果视图不响应
+    const k = e.key.toLowerCase();
+    if (k === 'a' || k === '1') pick('a');
+    else if (k === 'b' || k === '2') pick('b');
+    else if (e.key === 'ArrowLeft') prev();
+  });
+
+  // ---- 结果视图 ----
+  const el = (id: string) => document.getElementById(id)!;
+
+  function dimRowHTML(d: DimScore): string {
+    const info = DIM_INFO[d.dim];
+    const leftWin = d.winner === info.left && !d.tie;
+    const rightWin = d.winner === info.right && !d.tie;
+    // 胜方一侧从其端向内填充；同分整条淡填充
+    const leftPct = (d.leftCount / (d.leftCount + d.rightCount)) * 100;
+    let fill = '';
+    if (d.tie) fill = 'left:0;right:0';
+    else if (leftWin) fill = `left:0;width:${leftPct}%`;
+    else fill = `left:${leftPct}%;right:0`;
+    const poleName = (p: string) =>
+      ({ E: '外向', I: '内向', S: '实感', N: '直觉', T: '思考', F: '情感', J: '计划', P: '灵活' } as Record<string, string>)[p];
+    return `
+      <div class="dim-row">
+        <div class="dim-row__meta">
+          <span class="serif">${DIM_LABEL[d.dim]}</span>
+          <span class="tag ${d.clarity === '持平' ? '' : 'tag--red'}">${d.clarity}</span>
+        </div>
+        <div class="dim-row__sides">
+          <span class="dim-row__side ${leftWin ? 'win' : ''}"><b>${info.left}</b> ${poleName(info.left)} <em>${d.leftCount}</em></span>
+          <span class="dim-row__side ${rightWin ? 'win' : ''}"><em>${d.rightCount}</em> ${poleName(info.right)} <b>${info.right}</b></span>
+        </div>
+        <div class="dim-bar">
+          <i class="dim-fill ${d.tie ? 'dim-fill--tie' : ''}" style="${fill}"></i>
+          <i class="dim-mid"></i>
+        </div>
+      </div>`;
+  }
+
+  function renderResult(r: MbtiResult) {
+    const role = ROLES[r.type.role];
+    el('r-code').textContent = r.code;
+    el('r-name').textContent = r.type.name;
+    el('r-role').textContent = `${role.label} · ${role.letters}`;
+    el('r-role-note').textContent = `${role.note} · 十六型图鉴`;
+    el('r-motto').textContent = r.type.motto;
+    el('r-clarity-avg').textContent = `整体倾向 · ${avgClarity(r)}`;
+    el('r-dims').innerHTML = r.dims.map(dimRowHTML).join('');
+    el('r-summary').textContent = r.type.summary;
+    el('r-traits').innerHTML = r.type.traits.map((t) => `<li>${t}</li>`).join('');
+    el('r-strengths').innerHTML = r.type.strengths.map((t) => `<li>${t}</li>`).join('');
+    el('r-blinds').innerHTML = r.type.blindSpots.map((t) => `<li>${t}</li>`).join('');
+    el('r-careers').textContent = r.type.careers;
+    el('r-relations').textContent = r.type.relations;
+    quizView.classList.add('hidden');
+    resultView.classList.remove('hidden');
+    resultView.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function avgClarity(r: MbtiResult): string {
+    const avg = r.dims.reduce((s, d) => s + d.ratio, 0) / r.dims.length;
+    return avg >= 0.78 ? '锋利' : avg >= 0.67 ? '清晰' : avg >= 0.56 ? '温和' : '居中';
+  }
+
+  function finish() {
+    const r = scoreMbti(answers);
+    if (!r) { toast('还有题目未作答'); return; }
+    store.set(KEY, { answers, code: r.code });
+    renderResult(r);
+  }
+
+  // ---- 重测 / 回看 ----
+  document.getElementById('restart')!.addEventListener('click', () => {
+    answers = Array(N).fill(null);
+    idx = 0;
+    resultView.classList.add('hidden');
+    quizView.classList.remove('hidden');
+    renderQuestion();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+
+  document.getElementById('review')!.addEventListener('click', () => {
+    const firstBlank = answers.findIndex((a) => !a);
+    idx = firstBlank >= 0 ? firstBlank : N - 1;
+    resultView.classList.add('hidden');
+    quizView.classList.remove('hidden');
+    renderQuestion();
+  });
+
+  // ---- 载入上次结果 ----
+  interface Saved { answers: Answers; code: string }
+  const saved = store.get<Saved | null>(KEY, null);
+  if (saved?.answers?.length === N) {
+    const r = scoreMbti(saved.answers);
+    if (r && r.code === saved.code) {
+      answers = saved.answers;
+      renderResult(r);
+      toast('已载入上次测试结果，可点「重测一次」重来');
+    }
+  }
+
+  if (resultView.classList.contains('hidden')) renderQuestion();
+</script>
