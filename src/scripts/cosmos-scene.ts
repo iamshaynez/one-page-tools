@@ -2711,6 +2711,14 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     const distSun = camera.position.length(); // 太阳在原点
     grade.uniforms.uZone.value = THREE.MathUtils.smoothstep(distSun, 90, 320); // 内暖外冷
     zodiacalMat.uniforms.uIntensity.value = 0.32 * (0.4 + 0.6 * beauty.sun);
+    // 远眺时轨道线淡出：剧场结尾只剩星与尘，示意图线不抢戏
+    {
+      const orbitFade = 1 - THREE.MathUtils.smoothstep(distSun, 700, 1900);
+      for (const line of orbitGroup.children) {
+        const m = (line as THREE.Line).material as THREE.LineBasicMaterial;
+        m.opacity = 0.26 * orbitFade;
+      }
+    }
     bloom.strength = (0.7
       + Math.min(70 / Math.max(distSun, 10), 1) * 0.32 * beauty.sun // 靠近太阳：辉光盛放
       + Math.min(sp / 1500, 1) * 0.3                   // 高速航行：光晕拉丝
