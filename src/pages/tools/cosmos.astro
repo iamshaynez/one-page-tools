@@ -1,0 +1,511 @@
+---
+// 《宇宙漫游》— 从地球出发的太阳系 3D 飞行。真实轨道根数驱动。
+import Base from '../../layouts/Base.astro';
+---
+<Base
+  title="宇宙漫游 · 玩具展馆"
+  description="从地球出发，驾驶视角漫游真实轨道参数构建的太阳系：八行星与冥王星按 J2000 轨道根数运行，土星环、小行星带、流星与五个漂浮彩蛋。WASD 或双摇杆航行。"
+>
+  <script is:inline>
+    document.documentElement.dataset.theme = 'dark';
+  </script>
+
+  <div class="void">
+    <canvas id="stage" aria-label="宇宙漫游 — 三维太阳系"></canvas>
+
+    <!-- 天体标签层（场景投影定位） -->
+    <div class="labels" id="labels" aria-hidden="true"></div>
+
+    <div class="hud" id="hud">
+      <a class="hud__back" href="/">← <span>大厅</span></a>
+
+      <div class="hud__title shown">
+        <span class="hud__no">展品 之 二十七</span>
+        <h1>宇宙漫游<span class="hud__seal" aria-hidden="true"></span></h1>
+        <span class="hud__en">V O Y A G E &nbsp; T H R O U G H &nbsp; T H E &nbsp; S O L A R &nbsp; S Y S T E M</span>
+      </div>
+
+      <div class="hud__actions">
+        <button class="hud__btn" id="btn-time" title="宇宙时间流速（T 键切换）">6时/秒</button>
+        <button class="hud__btn" id="btn-sound" aria-pressed="false" title="环境音">音 · 关</button>
+        <button class="hud__btn" id="btn-full" title="全屏">⛶ 全屏</button>
+      </div>
+
+      <!-- 行星导航坞 -->
+      <nav class="hud__dock" id="dock" aria-label="天体导航"></nav>
+
+      <div class="hud__clock">
+        <span class="hud__speed" id="hud-speed">航速 26 u/s</span>
+        <span class="hud__near" id="hud-near"></span>
+        <span class="hud__date muted" id="hud-date"></span>
+      </div>
+
+      <div class="hud__score" id="hud-score"></div>
+
+      <div class="hud__hint shown" id="hud-hint">
+        <b>WASD</b> 航行 · <b>拖拽</b> 视角 · <b>滚轮</b> 调速 · 空格/Q 上升 · C 下降 · Shift 加速 · 点击行星前往
+      </div>
+    </div>
+
+    <!-- 信息卡 -->
+    <aside class="card" id="info-card" hidden>
+      <button class="card__close" id="card-close" aria-label="关闭">×</button>
+      <h2 id="card-name"></h2>
+      <p class="card__en" id="card-en"></p>
+      <p class="card__desc" id="card-desc"></p>
+      <dl id="card-data"></dl>
+      <ul class="card__facts" id="card-facts"></ul>
+      <button class="card__go" id="card-go">→ 自动前往</button>
+    </aside>
+
+    <!-- 发现彩蛋 toast -->
+    <div class="discovery" id="discovery" hidden>
+      <span class="discovery__tag">发现</span>
+      <b id="discovery-name"></b>
+      <p id="discovery-line"></p>
+    </div>
+
+    <!-- 航速 toast -->
+    <div class="speed-toast" id="speed-toast"></div>
+
+    <!-- 横屏提示（触屏竖屏时） -->
+    <div class="rotate" id="rotate">
+      <p>⟳</p>
+      <p>请横屏驾驶</p>
+    </div>
+
+    <div class="veil" id="veil">
+      <div class="veil__orbit"><i></i></div>
+      <p class="veil__text">正在展开宇宙…</p>
+    </div>
+
+    <div class="fatal" id="fatal" hidden>
+      <p>引擎未能点火。</p>
+      <p class="muted small" id="fatal-msg"></p>
+      <a class="hud__btn" href="/">← 回到大厅</a>
+    </div>
+  </div>
+</Base>
+
+<style is:global>
+  html, body { background: #04040a !important; overflow: hidden; }
+  /* 天体标签：场景动态创建，样式全局 */
+  .labels { position: absolute; inset: 0; pointer-events: none; z-index: 8; }
+  .cosmos-label {
+    position: absolute; top: 0; left: 0;
+    display: flex; align-items: center; gap: 6px;
+    opacity: 0; transition: opacity 0.4s; will-change: transform;
+    pointer-events: auto; cursor: pointer; padding: 4px 6px;
+  }
+  .cosmos-label i {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: #bfcbe0; box-shadow: 0 0 7px rgba(190, 205, 230, 0.9);
+    flex-shrink: 0;
+  }
+  .cosmos-label span {
+    font-family: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+    font-size: 12px; letter-spacing: 0.16em;
+    color: rgba(236, 240, 248, 0.92); white-space: nowrap;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 1), 0 0 10px rgba(0, 0, 0, 0.95);
+  }
+  .cosmos-label:hover span { color: #ffd9a0; }
+  .cosmos-label.egg i { background: #ffd9a0; box-shadow: 0 0 10px rgba(255, 200, 120, 1); }
+  .cosmos-label.egg span { color: rgba(255, 224, 178, 0.95); }
+  .cosmos-label.egg.found span { color: rgba(160, 205, 160, 0.9); }
+  .cosmos-label.egg.reveal { opacity: 1 !important; }
+  /* 触屏摇杆 */
+  #cosmos-stick {
+    position: fixed; width: 108px; height: 108px; border-radius: 50%;
+    border: 1.5px solid rgba(220, 228, 244, 0.3);
+    background: rgba(10, 14, 26, 0.25);
+    transform: translate(-50%, -50%); z-index: 12; pointer-events: none; display: none;
+  }
+  #cosmos-stick .knob {
+    position: absolute; left: 50%; top: 50%;
+    width: 44px; height: 44px; border-radius: 50%;
+    background: rgba(220, 228, 244, 0.22);
+    border: 1.5px solid rgba(220, 228, 244, 0.55);
+    transform: translate(-50%, -50%);
+  }
+</style>
+
+<style>
+  .void {
+    position: fixed; inset: 0;
+    background: radial-gradient(130% 100% at 50% 40%, #0a0c18 0%, #04040a 60%, #010108 100%);
+    color: #e8ecf4; font-family: var(--font-sans);
+  }
+  #stage { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+  #stage:active { cursor: grabbing; }
+
+  .hud { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
+  .hud::before {
+    content: ''; position: absolute; inset: 0; z-index: -1;
+    background:
+      linear-gradient(to bottom, rgba(2, 3, 8, 0.7) 0%, transparent 14%),
+      linear-gradient(to top, rgba(2, 3, 8, 0.6) 0%, transparent 13%);
+  }
+
+  .hud__back {
+    position: absolute; top: 18px; left: 20px;
+    color: rgba(232, 236, 244, 0.78); font-size: 0.92rem;
+    pointer-events: auto; text-decoration: none;
+  }
+  .hud__back:hover { color: #e8384f; }
+
+  .hud__title { position: absolute; top: 20px; left: 50%; transform: translate(-50%, 0); text-align: center; }
+  .hud__no { font-size: 0.62rem; letter-spacing: 0.5em; color: rgba(232, 236, 244, 0.5); }
+  .hud__title h1 {
+    margin: 5px 0 3px; font-family: var(--font-serif); font-weight: 700;
+    font-size: clamp(1.3rem, 3.2vw, 1.9rem); letter-spacing: 0.3em; text-indent: 0.3em;
+    color: #f4f7fc;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 1), 0 0 24px rgba(0, 0, 0, 0.85);
+  }
+  .hud__seal {
+    display: inline-block; width: 0.55em; height: 0.55em; margin-left: 0.5em;
+    background: #ff2440; border-radius: 50%; vertical-align: 0.2em;
+    box-shadow: 0 0 12px rgba(255, 36, 64, 0.9);
+  }
+  .hud__en { font-size: 0.54rem; letter-spacing: 0.3em; color: rgba(232, 236, 244, 0.38); }
+
+  .hud__actions { position: absolute; top: 18px; right: 20px; display: flex; gap: 8px; pointer-events: auto; }
+  .hud__btn {
+    background: rgba(8, 10, 18, 0.55); color: rgba(232, 236, 244, 0.85);
+    border: 1px solid rgba(232, 236, 244, 0.22); border-radius: var(--radius-s);
+    padding: 6px 12px; font-size: 0.82rem; letter-spacing: 0.08em;
+    backdrop-filter: blur(8px); cursor: pointer; transition: all 0.2s;
+    text-decoration: none; display: inline-block;
+  }
+  .hud__btn:hover { border-color: rgba(232, 56, 79, 0.7); color: #fff; }
+  .hud__btn[aria-pressed='true'] { border-color: var(--red); color: #ff8a97; }
+
+  /* 行星导航坞 */
+  .hud__dock {
+    position: absolute; left: 20px; top: 50%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: 4px; pointer-events: auto;
+  }
+  .hud__dock button {
+    background: transparent; border: 1px solid transparent; border-radius: var(--radius-s);
+    color: rgba(232, 236, 244, 0.6); font-size: 0.78rem; letter-spacing: 0.22em;
+    padding: 4px 10px; text-align: left; cursor: pointer; transition: all 0.18s;
+    font-family: var(--font-serif);
+  }
+  .hud__dock button:hover { color: #ffd9a0; border-color: rgba(255, 200, 120, 0.35); }
+  .hud__dock button.on { color: #ff8a97; border-color: rgba(232, 56, 79, 0.55); }
+
+  .hud__clock {
+    position: absolute; left: 20px; bottom: 18px;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .hud__speed { font-family: var(--font-mono); font-size: 1.05rem; letter-spacing: 0.1em; color: #e8ecf4; font-variant-numeric: tabular-nums; }
+  .hud__near { font-size: 0.76rem; letter-spacing: 0.12em; color: rgba(232, 236, 244, 0.6); }
+  .hud__near b { color: #ffd9a0; font-weight: 600; }
+  .hud__date { font-family: var(--font-mono); font-size: 0.68rem; color: rgba(232, 236, 244, 0.42); }
+
+  .hud__score {
+    position: absolute; right: 20px; bottom: 18px;
+    font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.1em;
+    color: rgba(232, 236, 244, 0.6); text-align: right;
+  }
+  .hud__score b { color: #ffd9a0; }
+
+  .hud__hint {
+    position: absolute; bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    left: 50%; transform: translateX(-50%);
+    font-size: 0.78rem; letter-spacing: 0.1em; white-space: nowrap;
+    color: rgba(240, 244, 250, 0.85);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 1), 0 0 12px rgba(0, 0, 0, 0.9);
+    opacity: 1; transition: opacity 1.4s;
+  }
+  .hud__hint b { color: #ffd9a0; font-weight: 600; }
+  .hud__hint.fade { opacity: 0; }
+
+  /* 信息卡 */
+  .card {
+    position: absolute; right: 20px; top: 74px; width: min(300px, 86vw);
+    background: rgba(8, 10, 18, 0.82); border: 1px solid rgba(232, 236, 244, 0.16);
+    border-radius: var(--radius-m); padding: 18px 18px 14px;
+    backdrop-filter: blur(14px); z-index: 15;
+    pointer-events: auto;
+  }
+  .card[hidden] { display: none; }
+  .card__close {
+    position: absolute; top: 6px; right: 10px; background: none; border: none;
+    color: rgba(232, 236, 244, 0.5); font-size: 1.2rem; cursor: pointer;
+  }
+  .card h2 { margin: 0 0 2px; font-family: var(--font-serif); font-size: 1.3rem; letter-spacing: 0.2em; color: #f4f7fc; }
+  .card__en { margin: 0 0 8px; font-size: 0.68rem; letter-spacing: 0.3em; color: rgba(232, 236, 244, 0.4); text-transform: uppercase; }
+  .card__desc { margin: 0 0 10px; font-size: 0.82rem; line-height: 1.7; color: rgba(232, 236, 244, 0.8); }
+  .card dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0 0 10px; }
+  .card dt { font-size: 0.68rem; letter-spacing: 0.14em; color: rgba(232, 236, 244, 0.45); align-self: center; }
+  .card dd { margin: 0; font-family: var(--font-mono); font-size: 0.74rem; color: #ffe9c4; font-variant-numeric: tabular-nums; }
+  .card__facts { margin: 0 0 12px; padding: 0; list-style: none; }
+  .card__facts li { font-size: 0.74rem; line-height: 1.6; color: rgba(232, 236, 244, 0.62); padding-left: 12px; position: relative; }
+  .card__facts li::before { content: '·'; position: absolute; left: 0; color: #ffd9a0; }
+  .card__go {
+    width: 100%; background: rgba(255, 200, 120, 0.12); color: #ffd9a0;
+    border: 1px solid rgba(255, 200, 120, 0.45); border-radius: var(--radius-s);
+    padding: 8px; font-size: 0.82rem; letter-spacing: 0.2em; cursor: pointer; transition: all 0.2s;
+  }
+  .card__go:hover { background: rgba(255, 200, 120, 0.22); }
+
+  /* 发现彩蛋 */
+  .discovery {
+    position: absolute; left: 50%; top: 20%; transform: translateX(-50%);
+    background: rgba(8, 10, 18, 0.88); border: 1px solid rgba(255, 200, 120, 0.5);
+    border-radius: var(--radius-m); padding: 16px 22px; z-index: 20;
+    max-width: min(420px, 88vw); text-align: center;
+    animation: disc-in 0.5s var(--ease);
+  }
+  .discovery[hidden] { display: none; }
+  .discovery__tag {
+    display: inline-block; font-size: 0.62rem; letter-spacing: 0.5em; color: #ffd9a0;
+    border: 1px solid rgba(255, 200, 120, 0.5); border-radius: 999px; padding: 2px 12px 2px 16px; margin-bottom: 8px;
+  }
+  .discovery b { display: block; font-family: var(--font-serif); font-size: 1.15rem; letter-spacing: 0.24em; color: #ffe9c4; margin-bottom: 6px; }
+  .discovery p { margin: 0; font-size: 0.8rem; line-height: 1.7; color: rgba(232, 236, 244, 0.78); }
+  @keyframes disc-in { from { opacity: 0; transform: translate(-50%, -8px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
+  .speed-toast {
+    position: absolute; left: 50%; top: 66%; transform: translateX(-50%);
+    font-family: var(--font-mono); font-size: 0.8rem; letter-spacing: 0.2em;
+    color: #ffd9a0; opacity: 0; transition: opacity 0.3s; z-index: 14;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 1);
+  }
+  .speed-toast.show { opacity: 1; }
+
+  /* 横屏提示 */
+  .rotate {
+    position: absolute; inset: 0; z-index: 50; display: none;
+    flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+    background: #04040a; color: rgba(232, 236, 244, 0.8);
+  }
+  .rotate p { margin: 0; font-family: var(--font-serif); letter-spacing: 0.4em; }
+  .rotate p:first-child { font-size: 2.4rem; animation: rot 2s ease-in-out infinite; }
+  @keyframes rot { 0%, 100% { transform: rotate(0); } 50% { transform: rotate(90deg); } }
+  @media (orientation: portrait) and (pointer: coarse) { .rotate { display: flex; } }
+
+  .veil {
+    position: absolute; inset: 0; z-index: 40;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 20px;
+    background: #04040a; transition: opacity 1.2s var(--ease);
+  }
+  .veil.lit { opacity: 0; pointer-events: none; }
+  .veil__orbit { position: relative; width: 56px; height: 56px; }
+  .veil__orbit i {
+    position: absolute; inset: 0; border-radius: 50%;
+    border: 1px solid rgba(232, 236, 244, 0.15);
+  }
+  .veil__orbit i::after {
+    content: ''; position: absolute; top: -3px; left: 50%;
+    width: 6px; height: 6px; border-radius: 50%; background: #ff2440;
+    box-shadow: 0 0 10px rgba(255, 36, 64, 0.9);
+    animation: orbit 2.2s linear infinite;
+  }
+  @keyframes orbit { from { transform: rotate(0) translateX(28px); } to { transform: rotate(360deg) translateX(28px); } }
+  .veil__text { margin: 0; font-size: 0.85rem; letter-spacing: 0.4em; color: rgba(232, 236, 244, 0.5); }
+
+  .fatal {
+    position: absolute; inset: 0; z-index: 60;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    background: #04040a; text-align: center; padding: 24px;
+  }
+  .fatal[hidden] { display: none; }
+  .fatal p { margin: 0; font-family: var(--font-serif); }
+
+  @media (max-width: 560px) {
+    .hud__title h1 { letter-spacing: 0.2em; }
+    .hud__clock { bottom: 56px; }
+    .hud__score { bottom: 34px; font-size: 0.64rem; }
+    .hud__dock button { font-size: 0.7rem; padding: 3px 8px; }
+    .hud__hint { display: none; }
+    .card { right: 12px; left: 12px; width: auto; top: auto; bottom: 90px; }
+    .hud__actions { gap: 6px; }
+    .hud__btn { padding: 6px 8px; font-size: 0.74rem; }
+  }
+  @media (max-width: 420px) { #btn-full { display: none; } }
+  /* 矮横屏：导航坞双列，避开底部遥测 */
+  @media (max-height: 520px) and (pointer: coarse) {
+    .hud__dock { display: grid; grid-template-columns: repeat(2, auto); gap: 2px 12px; top: 50%; }
+    .hud__dock button { font-size: 0.66rem; padding: 2px 6px; }
+  }
+</style>
+
+<script>
+  import { createCosmos, type CosmosTick } from '../../scripts/cosmos-scene';
+  import { CosmosAudio } from '../../scripts/cosmos-audio';
+  import { PLANETS, SUN, MOON, byKey, fmtDist, TIME_LABELS } from '../../scripts/cosmos-core';
+
+  const canvas = document.getElementById('stage') as HTMLCanvasElement;
+  const veil = document.getElementById('veil')!;
+  const fatal = document.getElementById('fatal')!;
+  const fatalMsg = document.getElementById('fatal-msg')!;
+  const hudSpeed = document.getElementById('hud-speed')!;
+  const hudNear = document.getElementById('hud-near')!;
+  const hudDate = document.getElementById('hud-date')!;
+  const hudScore = document.getElementById('hud-score')!;
+  const hudHint = document.getElementById('hud-hint')!;
+  const dock = document.getElementById('dock')!;
+  const card = document.getElementById('info-card')!;
+  const cardName = document.getElementById('card-name')!;
+  const cardEn = document.getElementById('card-en')!;
+  const cardDesc = document.getElementById('card-desc')!;
+  const cardData = document.getElementById('card-data')!;
+  const cardFacts = document.getElementById('card-facts')!;
+  const cardGo = document.getElementById('card-go') as HTMLButtonElement;
+  const discovery = document.getElementById('discovery')!;
+  const discoveryName = document.getElementById('discovery-name')!;
+  const discoveryLine = document.getElementById('discovery-line')!;
+  const speedToast = document.getElementById('speed-toast')!;
+  const btnTime = document.getElementById('btn-time') as HTMLButtonElement;
+  const btnSound = document.getElementById('btn-sound') as HTMLButtonElement;
+  const btnFull = document.getElementById('btn-full') as HTMLButtonElement;
+  const coarse = matchMedia('(pointer: coarse)').matches;
+
+  function die(msg: string) {
+    fatal.hidden = false;
+    fatalMsg.textContent = msg;
+    document.title = `✗ ${msg || '未知错误'} · 宇宙漫游`;
+    veil.classList.add('lit');
+  }
+
+  // ---- 信息卡 ----
+  let selectedKey: string | null = null;
+  function fillCard(key: string) {
+    if (key === 'moon') {
+      cardName.textContent = MOON.name;
+      cardEn.textContent = MOON.en;
+      cardDesc.textContent = MOON.desc;
+      cardData.innerHTML = rows([
+        ['直径', `${(MOON.radiusKm * 2).toLocaleString()} km`],
+        ['公转周期', `${MOON.periodDays.toFixed(2)} 天`],
+        ['自转', '潮汐锁定'],
+        ['轨道倾角', `${MOON.iDeg}°`],
+      ]);
+      cardFacts.innerHTML = MOON.facts.map((f) => `<li>${f}</li>`).join('');
+    } else {
+      const b = key === 'sun' ? SUN : byKey(key);
+      if (!b) return;
+      cardName.textContent = b.name;
+      cardEn.textContent = b.en;
+      cardDesc.textContent = b.desc;
+      cardData.innerHTML = rows([
+        ['直径', `${(b.radiusKm * 2).toLocaleString()} km`],
+        ['半长轴', b.aAU ? `${b.aAU.toFixed(3)} AU` : '—'],
+        ['公转周期', b.aAU ? `${b.periodDays > 900 ? (b.periodDays / 365.25).toFixed(1) + ' 年' : b.periodDays.toFixed(1) + ' 天'}` : '—'],
+        ['自转周期', `${Math.abs(b.rotationHours) < 48 ? Math.abs(b.rotationHours).toFixed(1) + ' 小时' : (Math.abs(b.rotationHours) / 24).toFixed(1) + ' 天'}${b.rotationHours < 0 ? '（逆行）' : ''}`],
+        ['轴倾角', `${b.tiltDeg}°`],
+        ['尺寸比例', `${(b.radiusKm / 6371).toFixed(2)} × 地球`],
+      ]);
+      cardFacts.innerHTML = b.facts.map((f) => `<li>${f}</li>`).join('');
+    }
+    card.hidden = false;
+  }
+  const rows = (list: [string, string][]) =>
+    list.map(([k, v]) => `<dt>${k}</dt><dd>${v}</dd>`).join('');
+
+  document.getElementById('card-close')!.addEventListener('click', () => { card.hidden = true; });
+  cardGo.addEventListener('click', () => {
+    if (selectedKey) handle.flyTo(selectedKey);
+  });
+
+  // ---- 导航坞 ----
+  const dockKeys = ['sun', ...PLANETS.map((p) => p.key)];
+  dockKeys.forEach((k) => {
+    const btn = document.createElement('button');
+    btn.textContent = k === 'sun' ? '太阳' : byKey(k)!.name;
+    btn.dataset.key = k;
+    btn.addEventListener('click', () => { handle.flyTo(k); });
+    dock.appendChild(btn);
+  });
+  function markDock(key: string | null) {
+    dock.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.key === key));
+  }
+
+  // ---- 环境音 ----
+  const audio = new CosmosAudio();
+  const coarseLabel = (on: boolean) => (coarse ? (on ? '音·开' : '音') : on ? '音 · 开' : '音 · 关');
+  btnSound.textContent = coarse ? '音' : '音 · 关';
+  btnSound.addEventListener('click', () => {
+    const on = audio.toggle();
+    btnSound.textContent = coarseLabel(on);
+    btnSound.setAttribute('aria-pressed', String(on));
+  });
+  btnFull.addEventListener('click', () => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void document.documentElement.requestFullscreen().catch(() => {});
+  });
+
+  let toastTimer: ReturnType<typeof setTimeout> | undefined;
+  let lastSpeedShown = -1;
+
+  function onTick(t: CosmosTick) {
+    const sp = Math.round(t.speed);
+    if (sp !== lastSpeedShown) {
+      hudSpeed.textContent = `航速 ${sp} u/s`;
+      lastSpeedShown = sp;
+    }
+    hudNear.innerHTML = `最近 <b>${t.nearest}</b> · ${fmtDist(t.nearestDist)}`;
+    const date = new Date(Date.UTC(2000, 0, 1) + t.simDays * 86400000);
+    hudDate.textContent = `宇宙历 ${date.getUTCFullYear()}.${String(date.getUTCMonth() + 1).padStart(2, '0')}.${String(date.getUTCDate()).padStart(2, '0')}`;
+    hudScore.innerHTML = t.eggsFound > 0
+      ? `漂浮物 <b>${t.eggsFound} / ${t.eggsTotal}</b>`
+      : `漂浮物 0 / ${t.eggsTotal} · 宇宙某处`;
+    markDock(t.autopilot);
+    if (t.autopilot && t.autopilot !== selectedKey) {
+      selectedKey = t.autopilot;
+      fillCard(t.autopilot);
+    }
+    audio.setWind(Math.min(t.speed / 900, 1));
+  }
+
+  function webgl2OK(): boolean {
+    try { return !!canvas.getContext('webgl2'); } catch { return false; }
+  }
+
+  let handle!: ReturnType<typeof createCosmos>;
+  try {
+    if (!webgl2OK()) {
+      die('此浏览器不支持 WebGL2，引擎无法点火。');
+    } else {
+      handle = createCosmos(canvas, {
+        labels: document.getElementById('labels'),
+        onTick,
+        onReady: () => {
+          veil.classList.add('lit');
+          setTimeout(() => veil.remove(), 1400);
+          setTimeout(() => hudHint.classList.add('fade'), 14000);
+        },
+        onDiscover: (_key, name, line) => {
+          discoveryName.textContent = name;
+          discoveryLine.textContent = line;
+          discovery.hidden = false;
+          audio.chime();
+          setTimeout(() => { discovery.hidden = true; }, 7000);
+        },
+        onSelect: (key) => {
+          if (key) { selectedKey = key; fillCard(key); }
+          else { card.hidden = true; selectedKey = null; }
+          markDock(key);
+        },
+        onSpeedToast: (s) => {
+          speedToast.textContent = `航速 ${Math.round(s)} u/s`;
+          speedToast.classList.add('show');
+          if (toastTimer) clearTimeout(toastTimer);
+          toastTimer = setTimeout(() => speedToast.classList.remove('show'), 900);
+        },
+      });
+      btnTime.textContent = TIME_LABELS[2];
+      btnTime.addEventListener('click', () => {
+        btnTime.textContent = TIME_LABELS[handle.cycleTime()];
+      });
+    }
+  } catch (err) {
+    die(err instanceof Error ? `${err.message}` : String(err));
+  }
+
+  addEventListener('error', (e) => {
+    if (!fatal.hidden) return;
+    die(e.message || '未知的故障');
+  });
+</script>
