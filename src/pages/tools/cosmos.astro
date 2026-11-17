@@ -45,6 +45,7 @@ import Base from '../../layouts/Base.astro';
         <p class="beauty__tune">示</p>
         <label class="beauty__row check"><span>天体文字</span><input type="checkbox" id="be-labels" checked></label>
         <label class="beauty__row check"><span>碎石带</span><input type="checkbox" id="be-belt" checked></label>
+        <label class="beauty__row check"><span>轨道线</span><input type="checkbox" id="be-orbits" checked></label>
       </div>
 
       <!-- 行星导航坞 -->
@@ -445,8 +446,8 @@ import Base from '../../layouts/Base.astro';
   const btnBeauty = document.getElementById('btn-beauty') as HTMLButtonElement;
   const beautyPanel = document.getElementById('beauty')!;
   const labelsEl = document.getElementById('labels')!;
-  const beautyState: CosmosBeauty & { labels: boolean; belt: boolean } = {
-    sun: 1, bloom: 1, halo: 1, atmo: 1, spin: 1, labels: true, belt: true,
+  const beautyState: CosmosBeauty & { labels: boolean; belt: boolean; orbits: boolean } = {
+    sun: 1, bloom: 1, halo: 1, atmo: 1, spin: 1, labels: true, belt: true, orbits: true,
   };
   const sliderMap: [string, keyof CosmosBeauty][] = [
     ['be-sun', 'sun'], ['be-bloom', 'bloom'], ['be-halo', 'halo'],
@@ -472,6 +473,7 @@ import Base from '../../layouts/Base.astro';
   }
   const beLabels = document.getElementById('be-labels') as HTMLInputElement;
   const beBelt = document.getElementById('be-belt') as HTMLInputElement;
+  const beOrbits = document.getElementById('be-orbits') as HTMLInputElement;
   beLabels.addEventListener('change', () => {
     beautyState.labels = beLabels.checked;
     labelsEl.style.display = beLabels.checked ? '' : 'none';
@@ -480,6 +482,11 @@ import Base from '../../layouts/Base.astro';
   beBelt.addEventListener('change', () => {
     beautyState.belt = beBelt.checked;
     handle?.setBeltVisible(beBelt.checked);
+    saveBeauty();
+  });
+  beOrbits.addEventListener('change', () => {
+    beautyState.orbits = beOrbits.checked;
+    handle?.setOrbitsVisible(beOrbits.checked);
     saveBeauty();
   });
   function restoreBeauty() {
@@ -492,6 +499,7 @@ import Base from '../../layouts/Base.astro';
       atmo: beautyState.atmo, spin: beautyState.spin,
     });
     handle.setBeltVisible(beautyState.belt);
+    handle.setOrbitsVisible(beautyState.orbits);
     labelsEl.style.display = beautyState.labels ? '' : 'none';
     for (const [id, key] of sliderMap) {
       const input = document.getElementById(id) as HTMLInputElement;
@@ -501,6 +509,7 @@ import Base from '../../layouts/Base.astro';
     }
     beLabels.checked = beautyState.labels;
     beBelt.checked = beautyState.belt;
+    beOrbits.checked = beautyState.orbits;
   }
 
   // ---- 屏保模式：隐藏全部界面，纯净画面（H 键切换） ----

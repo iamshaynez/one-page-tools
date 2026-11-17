@@ -730,7 +730,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
 
   // ---- 太阳：细米粒光球着色器 + 日冕 + 耀斑十字 ----
   const sunMat = new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 } },
+    uniforms: { uTime: { value: 0 }, uSun: { value: 1 } },
     vertexShader: /* glsl */ `
       varying vec3 vN; varying vec3 vP; varying vec3 vV;
       void main() {
@@ -742,7 +742,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
       }
     `,
     fragmentShader: /* glsl */ `
-      uniform float uTime;
+      uniform float uTime; uniform float uSun;
       varying vec3 vN; varying vec3 vP; varying vec3 vV;
       ${GLSL_NOISE}
       void main() {
@@ -753,15 +753,18 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
         float g1 = fbm(q);
         float g2 = fbm(p.yz * 15.0 - uTime * 0.04 + 4.7);
         float gran = 0.5 + 0.5 * (g1 * 0.62 + g2 * 0.38);
-        gran = pow(gran, 1.45); // 拉开对比：暗沟更深，亮胞才留得住细节
-        float rim = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.2);
-        vec3 deep = vec3(0.95, 0.34, 0.03);
-        vec3 mid  = vec3(1.0, 0.72, 0.22);
+        gran = pow(gran, 1.55); // 拉开对比：暗沟更深，亮胞才留得住细节
+        float ndv = abs(dot(normalize(vN), normalize(vV)));
+        float rim = pow(1.0 - ndv, 2.2);
+        vec3 deep = vec3(0.82, 0.26, 0.02);
+        vec3 mid  = vec3(1.0, 0.68, 0.18);
         vec3 hot  = vec3(1.0, 0.97, 0.88);
         vec3 col = mix(deep, mid, gran);
-        col = mix(col, hot, pow(gran, 3.0));
-        col += vec3(1.0, 0.55, 0.16) * rim * 1.3;
-        gl_FragColor = vec4(col * 1.65, 1.0); // HDR：喂给 bloom 与光轴（过犹不及）
+        col = mix(col, hot, pow(gran, 3.5));
+        // 临边昏暗（真实太阳盘面边缘更暗），只留一抹橙色边焰
+        col *= 0.6 + 0.4 * ndv;
+        col += vec3(1.0, 0.55, 0.16) * rim * 0.75;
+        gl_FragColor = vec4(col * 1.22 * uSun, 1.0); // 留足 HDR 余量给辉光与光轴
       }
     `,
   });
@@ -772,12 +775,12 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
   // 日冕：太阳的光环（径向渐变陡峭，盛而不洗）
   const corona = new THREE.Sprite(new THREE.SpriteMaterial({
     map: glowTextureRGB('rgba(255,214,130,0.7)', 'rgba(255,140,40,0.15)'),
-    blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.85,
+    blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.72,
   }));
-  corona.scale.setScalar(SUN_SCENE_R * 3.5);
+  corona.scale.setScalar(SUN_SCENE_R * 3.2);
   scene.add(corona);
   const sunFlare = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: starFlareTexture(), transparent: true, opacity: 0.24,
+    map: starFlareTexture(), transparent: true, opacity: 0.2,
     blending: THREE.AdditiveBlending, depthWrite: false,
   }));
   sunFlare.scale.set(SUN_SCENE_R * 9.5, SUN_SCENE_R * 9.5, 1);
@@ -1689,6 +1692,9 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
   function setBeltVisible(v: boolean) {
     beltGroup.visible = v;
   }
+  function setOrbitsVisible(v: boolean) {
+    orbitGroup.visible = v;
+  }
   function tourNext() {
     tourGoto(TOUR[(TOUR.indexOf(tour.key) + 1) % TOUR.length]);
   }
@@ -1954,9 +1960,11 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
       dustMat.uniforms.uAlpha.value = 0.1 + Math.min(sp / 500, 1) * 0.35;
     }
 
-    // ---- 太阳动画 ----
+    // ---- 太阳动画（日盘/日冕/耀斑同吃 beauty.sun 滑杆） ----
     sunMat.uniforms.uTime.value = t;
-    corona.material.opacity = 0.85 + 0.08 * Math.sin(t * 0.7);
+    sunMat.uniforms.uSun.value = beauty.sun;
+    corona.material.opacity = (0.72 + 0.08 * Math.sin(t * 0.7)) * beauty.sun;
+    sunFlare.material.opacity = 0.2 * beauty.sun;
 
     // ---- 流星 / 彩蛋 ----
     updateMeteors(dt);
@@ -2017,8 +2025,8 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     sunLight.intensity = SUN_LIGHT_BASE * beauty.sun;
     flash *= Math.pow(0.22, dt);
     const distSun = camera.position.length(); // 太阳在原点
-    bloom.strength = (0.75
-      + Math.min(70 / Math.max(distSun, 10), 1) * 0.45 // 靠近太阳：辉光盛放
+    bloom.strength = (0.7
+      + Math.min(70 / Math.max(distSun, 10), 1) * 0.32 * beauty.sun // 靠近太阳：辉光盛放
       + Math.min(sp / 1500, 1) * 0.3                   // 高速航行：光晕拉丝
       + flash * 1.5)                                   // 事件闪光（发现/到站）
       * beauty.bloom;
@@ -2030,7 +2038,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
         const ndc = toSun.project(camera);
         const ex = Math.max(0, Math.min(1, (1.6 - Math.abs(ndc.x)) / 0.6));
         const ey = Math.max(0, Math.min(1, (1.6 - Math.abs(ndc.y)) / 0.6));
-        strength = 0.34 * ex * ey * (0.3 + Math.min(70 / Math.max(distSun, 10), 1) * 0.8);
+        strength = 0.28 * ex * ey * (0.3 + Math.min(70 / Math.max(distSun, 10), 1) * 0.8) * beauty.sun;
         raysPass.uniforms.uSun.value.set(ndc.x * 0.5 + 0.5, ndc.y * 0.5 + 0.5);
         raysPass.uniforms.uAspect.value = (canvas.clientWidth || innerWidth) / (canvas.clientHeight || innerHeight);
       }
@@ -2154,6 +2162,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     setTour,
     setBeauty,
     setBeltVisible,
+    setOrbitsVisible,
     cycleTime(): number {
       timeScaleIdx = (timeScaleIdx + 1) % TIME_SCALES.length;
       return timeScaleIdx;
