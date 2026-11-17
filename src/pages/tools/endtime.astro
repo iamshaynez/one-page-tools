@@ -1,0 +1,292 @@
+---
+// 《时间的尽头》— 3D 沉浸展品。全幅画布 + 玄墨叠层，不走 ToolShell。
+import Base from '../../layouts/Base.astro';
+---
+<Base
+  title="时间的尽头 · 玩具展馆"
+  description="一座已死的巨钟坍缩成奇点：Three.js 实时渲染的吸积盘、幽灵表盘与钟之残骸。拖拽环视，按住令时间倒流。"
+>
+  <script is:inline>
+    // 本展品永远处于黑暗中
+    document.documentElement.dataset.theme = 'dark';
+  </script>
+
+  <div class="void">
+    <canvas id="stage" aria-label="时间的尽头 — 三维场景"></canvas>
+
+    <!-- HUD 叠层 -->
+    <div class="hud" id="hud">
+      <a class="hud__back" href="/">← <span>大厅</span></a>
+
+      <div class="hud__title" id="hud-title">
+        <span class="hud__no">展品 之 二十六</span>
+        <h1>时间的尽头<span class="hud__seal" aria-hidden="true"></span></h1>
+        <span class="hud__en">T H E &nbsp; E N D &nbsp; O F &nbsp; T I M E</span>
+      </div>
+
+      <div class="hud__actions">
+        <button class="hud__btn" id="btn-sound" aria-pressed="false" title="环境音">音 · 关</button>
+        <button class="hud__btn" id="btn-full" title="全屏">⛶ 全屏</button>
+      </div>
+
+      <div class="hud__clock">
+        <span class="hud__time" id="hud-time">00:00:00</span>
+        <span class="hud__state" id="hud-state">你的时间仍在流逝</span>
+        <span class="hud__dwell muted" id="hud-dwell"></span>
+      </div>
+
+      <div class="hud__hint" id="hud-hint">
+        拖拽环视 · 滚轮推近 · <b>按住</b>令时间倒流 · <b>轻点</b>荡开余烬
+      </div>
+    </div>
+
+    <!-- 加载幕 -->
+    <div class="veil" id="veil">
+      <div class="veil__dot"></div>
+      <p class="veil__text">时间正在凝结…</p>
+    </div>
+
+    <!-- WebGL 不可用 / 致命错误兜底 -->
+    <div class="fatal" id="fatal" hidden>
+      <p>这片尽头暂时无法抵达。</p>
+      <p class="muted small" id="fatal-msg"></p>
+      <a class="hud__btn" href="/">← 回到大厅</a>
+    </div>
+  </div>
+</Base>
+
+<style is:global>
+  html, body { background: #050507 !important; overflow: hidden; }
+</style>
+
+<style>
+  .void {
+    position: fixed; inset: 0;
+    background: radial-gradient(120% 90% at 50% 42%, #0a0709 0%, #050507 55%, #020203 100%);
+    color: #ece7de;
+    font-family: var(--font-sans);
+  }
+  #stage { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+  #stage:active { cursor: grabbing; }
+
+  /* ---------- HUD ---------- */
+  .hud { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
+  /* 电影式上下暗纱：保证 HUD 文字在任何画面上可读 */
+  .hud::before {
+    content: ''; position: absolute; inset: 0; z-index: -1;
+    background:
+      linear-gradient(to bottom, rgba(2, 2, 3, 0.72) 0%, transparent 15%),
+      linear-gradient(to top, rgba(2, 2, 3, 0.66) 0%, transparent 14%);
+  }
+
+  .hud__back {
+    position: absolute; top: 18px; left: 20px;
+    color: rgba(236, 231, 222, 0.78); font-size: 0.92rem;
+    pointer-events: auto; text-decoration: none;
+    transition: color 0.2s;
+  }
+  .hud__back:hover { color: #e8384f; }
+
+  .hud__title {
+    position: absolute; top: 22px; left: 50%; transform: translate(-50%, -8px);
+    text-align: center; opacity: 0;
+    transition: opacity 1.6s var(--ease), transform 1.6s var(--ease);
+  }
+  .hud__title.shown { opacity: 1; transform: translate(-50%, 0); }
+  .hud__no { font-size: 0.68rem; letter-spacing: 0.5em; color: rgba(240, 236, 228, 0.62); }
+  .hud__title h1 {
+    margin: 6px 0 4px;
+    font-family: var(--font-serif); font-weight: 700;
+    font-size: clamp(1.55rem, 4vw, 2.5rem);
+    letter-spacing: 0.28em; text-indent: 0.28em;
+    color: #f8f4ec;
+    text-shadow:
+      0 1px 3px rgba(0, 0, 0, 1), 0 2px 10px rgba(0, 0, 0, 0.95),
+      0 0 28px rgba(0, 0, 0, 0.75);
+  }
+  .hud__seal {
+    display: inline-block; width: 0.64em; height: 0.64em; margin-left: 0.55em;
+    background: #ff2440; border-radius: 50%;
+    vertical-align: 0.22em;
+    box-shadow: 0 0 14px rgba(255, 36, 64, 0.95), 0 0 34px rgba(255, 36, 64, 0.5);
+  }
+  .hud__en { font-size: 0.6rem; letter-spacing: 0.42em; color: rgba(236, 231, 222, 0.4); }
+
+  .hud__actions {
+    position: absolute; top: 18px; right: 20px;
+    display: flex; gap: 8px; pointer-events: auto;
+  }
+  .hud__btn {
+    background: rgba(10, 8, 9, 0.55); color: rgba(236, 231, 222, 0.85);
+    border: 1px solid rgba(236, 231, 222, 0.22); border-radius: var(--radius-s);
+    padding: 6px 12px; font-size: 0.82rem; letter-spacing: 0.08em;
+    backdrop-filter: blur(8px); cursor: pointer;
+    transition: all 0.2s var(--ease);
+    text-decoration: none; display: inline-block;
+  }
+  .hud__btn:hover { border-color: rgba(232, 56, 79, 0.7); color: #fff; }
+  .hud__btn[aria-pressed='true'] { border-color: var(--red); color: #ff8a97; }
+
+  .hud__clock {
+    position: absolute; left: 20px; bottom: 18px;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .hud__time {
+    font-family: var(--font-mono); font-size: 1.5rem; letter-spacing: 0.14em;
+    color: #ece7de; text-shadow: 0 0 18px rgba(255, 179, 92, 0.25);
+    font-variant-numeric: tabular-nums;
+  }
+  .hud__state { font-size: 0.78rem; color: rgba(236, 231, 222, 0.55); letter-spacing: 0.12em; }
+  .hud__state.rewind { color: #ff8a97; text-shadow: 0 0 12px rgba(232, 56, 79, 0.5); }
+  .hud__dwell { font-size: 0.72rem; color: rgba(236, 231, 222, 0.35); }
+
+  .hud__hint {
+    position: absolute; bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+    left: 50%; transform: translateX(-50%);
+    font-size: 0.9rem; letter-spacing: 0.14em; white-space: nowrap;
+    color: rgba(248, 244, 236, 0.95);
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 1), 0 0 16px rgba(0, 0, 0, 0.95);
+    opacity: 0; transition: opacity 1.2s var(--ease);
+  }
+  .hud__hint.shown { opacity: 1; }
+  .hud__hint b { color: rgba(255, 179, 92, 0.9); font-weight: 600; }
+  .hud__hint.gone { opacity: 0 !important; }
+
+  /* ---------- 加载幕 ---------- */
+  .veil {
+    position: absolute; inset: 0; z-index: 40;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+    background: #050507; transition: opacity 1.4s var(--ease);
+  }
+  .veil.lit { opacity: 0; pointer-events: none; }
+  .veil__dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--red); box-shadow: 0 0 24px rgba(232, 56, 79, 0.9);
+    animation: condense 2.4s ease-in-out infinite;
+  }
+  .veil__text { margin: 0; font-size: 0.85rem; letter-spacing: 0.4em; color: rgba(236, 231, 222, 0.5); }
+  @keyframes condense {
+    0%, 100% { transform: scale(0.6); opacity: 0.5; }
+    50% { transform: scale(1.25); opacity: 1; }
+  }
+
+  /* ---------- 兜底 ---------- */
+  .fatal {
+    position: absolute; inset: 0; z-index: 60;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    background: #050507; text-align: center; padding: 24px;
+  }
+  .fatal[hidden] { display: none; } /* display:flex 不能盖过 hidden */
+  .fatal p { margin: 0; font-family: var(--font-serif); }
+
+  @media (max-width: 560px) {
+    .hud__title h1 { letter-spacing: 0.18em; }
+    .hud__time { font-size: 1.15rem; }
+    .hud__hint { font-size: 0.68rem; max-width: 92vw; white-space: normal; text-align: center; }
+    .hud__clock { bottom: 64px; }
+  }
+</style>
+
+<script>
+  import { createScene, type SceneTick } from '../../scripts/endtime-scene';
+  import { EndOfTimeAudio } from '../../scripts/endtime-audio';
+  import { formatClock, dwellText } from '../../scripts/endtime-core';
+
+  const canvas = document.getElementById('stage') as HTMLCanvasElement;
+  const veil = document.getElementById('veil')!;
+  const fatal = document.getElementById('fatal')!;
+  const fatalMsg = document.getElementById('fatal-msg')!;
+  const hudTime = document.getElementById('hud-time')!;
+  const hudState = document.getElementById('hud-state')!;
+  const hudDwell = document.getElementById('hud-dwell')!;
+  const hudHint = document.getElementById('hud-hint')!;
+  const hudTitle = document.getElementById('hud-title')!;
+  const btnSound = document.getElementById('btn-sound') as HTMLButtonElement;
+  const btnFull = document.getElementById('btn-full') as HTMLButtonElement;
+
+  function die(msg: string) {
+    fatal.hidden = false;
+    fatalMsg.textContent = msg;
+    document.title = `✗ ${msg || '未知错误'} · 时间的尽头`; // 便于无头测试诊断
+    veil.classList.add('lit');
+  }
+
+  // WebGL2 能力检查（three r163+ 仅支持 WebGL2）
+  function webgl2OK(): boolean {
+    try { return !!canvas.getContext('webgl2'); } catch { return false; }
+  }
+
+  // ---- HUD 时钟：正流前进，逆流加速倒退 ----
+  const now0 = new Date();
+  let virtualSec = now0.getHours() * 3600 + now0.getMinutes() * 60 + now0.getSeconds(); // 本地今日已过秒
+  let lastTick = performance.now();
+  let lastReversal = 0;
+
+  function onTick(info: SceneTick) {
+    const now = performance.now();
+    const dt = Math.min((now - lastTick) / 1000, 0.1);
+    lastTick = now;
+    virtualSec += dt * (1 - 3.8 * info.reversal);
+    if (virtualSec < 0) virtualSec += 86400;
+    hudTime.textContent = formatClock(virtualSec);
+    const rewinding = info.reversal > 0.5;
+    if (rewinding !== lastReversal > 0.5) {
+      hudState.textContent = rewinding ? '⟲ 时间正在倒流' : '你的时间仍在流逝';
+      hudState.classList.toggle('rewind', rewinding);
+    }
+    lastReversal = info.reversal;
+    hudDwell.textContent = dwellText(info.elapsed);
+  }
+
+  // 触屏设备换一套措辞（滚轮不存在）
+  if (matchMedia('(pointer: coarse)').matches) {
+    hudHint.innerHTML = '单指环视 · 双指推近 · <b>按住</b>令时间倒流 · <b>轻点</b>荡开余烬';
+  }
+
+  // ---- 环境音 ----
+  const audio = new EndOfTimeAudio();
+  btnSound.addEventListener('click', () => {
+    const on = audio.toggle();
+    btnSound.textContent = on ? '音 · 开' : '音 · 关';
+    btnSound.setAttribute('aria-pressed', String(on));
+  });
+
+  btnFull.addEventListener('click', () => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void document.documentElement.requestFullscreen().catch(() => {});
+  });
+
+  try {
+    if (!webgl2OK()) {
+      die('此浏览器不支持 WebGL2，无法凝视尽头。');
+    } else {
+      createScene(canvas, {
+        audio: { bell: () => audio.bell(), reversal: (on) => audio.reversal(on) },
+        onTick,
+        onReady: () => {
+          veil.classList.add('lit');
+          setTimeout(() => veil.remove(), 1700); // 淡出后彻底移除，不留半透明残罩
+          setTimeout(() => {
+            hudTitle.classList.add('shown');
+            hudTitle.style.opacity = '1';
+            hudTitle.style.transform = 'translate(-50%, 0)';
+          }, 1100);
+          setTimeout(() => {
+            hudHint.classList.add('shown');
+            hudHint.style.opacity = '1';
+          }, 3400);
+        },
+        onFirstTouch: () => hudHint.classList.add('gone'),
+      });
+    }
+  } catch (err) {
+    const stack = err instanceof Error ? `${err.name}: ${err.message} @ ${(err.stack || '').split('\n')[1]?.trim()}` : String(err);
+    die(stack);
+  }
+
+  // 致命错误兜底（也便于无头测试发现运行时异常）
+  addEventListener('error', (e) => {
+    if (!fatal.hidden) return;
+    die(e.message || '未知的坍缩');
+  });
+</script>

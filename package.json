@@ -13,9 +13,11 @@
   },
   "dependencies": {
     "astro": "^5.1.0",
-    "mermaid": "^11.4.1"
+    "mermaid": "^11.4.1",
+    "three": "^0.180.0"
   },
   "devDependencies": {
+    "@types/three": "^0.180.0",
     "typescript": "^5.7.0",
     "vitest": "^2.1.0"
   }
