@@ -34,6 +34,13 @@ import Base from '../../layouts/Base.astro';
         <button class="hud__btn" id="btn-full" title="全屏">⛶ 全屏</button>
       </div>
 
+      <div class="hud__actions2">
+        <button class="hud__btn" id="btn-photo" title="拍照：导出带位置水印的 PNG（P 键）">拍</button>
+        <button class="hud__btn" id="btn-light" aria-pressed="false" title="光速航行：以真空光速前进，用等待体会距离（L 键）">光速</button>
+        <button class="hud__btn" id="btn-sling" title="引力弹弓：向最近天体借一记切向加速（G 键）">弓</button>
+        <button class="hud__btn" id="btn-gyro" aria-pressed="false" title="陀螺仪：转动手机环顾深空" hidden>陀螺</button>
+      </div>
+
       <div class="beauty" id="beauty" hidden>
         <p class="beauty__tune">光</p>
         <label class="beauty__row"><span>太阳光</span><input type="range" id="be-sun" min="0.4" max="2" step="0.05" value="1"><b>1.00×</b></label>
@@ -199,8 +206,12 @@ import Base from '../../layouts/Base.astro';
   .hud__btn:hover { border-color: rgba(232, 56, 79, 0.7); color: #fff; }
   .hud__btn[aria-pressed='true'] { border-color: var(--red); color: #ff8a97; }
 
+  .hud__actions2 {
+    position: absolute; top: 54px; right: 20px; display: flex; gap: 8px;
+    pointer-events: auto; z-index: 13;
+  }
   .beauty {
-    position: absolute; top: 64px; right: 20px; z-index: 14;
+    position: absolute; top: 92px; right: 20px; z-index: 14;
     width: 216px; padding: 14px 16px 10px;
     background: rgba(8, 10, 18, 0.72);
     border: 1px solid rgba(232, 236, 244, 0.14);
@@ -398,7 +409,7 @@ import Base from '../../layouts/Base.astro';
 <script>
   import { createCosmos, type CosmosTick, type CosmosBeauty } from '../../scripts/cosmos-scene';
   import { CosmosAudio } from '../../scripts/cosmos-audio';
-  import { PLANETS, SUN, MOON, byKey, fmtDist, TIME_LABELS } from '../../scripts/cosmos-core';
+  import { PLANETS, SUN, MOON, MOONS, BELT_DWARFS, byKey, fmtDist, TIME_LABELS, C_SCENE } from '../../scripts/cosmos-core';
 
   const canvas = document.getElementById('stage') as HTMLCanvasElement;
   const veil = document.getElementById('veil')!;
@@ -540,6 +551,7 @@ import Base from '../../layouts/Base.astro';
   // ---- 信息卡 ----
   let selectedKey: string | null = null;
   function fillCard(key: string) {
+    const moonExtra = MOONS.find((m) => m.key === key);
     if (key === 'moon') {
       cardName.textContent = MOON.name;
       cardEn.textContent = MOON.en;
@@ -551,6 +563,30 @@ import Base from '../../layouts/Base.astro';
         ['轨道倾角', `${MOON.iDeg}°`],
       ]);
       cardFacts.innerHTML = MOON.facts.map((f) => `<li>${f}</li>`).join('');
+    } else if (moonExtra) {
+      const parent = byKey(moonExtra.parent);
+      cardName.textContent = moonExtra.name;
+      cardEn.textContent = moonExtra.en;
+      cardDesc.textContent = moonExtra.desc;
+      cardData.innerHTML = rows([
+        ['直径', `${Math.round(moonExtra.radiusKm * 2).toLocaleString()} km`],
+        ['所属', parent ? parent.name : '—'],
+        ['公转周期', `${moonExtra.periodDays < 2 ? (moonExtra.periodDays * 24).toFixed(1) + ' 小时' : moonExtra.periodDays.toFixed(2) + ' 天'}`],
+        ['尺寸比例', `${(moonExtra.radiusKm / 6371).toFixed(3)} × 地球`],
+      ]);
+      cardFacts.innerHTML = moonExtra.facts.map((f) => `<li>${f}</li>`).join('');
+    } else if (BELT_DWARFS.some((d) => d.key === key)) {
+      const b = BELT_DWARFS.find((d) => d.key === key)!;
+      cardName.textContent = b.name;
+      cardEn.textContent = b.en;
+      cardDesc.textContent = b.desc;
+      cardData.innerHTML = rows([
+        ['直径', `${(b.radiusKm * 2).toLocaleString()} km`],
+        ['半长轴', `${b.aAU.toFixed(3)} AU`],
+        ['公转周期', `${(b.periodDays / 365.25).toFixed(1)} 年`],
+        ['尺寸比例', `${(b.radiusKm / 6371).toFixed(3)} × 地球`],
+      ]);
+      cardFacts.innerHTML = b.facts.map((f) => `<li>${f}</li>`).join('');
     } else {
       const b = key === 'sun' ? SUN : byKey(key);
       if (!b) return;
@@ -604,16 +640,115 @@ import Base from '../../layouts/Base.astro';
     else void document.documentElement.requestFullscreen().catch(() => {});
   });
 
+  // ---- 拍照 / 光速 / 弹弓 / 陀螺仪 ----
+  const btnPhoto = document.getElementById('btn-photo') as HTMLButtonElement;
+  const btnLight = document.getElementById('btn-light') as HTMLButtonElement;
+  const btnSling = document.getElementById('btn-sling') as HTMLButtonElement;
+  const btnGyro = document.getElementById('btn-gyro') as HTMLButtonElement;
+
+  function takePhoto() {
+    if (!handle) return;
+    const url = handle.snapshot();
+    const img = new Image();
+    img.onload = () => {
+      const cv = document.createElement('canvas');
+      cv.width = img.width;
+      cv.height = img.height;
+      const g = cv.getContext('2d')!;
+      g.drawImage(img, 0, 0);
+      const pad = Math.round(cv.width * 0.02);
+      const fs = Math.max(12, Math.round(cv.width * 0.013));
+      g.font = `${fs}px "SF Mono", Menlo, Consolas, monospace`;
+      g.fillStyle = 'rgba(232, 236, 244, 0.82)';
+      g.textAlign = 'right';
+      const lines = [
+        `宇宙漫游 · 最近 ${lastTick ? lastTick.nearest : '深空'}`,
+        lastTick?.nearLight ?? '',
+        hudDate.textContent ?? '',
+      ].filter(Boolean);
+      lines.forEach((ln, i) => {
+        g.fillText(ln, cv.width - pad, cv.height - pad - (lines.length - 1 - i) * Math.round(fs * 1.5));
+      });
+      const a = document.createElement('a');
+      a.href = cv.toDataURL('image/png');
+      a.download = `cosmos-${Date.now()}.png`;
+      a.click();
+      showToast('照片已导出');
+    };
+    img.src = url;
+  }
+  btnPhoto.addEventListener('click', takePhoto);
+  addEventListener('keydown', (e) => {
+    if ((e.target as HTMLElement)?.closest('button, a, input, textarea')) return;
+    if (e.key.toLowerCase() === 'p' && !e.repeat) takePhoto();
+  });
+  btnLight.addEventListener('click', () => handle?.setLightSpeed(!lightOn));
+  btnSling.addEventListener('click', () => handle?.slingshot());
+
+  // 陀螺仪视差：转动手机环顾深空（仅触屏设备显示）
+  if (coarse && typeof DeviceOrientationEvent !== 'undefined') {
+    btnGyro.hidden = false;
+    let gyroOn = false;
+    let baseA: number | null = null;
+    let baseB = 0;
+    let yawT = 0, pitchT = 0, yawC = 0, pitchC = 0;
+    const onOrient = (ev: DeviceOrientationEvent) => {
+      if (!gyroOn || ev.alpha == null || ev.beta == null) return;
+      if (baseA === null) { baseA = ev.alpha; baseB = ev.beta; return; }
+      let da = ev.alpha - baseA;
+      da = ((da + 180) % 360 + 360) % 360 - 180;
+      yawT = Math.max(-1.1, Math.min(1.1, -da * Math.PI / 180 * 0.6));
+      pitchT = Math.max(-0.6, Math.min(0.6, (ev.beta - baseB) * Math.PI / 180 * 0.5));
+    };
+    btnGyro.addEventListener('click', async () => {
+      if (!gyroOn) {
+        try {
+          const anyDOE = DeviceOrientationEvent as unknown as { requestPermission?: () => Promise<string> };
+          if (anyDOE.requestPermission && (await anyDOE.requestPermission()) !== 'granted') return;
+          window.addEventListener('deviceorientation', onOrient);
+          gyroOn = true;
+          baseA = null;
+        } catch { /* 用户拒绝 */ }
+      } else {
+        gyroOn = false;
+        window.removeEventListener('deviceorientation', onOrient);
+        handle?.setTilt(0, 0);
+      }
+      btnGyro.setAttribute('aria-pressed', String(gyroOn));
+    });
+    const gyroLoop = () => {
+      if (gyroOn) {
+        yawC += (yawT - yawC) * 0.08;
+        pitchC += (pitchT - pitchC) * 0.08;
+        handle?.setTilt(yawC, pitchC);
+      }
+      requestAnimationFrame(gyroLoop);
+    };
+    gyroLoop();
+  }
+
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
   let lastSpeedShown = -1;
+  let lightOn = false;
+  let lastTick: CosmosTick | null = null; // 拍照水印用
+
+  function showToast(text: string) {
+    speedToast.textContent = text;
+    speedToast.classList.add('show');
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => speedToast.classList.remove('show'), 1600);
+  }
 
   function onTick(t: CosmosTick) {
+    lastTick = t;
     const sp = Math.round(t.speed);
-    if (sp !== lastSpeedShown) {
-      hudSpeed.textContent = `航速 ${sp} u/s`;
-      lastSpeedShown = sp;
-    }
-    hudNear.innerHTML = `最近 <b>${t.nearest}</b> · ${fmtDist(t.nearestDist)}`;
+    const cMult = t.speed / C_SCENE;
+    const speedLine = cMult >= 1
+      ? `航速 ${sp} u/s · ${Math.round(cMult).toLocaleString()}×光速`
+      : `航速 ${sp} u/s`;
+    if (speedLine !== hudSpeed.textContent) hudSpeed.textContent = speedLine;
+    void lastSpeedShown;
+    hudNear.innerHTML = `最近 <b>${t.nearest}</b> · ${fmtDist(t.nearestDist)}${t.nearLight ? ` · ${t.nearLight}` : ''}`;
     const date = new Date(Date.UTC(2000, 0, 1) + t.simDays * 86400000);
     hudDate.textContent = `宇宙历 ${date.getUTCFullYear()}.${String(date.getUTCMonth() + 1).padStart(2, '0')}.${String(date.getUTCDate()).padStart(2, '0')}`;
     hudScore.innerHTML = t.eggsFound > 0
@@ -623,6 +758,11 @@ import Base from '../../layouts/Base.astro';
     if (t.tour !== tourOn) { // 手动操作可能已在场景内退出巡航，按钮跟随
       tourOn = t.tour;
       syncTourButton();
+    }
+    if (t.lightMode !== lightOn) {
+      lightOn = t.lightMode;
+      btnLight.setAttribute('aria-pressed', String(lightOn));
+      btnLight.textContent = lightOn ? '光·航' : '光速';
     }
     if (t.autopilot && t.autopilot !== selectedKey) {
       selectedKey = t.autopilot;
@@ -661,10 +801,10 @@ import Base from '../../layouts/Base.astro';
           markDock(key);
         },
         onSpeedToast: (s) => {
-          speedToast.textContent = `航速 ${Math.round(s)} u/s`;
-          speedToast.classList.add('show');
-          if (toastTimer) clearTimeout(toastTimer);
-          toastTimer = setTimeout(() => speedToast.classList.remove('show'), 900);
+          showToast(`航速 ${Math.round(s)} u/s`);
+        },
+        onEvent: (text) => {
+          showToast(text);
         },
       });
       btnTime.textContent = TIME_LABELS[2];

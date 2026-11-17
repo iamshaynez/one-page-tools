@@ -41,8 +41,9 @@ import {
   bodyScenePos, moonScenePos, rotationAngle, kmToUnits, auToScene,
   SUN_SCENE_R, TIME_SCALES, joystickClamp, approachDist,
   heliocentricAU, eclipticToScene,
+  MOONS, BELT_DWARFS, sceneToAU, fmtLightTime, C_SCENE,
 } from './cosmos-core';
-import type { BodySpec } from './cosmos-core';
+import type { BodySpec, MoonExtraSpec } from './cosmos-core';
 
 export interface CosmosTick {
   speed: number;
@@ -50,10 +51,21 @@ export interface CosmosTick {
   simDays: number;
   nearest: string;
   nearestDist: number;
+  nearLight: string;        // 到最近天体的光行时间（人话）
   eggsFound: number;
   eggsTotal: number;
   autopilot: string | null;
   tour: boolean;            // 巡航模式进行中
+  lightMode: boolean;       // 光速航行中
+}
+
+export interface CosmosEvents {
+  onTick?(t: CosmosTick): void;
+  onReady?(): void;
+  onDiscover?(eggKey: string, name: string, line: string): void;
+  onSelect?(key: string | null): void;
+  onSpeedToast?(speed: number): void;
+  onEvent?(text: string): void;   // 事件横幅：日全食、引力弹弓……
 }
 
 /** 美观调节参数（「美」面板滑杆，实时生效，1 = 默认） */
@@ -63,14 +75,6 @@ export interface CosmosBeauty {
   halo: number;   // 行星 Halo 路标强度（0 = 关）
   atmo: number;   // 大气边缘散射亮度
   spin: number;   // 星球自转/云层/碎石带公转速率（0 = 停）
-}
-
-export interface CosmosEvents {
-  onTick?(t: CosmosTick): void;
-  onReady?(): void;
-  onDiscover?(eggKey: string, name: string, line: string): void;
-  onSelect?(key: string | null): void;
-  onSpeedToast?(speed: number): void;
 }
 
 export interface CosmosOptions extends CosmosEvents {
@@ -489,7 +493,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
   const quality = (matchMedia('(pointer: coarse)').matches || innerWidth < 720) ? 'low' : 'high';
   const hi = quality === 'high';
 
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance', preserveDrawingBuffer: true }); // 拍照模式需要读取画布
   renderer.setClearColor(0x020208, 1);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.97;
@@ -824,6 +828,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
   }
 
   // ---- 行星 ----
+  const labelLayer = opts.labels ?? null; // 标签容器（行星/卫星/矮行星/彩蛋共用）
   const bodies: BodyNode[] = [];
   const clickTargets: THREE.Mesh[] = [];
   const ringMats: { mat: THREE.ShaderMaterial; bodyKey: string; mesh: THREE.Mesh }[] = [];
@@ -1086,6 +1091,62 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
   bodies.unshift({
     key: 'sun', group: sunGroup, axis: sunGroup, mesh: sunMesh, radius: SUN_SCENE_R, pos: new THREE.Vector3(0, 0, 0),
   });
+
+  // ---- 行星的随从们：伽利略卫星 / 提坦 / 火卫（真实半径与周期，轨距压缩） ----
+  interface MoonNode { spec: MoonExtraSpec; mesh: THREE.Mesh; pos: THREE.Vector3; r: number }
+  const moonNodes: MoonNode[] = [];
+  for (const spec of MOONS) {
+    const r = Math.max(kmToUnits(spec.radiusKm), 0.045);
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(r, 28, 20),
+      new THREE.MeshStandardMaterial({
+        color: spec.tint, roughness: 0.95, metalness: 0.02,
+        bumpMap: moonSet.bump, bumpScale: 0.03, envMapIntensity: 0.18,
+      }),
+    );
+    mesh.name = `moon:${spec.key}`;
+    scene.add(mesh);
+    clickTargets.push(mesh);
+    moonNodes.push({ spec, mesh, pos: new THREE.Vector3(), r });
+  }
+  const moonLabelNodes: { node: MoonNode; el: HTMLDivElement }[] = [];
+  if (labelLayer) {
+    for (const m of moonNodes) {
+      const el = document.createElement('div');
+      el.className = 'cosmos-label';
+      el.innerHTML = '<i></i><span></span>';
+      (el.querySelector('span') as HTMLElement).textContent = m.spec.name;
+      el.addEventListener('pointerdown', (e) => { e.stopPropagation(); flyTo(m.spec.key); });
+      labelLayer.appendChild(el);
+      moonLabelNodes.push({ node: m, el });
+    }
+  }
+
+  // ---- 带内矮行星：谷神星 / 灶神星（轨道真实，显示半径放大 5×） ----
+  const dwarfNodes: { spec: (typeof BELT_DWARFS)[number]; mesh: THREE.Mesh; pos: THREE.Vector3; r: number }[] = [];
+  for (const spec of BELT_DWARFS) {
+    const geo = displaceGeometry(new THREE.IcosahedronGeometry(spec.displayR, 2), makeNoise(5000 + spec.radiusKm), 0.42, 2.6);
+    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+      color: 0x9a9088, roughness: 0.95, metalness: 0.03,
+      bumpMap: moonSet.bump, bumpScale: 0.06, envMapIntensity: 0.2,
+    }));
+    mesh.name = `dwarf:${spec.key}`;
+    scene.add(mesh);
+    clickTargets.push(mesh);
+    dwarfNodes.push({ spec, mesh, pos: new THREE.Vector3(), r: spec.displayR });
+  }
+  const dwarfLabelNodes: { node: (typeof dwarfNodes)[number]; el: HTMLDivElement }[] = [];
+  if (labelLayer) {
+    for (const d of dwarfNodes) {
+      const el = document.createElement('div');
+      el.className = 'cosmos-label';
+      el.innerHTML = '<i></i><span></span>';
+      (el.querySelector('span') as HTMLElement).textContent = d.spec.name;
+      el.addEventListener('pointerdown', (e) => { e.stopPropagation(); flyTo(d.spec.key); });
+      labelLayer.appendChild(el);
+      dwarfLabelNodes.push({ node: d, el });
+    }
+  }
 
   // ---- 轨道线：按行星主题色着色，太阳系的结构一眼可读 ----
   const orbitGroup = new THREE.Group();
@@ -1622,7 +1683,6 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
   }
   let foundEggs: string[] = [];
   try { foundEggs = JSON.parse(localStorage.getItem(EGG_STORE) || '[]'); } catch { /* 私隐模式 */ }
-  const labelLayer = opts.labels ?? null;
   for (const spec of EGGS) {
     const group = makeEggModel(spec.key);
     group.position.set(spec.pos.x, spec.pos.y, spec.pos.z);
@@ -1741,6 +1801,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
   // ═══════════ 飞行控制 ═══════════
   const coarse = matchMedia('(pointer: coarse)').matches;
   let yaw = 0, pitch = 0;
+  let gyroYaw = 0, gyroPitch = 0; // 陀螺仪视差偏移（移动端）
   let speed = 26;
   const vel = new THREE.Vector3();
   const keys = new Set<string>();
@@ -1753,6 +1814,8 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
   let spinDays = startDays; // 自转时钟：与宇宙历同源，但吃 beauty.spin 倍率
   let timeScaleIdx = 2;
   let elapsed = 0;
+  let eclipseT = 0, eclipseCd = 0; // 日全食：对齐计时 / 冷却
+  const eclipseFx: { sp: THREE.Sprite; t: number }[] = [];
 
   // 初始位姿：地球半明半暗（强晨昏线 + 夜面灯可见），构图把地球放在一侧
   {
@@ -1773,7 +1836,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
   }
 
   const applyCamera = () => {
-    camera.quaternion.setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
+    camera.quaternion.setFromEuler(new THREE.Euler(pitch + gyroPitch, yaw + gyroYaw, 0, 'YXZ'));
   };
   applyCamera();
 
@@ -1786,6 +1849,10 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
       const m = scene.getObjectByName('moon') as THREE.Mesh | null;
       return m ? { pos: m.position, r: kmToUnits(MOON.radiusKm) } : null;
     }
+    const mn = moonNodes.find((m) => m.spec.key === key);
+    if (mn) return { pos: mn.pos, r: mn.r };
+    const dn = dwarfNodes.find((d) => d.spec.key === key);
+    if (dn) return { pos: dn.pos, r: dn.r };
     const b = bodies.find((bn) => bn.key === key);
     return b ? { pos: b.pos, r: b.radius } : null;
   }
@@ -1814,6 +1881,59 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
   function setOrbitsVisible(v: boolean) {
     orbitGroup.visible = v;
   }
+
+  // ---- 光速航行：把速度钉在真空光速（42u/499s），用等待体会距离 ----
+  let lightMode = false;
+  function setLightSpeed(on: boolean) {
+    lightMode = on;
+    if (on) {
+      speed = C_SCENE;
+      opts.onEvent?.('光速航行 · 慢得诚实——抵达月球也要 3.4 分钟');
+    }
+  }
+
+  // ---- 引力弹弓：向最近天体借一记切向加速 ----
+  function slingshot() {
+    let bestPos: THREE.Vector3 | null = null;
+    let bestD = 520;
+    const consider = (pos: THREE.Vector3) => {
+      const d = camera.position.distanceTo(pos);
+      if (d < bestD) { bestD = d; bestPos = pos; }
+    };
+    for (const b of bodies) consider(b.pos);
+    for (const m of moonNodes) consider(m.pos);
+    if (!bestPos) { opts.onEvent?.('附近没有可借力的天体'); return; }
+    const toBody = tmpV.copy(bestPos).sub(camera.position);
+    const dist = toBody.length();
+    toBody.multiplyScalar(1 / dist);
+    const tangent = tmpV2.crossVectors(up, toBody).normalize();
+    if (tangent.dot(vel) < 0) tangent.multiplyScalar(-1);
+    const gain = Math.min(5600 / (dist + 60), 220);
+    vel.copy(tangent).multiplyScalar(Math.max(vel.length() * 0.4, 40) + gain).addScaledVector(toBody, 30);
+    tour.on = false;
+    autopilotKey = null;
+    flash = Math.max(flash, 0.6);
+    opts.onEvent?.(`引力弹弓 +${Math.round(gain)} u/s`);
+  }
+
+  // ---- 拍照：立即渲染一帧并读回画布 ----
+  function snapshot(): string {
+    composer.render();
+    return renderer.domElement.toDataURL('image/png');
+  }
+
+  // ---- 陀螺仪视差（页面侧传偏移，移动端环顾深空） ----
+  function setTilt(yawOff: number, pitchOff: number) {
+    gyroYaw = THREE.MathUtils.clamp(yawOff, -1.1, 1.1);
+    gyroPitch = THREE.MathUtils.clamp(pitchOff, -0.8, 0.8);
+  }
+
+  // 场景向量 → 还原真实 AU 向量（径向压缩的逆）
+  const toRealAU = (v: THREE.Vector3, out = new THREE.Vector3()) => {
+    const r = v.length();
+    if (r < 1e-6) return out.set(0, 0, 0);
+    return out.copy(v).multiplyScalar(sceneToAU(r) / r);
+  };
   function tourNext() {
     tourGoto(TOUR[(TOUR.indexOf(tour.key) + 1) % TOUR.length]);
   }
@@ -1838,6 +1958,8 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
       breakAutopilot();
     }
     if (k === 't' && !e.repeat) timeScaleIdx = (timeScaleIdx + 1) % TIME_SCALES.length;
+    if (k === 'l' && !e.repeat) setLightSpeed(!lightMode);
+    if (k === 'g' && !e.repeat) slingshot();
   });
   addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
 
@@ -1888,6 +2010,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
   canvas.addEventListener('pointercancel', endPointer);
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
+    if (lightMode) { opts.onSpeedToast?.(C_SCENE); return; } // 光速档：光就是光
     speed = Math.max(1.2, Math.min(1600, speed * Math.pow(1.15, -Math.sign(e.deltaY))));
     opts.onSpeedToast?.(speed);
   }, { passive: false });
@@ -1903,6 +2026,8 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
       let key = '';
       const mesh = hits[0].object as THREE.Mesh;
       if (mesh.name === 'moon') key = 'moon';
+      else if (mesh.name.startsWith('moon:')) key = mesh.name.slice(5);
+      else if (mesh.name.startsWith('dwarf:')) key = mesh.name.slice(6);
       else {
         const b = bodies.find((bn) => bn.mesh === mesh);
         key = b?.key ?? '';
@@ -1976,6 +2101,64 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
       const m = moonScenePos(simDays);
       moonMesh.position.set(e.pos.x + m.x, e.pos.y + m.y, e.pos.z + m.z);
       moonMesh.rotation.y = -Math.atan2(m.z, m.x);
+    }
+    // 行星的随从们 + 带内矮行星
+    for (const mn of moonNodes) {
+      const parent = bodies.find((bn) => bn.key === mn.spec.parent);
+      if (!parent) continue;
+      const a = (simDays / mn.spec.periodDays) * Math.PI * 2 + mn.spec.phase0;
+      const inc = mn.spec.iDeg * Math.PI / 180;
+      const d = mn.spec.distUnits;
+      mn.pos.set(
+        parent.pos.x + Math.cos(a) * d,
+        parent.pos.y + Math.sin(a) * Math.sin(inc) * d,
+        parent.pos.z - Math.sin(a) * Math.cos(inc) * d,
+      );
+      mn.mesh.position.copy(mn.pos);
+      mn.mesh.rotation.y = -a; // 近似潮汐锁定
+    }
+    for (const dw of dwarfNodes) {
+      const p = bodyScenePos(dw.spec, simDays);
+      dw.pos.set(p.x, p.y, p.z);
+      dw.mesh.position.copy(dw.pos);
+      dw.mesh.rotation.y = rotationAngle(dw.spec.rotationHours, spinDays);
+    }
+
+    // 日全食：相机滑进月影锥 → 钻石环
+    {
+      const moonR = kmToUnits(MOON.radiusKm);
+      if (moonMesh && moonR > 0) {
+        const toMoon = tmpV.copy(moonMesh.position).sub(camera.position);
+        const dMoon = Math.max(toMoon.length(), 1e-4);
+        const angMoon = Math.atan2(moonR, dMoon);
+        const angSun = Math.atan2(SUN_SCENE_R, camera.position.length());
+        toMoon.multiplyScalar(1 / dMoon);
+        const toSun = tmpV2.copy(camera.position).multiplyScalar(-1).normalize();
+        const sep = Math.acos(THREE.MathUtils.clamp(toMoon.dot(toSun), -1, 1));
+        if (sep < angMoon * 0.85 && angMoon > angSun * 0.9) eclipseT += dt;
+        else eclipseT = Math.max(0, eclipseT - dt * 2);
+        if (eclipseT > 0.35 && eclipseCd <= 0) {
+          eclipseT = 0;
+          eclipseCd = 30;
+          flash = Math.max(flash, 1.3);
+          const ring = new THREE.Sprite(new THREE.SpriteMaterial({
+            map: glowTextureRGB('rgba(235,242,255,0.85)', 'rgba(150,180,255,0.25)'),
+            blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.95,
+          }));
+          ring.position.copy(moonMesh.position);
+          ring.scale.setScalar(moonR * 7);
+          scene.add(ring);
+          eclipseFx.push({ sp: ring, t: 0 });
+          opts.onEvent?.('日全食 · 钻石环');
+        }
+      }
+    }
+    eclipseCd -= dt;
+    for (let i = eclipseFx.length - 1; i >= 0; i--) {
+      const fx = eclipseFx[i];
+      fx.t += dt;
+      fx.sp.material.opacity = Math.max(0, 0.95 - fx.t / 4);
+      if (fx.t > 4) { scene.remove(fx.sp); fx.sp.material.dispose(); eclipseFx.splice(i, 1); }
     }
     // 环的局部太阳方向（供本影计算）+ 太阳距离调光
     for (const rm of ringMats) {
@@ -2058,7 +2241,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
         .addScaledVector(f, fwd)
         .addScaledVector(r, side)
         .addScaledVector(u2, lift);
-      if (tmpV.lengthSq() > 1e-6) tmpV.normalize().multiplyScalar(speed * (boost ? 4 : 1));
+      if (tmpV.lengthSq() > 1e-6) tmpV.normalize().multiplyScalar(lightMode ? C_SCENE : speed * (boost ? 4 : 1));
       vel.lerp(tmpV, Math.min(dt * 3.2, 1));
       camera.position.addScaledVector(vel, dt);
       applyCamera();
@@ -2135,21 +2318,38 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
         }
       };
       for (const bl of bodyLabels) project(bl.node.pos, bl.el, bl.node.radius * 4.5, 1600);
+      for (const ml of moonLabelNodes) project(ml.node.pos, ml.el, ml.node.r * 8 + 1, 900);
+      for (const dl of dwarfLabelNodes) project(dl.node.pos, dl.el, 3, 900);
       for (const egg of eggs) {
         if (egg.label) project(egg.pos, egg.label, 2, egg.found ? 90 : 160);
       }
     }
 
-    // ---- 最近天体 ----
+    // ---- 最近天体 + 光行时间（用真实 AU 逆换算，光速是诚实的尺子） ----
     let nearest = '—';
     let nearestDist = Infinity;
+    let nearestPos: THREE.Vector3 | null = null;
     for (const b of bodies) {
       const d = camera.position.distanceTo(b.pos) - b.radius;
-      if (d < nearestDist) { nearestDist = d; nearest = b.key === 'sun' ? '太阳' : byKey(b.key)!.name; }
+      if (d < nearestDist) { nearestDist = d; nearest = b.key === 'sun' ? '太阳' : byKey(b.key)!.name; nearestPos = b.pos; }
     }
     if (moonMesh) {
       const d = camera.position.distanceTo(moonMesh.position) - kmToUnits(MOON.radiusKm);
-      if (d < nearestDist) { nearestDist = d; nearest = '月球'; }
+      if (d < nearestDist) { nearestDist = d; nearest = '月球'; nearestPos = moonMesh.position; }
+    }
+    for (const mn of moonNodes) {
+      const d = camera.position.distanceTo(mn.pos) - mn.r;
+      if (d < nearestDist) { nearestDist = d; nearest = mn.spec.name; nearestPos = mn.pos; }
+    }
+    for (const dw of dwarfNodes) {
+      const d = camera.position.distanceTo(dw.pos) - dw.r;
+      if (d < nearestDist) { nearestDist = d; nearest = dw.spec.name; nearestPos = dw.pos; }
+    }
+    let nearLight = '';
+    if (nearestPos) {
+      const camAU = toRealAU(camera.position);
+      const tgtAU = toRealAU(nearestPos, tmpV2);
+      nearLight = `距 ${nearest} ${fmtLightTime(camAU.distanceTo(tgtAU))}`;
     }
 
     // ---- 彗星 / 曲速流光 ----
@@ -2192,10 +2392,12 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
       simDays,
       nearest,
       nearestDist: Math.max(nearestDist, 0),
+      nearLight,
       eggsFound: foundEggs.length,
       eggsTotal: EGGS.length,
       autopilot: autopilotKey,
       tour: tour.on,
+      lightMode,
     });
   }
 
@@ -2261,6 +2463,19 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     for (const egg of eggs) { if (!egg.found) egg.label?.classList.add('reveal'); }
   }
   if (q.has('tour')) setTour(true); // 无头验证巡航模式
+  if (q.has('eclipse')) {
+    // 站进月影锥：日全食验证机位
+    const e = bodyScenePos(byKey('earth')!, startDays);
+    const m = moonScenePos(startDays);
+    const mp = new THREE.Vector3(e.x + m.x, e.y + m.y, e.z + m.z);
+    const moonR = kmToUnits(MOON.radiusKm);
+    const dir = mp.clone().normalize();
+    camera.position.copy(mp).addScaledVector(dir, moonR * 2.85);
+    const look = mp.clone().sub(camera.position).normalize();
+    yaw = Math.atan2(-look.x, -look.z);
+    pitch = Math.asin(THREE.MathUtils.clamp(look.y, -0.99, 0.99));
+    applyCamera();
+  }
   // 渲染取证开关：逐层隔离洗白天空的元凶
   if (q.has('nosky')) sky.visible = false;
   if (q.has('nobloom')) bloom.enabled = false;
@@ -2303,6 +2518,10 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     setBeauty,
     setBeltVisible,
     setOrbitsVisible,
+    setLightSpeed,
+    slingshot,
+    snapshot,
+    setTilt,
     cycleTime(): number {
       timeScaleIdx = (timeScaleIdx + 1) % TIME_SCALES.length;
       return timeScaleIdx;

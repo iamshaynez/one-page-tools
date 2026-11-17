@@ -172,6 +172,93 @@ export const MOON: MoonSpec = {
   facts: ['潮汐锁定：永远以同一面示人', '没有它，地轴会剧烈摇摆'],
 };
 
+// ---------- 行星的随从们（真实半径/周期，轨距压缩） ----------
+export interface MoonExtraSpec {
+  key: string; name: string; en: string;
+  parent: string;          // 所属行星 key
+  radiusKm: number;        // 真实半径（显示走真实比例，仅火卫二设下限）
+  periodDays: number;      // 真实公转周期
+  distUnits: number;       // 场景轨距（压缩；参考月地 17u 的口径）
+  iDeg: number;            // 轨道倾角（近似）
+  phase0: number;          // 初始相位（弧度）
+  tint: number;            // 表面主色
+  desc: string;
+  facts: string[];
+}
+export const MOONS: MoonExtraSpec[] = [
+  {
+    key: 'phobos', name: '火卫一', en: 'Phobos', parent: 'mars',
+    radiusKm: 11.1, periodDays: 0.3189, distUnits: 3.4, iDeg: 1.1, phase0: 1.4, tint: 0x8a8078,
+    desc: '正在坠向火星的小月亮，一亿年后将碎成一圈行星环。',
+    facts: ['每 7.7 小时绕火星一圈，比火星自转还快', '显示半径设了下限，否则小于一个像素'],
+  },
+  {
+    key: 'deimos', name: '火卫二', en: 'Deimos', parent: 'mars',
+    radiusKm: 6.2, periodDays: 1.2624, distUnits: 4.8, iDeg: 1.8, phase0: 0.2, tint: 0x928880,
+    desc: '火星的小随从，小得从火星表面看只是一颗缓缓移动的亮星。',
+    facts: ['平均半径仅 6 公里出头'],
+  },
+  {
+    key: 'io', name: '木卫一', en: 'Io', parent: 'jupiter',
+    radiusKm: 1821.6, periodDays: 1.769, distUnits: 64, iDeg: 0.05, phase0: 0.3, tint: 0xd9c35a,
+    desc: '木星最里的火山炼狱——四百座活火山把硫磺喷上天。',
+    facts: ['潮汐加热：木星的揉捏让它内心熔融', '表面随时都在换新颜'],
+  },
+  {
+    key: 'europa', name: '木卫二', en: 'Europa', parent: 'jupiter',
+    radiusKm: 1560.8, periodDays: 3.551, distUnits: 86, iDeg: 0.47, phase0: 2.1, tint: 0xcfd8de,
+    desc: '冰壳之下藏着一片比地球所有海洋加起来还深的液态水。',
+    facts: ['冰下海洋深约一百公里', '最有希望的地外生命候选地'],
+  },
+  {
+    key: 'ganymede', name: '木卫三', en: 'Ganymede', parent: 'jupiter',
+    radiusKm: 2634.1, periodDays: 7.155, distUnits: 108, iDeg: 0.2, phase0: 4.4, tint: 0x9a8f80,
+    desc: '太阳系最大的卫星，比水星还大，还拥有自己的磁场。',
+    facts: ['直径 5268 公里，大于水星', '唯一自带磁场的卫星'],
+  },
+  {
+    key: 'callisto', name: '木卫四', en: 'Callisto', parent: 'jupiter',
+    radiusKm: 2410.3, periodDays: 16.689, distUnits: 132, iDeg: 0.19, phase0: 1.0, tint: 0x6f625a,
+    desc: '陨坑最密的天体——一部四十亿年没翻页的太阳系档案。',
+    facts: ['表面遍布远古陨击', '远离木星辐射带，未来基地候选'],
+  },
+  {
+    key: 'rhea', name: '土卫五', en: 'Rhea', parent: 'saturn',
+    radiusKm: 763.8, periodDays: 4.518, distUnits: 52, iDeg: 0.35, phase0: 2.8, tint: 0xb8b4ac,
+    desc: '土星的第二大卫星，一颗结结实实的脏雪球。',
+    facts: ['密度不足 1.3 g/cm³，近半是水冰'],
+  },
+  {
+    key: 'titan', name: '土卫六', en: 'Titan', parent: 'saturn',
+    radiusKm: 2574.7, periodDays: 15.945, distUnits: 78, iDeg: 0.35, phase0: 5.0, tint: 0xc8a060,
+    desc: '有大气、有河流、有雨有湖——只是下的都是液态甲烷。',
+    facts: ['比水星还大', '惠更斯号 2005 年在此着陆'],
+  },
+];
+
+// ---------- 带内矮行星（轨道根数真实；显示半径放大以便观赏） ----------
+export interface BeltDwarfSpec extends BodySpec {
+  displayR: number; // 场景显示半径（真实换算 × 放大倍率）
+}
+export const BELT_DWARFS: BeltDwarfSpec[] = [
+  {
+    key: 'ceres', name: '谷神星', en: 'Ceres', kind: 'dwarf',
+    radiusKm: 469.7, rotationHours: 9.07, tiltDeg: 4,
+    aAU: 2.7658, e: 0.0785, iDeg: 10.59, omDeg: 80.3, poDeg: 73.6, L0Deg: 95.99,
+    periodDays: 1681.6, displayR: 0.8,
+    desc: '小行星带里唯一的矮行星，独占整条带三分之一的质量。',
+    facts: ['直径 940 公里', '曙光号发现其神秘亮斑是盐滩', '显示半径放大 5× 以便观赏'],
+  },
+  {
+    key: 'vesta', name: '灶神星', en: 'Vesta', kind: 'dwarf',
+    radiusKm: 262.7, rotationHours: 5.34, tiltDeg: 29,
+    aAU: 2.3617, e: 0.0887, iDeg: 7.14, omDeg: 103.8, poDeg: 151.2, L0Deg: 205.65,
+    periodDays: 1325.8, displayR: 0.45,
+    desc: '小行星带第二重，它的碎片经常坠到地球，成为手里的陨石。',
+    facts: ['南极有一次几乎砸穿的巨型撞击坑', 'HED 陨石的母体', '显示半径放大 5× 以便观赏'],
+  },
+];
+
 export const byKey = (key: string): BodySpec | undefined =>
   key === 'sun' ? SUN : PLANETS.find((p) => p.key === key);
 
@@ -278,6 +365,27 @@ export function fmtDist(units: number): string {
   if (units < 10) return `${units.toFixed(1)} u`;
   if (units < 1000) return `${Math.round(units)} u`;
   return `${(units / 1000).toFixed(1)}k u`;
+}
+
+/** 场景径向距离 → 还原为真实 AU（径向压缩的逆运算） */
+export function sceneToAU(sceneR: number): number {
+  if (sceneR <= 0) throw new RangeError('场景距离需为正');
+  return Math.pow(sceneR / DIST_K, 1 / DIST_P);
+}
+
+/** 1 AU 的光行时间（秒）。光速是这片展馆最诚实的尺子 */
+export const AU_LIGHT_SEC = 499.005;
+
+/** 真空光速（场景单位/秒）：42u ÷ 499s */
+export const C_SCENE = DIST_K / AU_LIGHT_SEC;
+
+/** AU 距离 → 光行时间人话 */
+export function fmtLightTime(au: number): string {
+  const s = au * AU_LIGHT_SEC;
+  if (s < 60) return `${s.toFixed(1)} 光秒`;
+  if (s < 3600) return `${(s / 60).toFixed(1)} 光分`;
+  if (s < 86400) return `${(s / 3600).toFixed(1)} 光时`;
+  return `${(s / 86400).toFixed(1)} 光日`;
 }
 
 /** 时间流速档位：暂停 / 1小时/秒 / 6小时/秒 / 1天/秒 / 30天/秒 */
