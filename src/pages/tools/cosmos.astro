@@ -25,21 +25,28 @@ import Base from '../../layouts/Base.astro';
         <span class="hud__en">V O Y A G E &nbsp; T H R O U G H &nbsp; T H E &nbsp; S O L A R &nbsp; S Y S T E M</span>
       </div>
 
-      <div class="hud__actions">
-        <button class="hud__btn" id="btn-time" title="宇宙时间流速（T 键切换）">6时/秒</button>
-        <button class="hud__btn" id="btn-sound" aria-pressed="false" title="环境音">音 · 关</button>
-        <button class="hud__btn" id="btn-cinema" aria-pressed="false" title="屏保模式：隐藏全部界面（H 键）">屏</button>
-        <button class="hud__btn" id="btn-tour" aria-pressed="false" title="巡航模式：自动逐站漫游太阳系（任意手动操作即退出）">巡航</button>
-        <button class="hud__btn" id="btn-beauty" aria-pressed="false" title="美观调节：光晕 / 转速 / 显示项">美</button>
-        <button class="hud__btn" id="btn-full" title="全屏">⛶ 全屏</button>
+      <!-- 左上：天体导航（折叠菜单，缩放展开） -->
+      <div class="dockwrap">
+        <button class="hud__fold-btn" id="btn-dock" aria-expanded="false" title="天体导航：一键飞往">⊕ 天体</button>
+        <nav class="hud__dock" id="dock" aria-label="天体导航"></nav>
       </div>
 
-      <div class="hud__actions2">
-        <button class="hud__btn" id="btn-theater" aria-pressed="false" title="旅行者剧场：90 秒自动叙事，直到缩放到银河（V 键）">剧</button>
-        <button class="hud__btn" id="btn-photo" title="拍照：导出带位置水印的 PNG（P 键）">拍</button>
-        <button class="hud__btn" id="btn-light" aria-pressed="false" title="光速航行：以真空光速前进，用等待体会距离（L 键）">光速</button>
-        <button class="hud__btn" id="btn-sling" title="引力弹弓：向最近天体借一记切向加速（G 键）">弓</button>
-        <button class="hud__btn" id="btn-gyro" aria-pressed="false" title="陀螺仪：转动手机环顾深空" hidden>陀螺</button>
+      <!-- 右上：功能菜单（折叠，缩放展开） -->
+      <div class="menuwrap">
+        <button class="hud__fold-btn right" id="btn-menu" aria-expanded="false" title="功能菜单">☰ 菜单</button>
+        <div class="hud__menu" id="menu">
+          <button class="hud__btn" id="btn-theater" aria-pressed="false" title="旅行者剧场：90 秒自动叙事，直到缩放到银河（V 键）">剧场</button>
+          <button class="hud__btn" id="btn-tour" aria-pressed="false" title="巡航模式：自动逐站漫游太阳系（任意手动操作即退出）">巡航</button>
+          <button class="hud__btn" id="btn-light" aria-pressed="false" title="光速航行：以真空光速前进，用等待体会距离（L 键）">光速航行</button>
+          <button class="hud__btn" id="btn-sling" title="引力弹弓：向最近天体借一记切向加速（G 键）">引力弹弓</button>
+          <button class="hud__btn" id="btn-photo" title="拍照：导出带位置水印的 PNG（P 键）">拍照</button>
+          <button class="hud__btn" id="btn-beauty" aria-pressed="false" title="画面调节：光晕 / 转速 / 显示项">画面调节</button>
+          <button class="hud__btn" id="btn-time" title="宇宙时间流速（T 键切换）">6时/秒</button>
+          <button class="hud__btn" id="btn-sound" aria-pressed="false" title="环境音">声音 · 关</button>
+          <button class="hud__btn" id="btn-cinema" aria-pressed="false" title="壁纸模式：隐藏全部界面（H 键）">壁纸</button>
+          <button class="hud__btn" id="btn-gyro" aria-pressed="false" title="陀螺仪：转动手机环顾深空" hidden>陀螺仪</button>
+          <button class="hud__btn" id="btn-full" title="全屏">全屏</button>
+        </div>
       </div>
 
       <div class="beauty" id="beauty" hidden>
@@ -56,8 +63,7 @@ import Base from '../../layouts/Base.astro';
         <label class="beauty__row check"><span>轨道线</span><input type="checkbox" id="be-orbits" checked></label>
       </div>
 
-      <!-- 行星导航坞 -->
-      <nav class="hud__dock" id="dock" aria-label="天体导航"></nav>
+      <!-- 行星导航坞（由左上折叠按钮展开） -->
 
       <div class="hud__clock">
         <span class="hud__speed" id="hud-speed">航速 26 u/s</span>
@@ -68,7 +74,7 @@ import Base from '../../layouts/Base.astro';
       <div class="hud__score" id="hud-score"></div>
 
       <div class="hud__hint shown" id="hud-hint">
-        <b>WASD</b> 航行 · <b>拖拽</b> 视角 · <b>滚轮</b> 调速 · 空格/Q 上升 · C 下降 · Shift 加速 · <b>H</b> 屏保 · 点击行星前往
+        <b>WASD</b> 航行 · <b>拖拽</b> 视角 · <b>滚轮</b> 调速 · 空格/Q 上升 · C 下降 · Shift 加速 · <b>V</b> 剧场 · <b>H</b> 壁纸 · 点击行星前往
       </div>
     </div>
 
@@ -145,16 +151,23 @@ import Base from '../../layouts/Base.astro';
   /* 触屏摇杆 */
   #cosmos-stick {
     position: fixed; width: 108px; height: 108px; border-radius: 50%;
-    border: 1.5px solid rgba(220, 228, 244, 0.3);
+    border: 1.5px solid rgba(255, 210, 140, 0.38);
     background: rgba(10, 14, 26, 0.25);
     transform: translate(-50%, -50%); z-index: 12; pointer-events: none; display: none;
   }
   #cosmos-stick .knob {
     position: absolute; left: 50%; top: 50%;
     width: 44px; height: 44px; border-radius: 50%;
-    background: rgba(220, 228, 244, 0.22);
-    border: 1.5px solid rgba(220, 228, 244, 0.55);
+    background: rgba(255, 224, 178, 0.16);
+    border: 1.5px solid rgba(255, 216, 150, 0.5);
     transform: translate(-50%, -50%);
+  }
+  #cosmos-stick.look {
+    border-color: rgba(120, 210, 255, 0.42);
+  }
+  #cosmos-stick.look .knob {
+    background: rgba(178, 228, 255, 0.14);
+    border-color: rgba(140, 214, 255, 0.55);
   }
 </style>
 
@@ -197,7 +210,34 @@ import Base from '../../layouts/Base.astro';
   }
   .hud__en { font-size: 0.54rem; letter-spacing: 0.3em; color: rgba(232, 236, 244, 0.38); }
 
-  .hud__actions { position: absolute; top: 18px; right: 20px; display: flex; gap: 8px; pointer-events: auto; }
+  /* 折叠菜单按钮（左上天体 / 右上功能） */
+  .hud__fold-btn {
+    background: rgba(8, 10, 18, 0.55); color: rgba(232, 236, 244, 0.9);
+    border: 1px solid rgba(232, 236, 244, 0.24); border-radius: 999px;
+    padding: 7px 16px; font-size: 0.84rem; letter-spacing: 0.14em;
+    backdrop-filter: blur(8px); cursor: pointer; transition: all 0.2s;
+    font-family: var(--font-serif);
+  }
+  .hud__fold-btn:hover { border-color: rgba(232, 56, 79, 0.7); color: #fff; }
+  .hud__fold-btn[aria-expanded='true'] { border-color: var(--red); color: #ff8a97; }
+  .dockwrap { position: absolute; top: 54px; left: 20px; pointer-events: auto; }
+  .menuwrap { position: absolute; top: 18px; right: 20px; pointer-events: auto; }
+
+  /* 右上功能菜单：竖排面板，从右上角缩放展开 */
+  .hud__menu {
+    position: absolute; top: 46px; right: 0; width: 148px;
+    display: flex; flex-direction: column; gap: 5px; padding: 10px;
+    background: rgba(8, 10, 18, 0.78);
+    border: 1px solid rgba(232, 236, 244, 0.16);
+    border-radius: var(--radius-m);
+    backdrop-filter: blur(14px);
+    transform: scale(0.92); transform-origin: top right;
+    opacity: 0; pointer-events: none;
+    transition: transform 0.18s var(--ease), opacity 0.18s var(--ease);
+  }
+  .hud__menu.open { transform: scale(1); opacity: 1; pointer-events: auto; }
+  .hud__menu .hud__btn { width: 100%; text-align: left; padding: 7px 10px; }
+
   .hud__btn {
     background: rgba(8, 10, 18, 0.55); color: rgba(232, 236, 244, 0.85);
     border: 1px solid rgba(232, 236, 244, 0.22); border-radius: var(--radius-s);
@@ -208,12 +248,8 @@ import Base from '../../layouts/Base.astro';
   .hud__btn:hover { border-color: rgba(232, 56, 79, 0.7); color: #fff; }
   .hud__btn[aria-pressed='true'] { border-color: var(--red); color: #ff8a97; }
 
-  .hud__actions2 {
-    position: absolute; top: 54px; right: 20px; display: flex; gap: 8px;
-    pointer-events: auto; z-index: 13;
-  }
   .beauty {
-    position: absolute; top: 92px; right: 20px; z-index: 14;
+    position: absolute; top: 58px; right: 0; z-index: 14;
     width: 216px; padding: 14px 16px 10px;
     background: rgba(8, 10, 18, 0.72);
     border: 1px solid rgba(232, 236, 244, 0.14);
@@ -256,16 +292,30 @@ import Base from '../../layouts/Base.astro';
     width: 15px; height: 15px; accent-color: #e8384f; cursor: pointer;
   }
 
-  /* 行星导航坞 */
+  /* 行星导航坞：左上角玻璃面板，从左上角缩放展开；每项带行星色点 */
   .hud__dock {
-    position: absolute; left: 20px; top: 50%; transform: translateY(-50%);
-    display: flex; flex-direction: column; gap: 4px; pointer-events: auto;
+    position: absolute; top: 46px; left: 0;
+    display: flex; flex-direction: column; gap: 3px; padding: 10px 12px;
+    background: rgba(8, 10, 18, 0.78);
+    border: 1px solid rgba(232, 236, 244, 0.16);
+    border-radius: var(--radius-m);
+    backdrop-filter: blur(14px);
+    transform: scale(0.92); transform-origin: top left;
+    opacity: 0; pointer-events: none;
+    transition: transform 0.18s var(--ease), opacity 0.18s var(--ease);
   }
+  .hud__dock.open { transform: scale(1); opacity: 1; pointer-events: auto; }
   .hud__dock button {
+    display: flex; align-items: center; gap: 9px;
     background: transparent; border: 1px solid transparent; border-radius: var(--radius-s);
-    color: rgba(232, 236, 244, 0.6); font-size: 0.78rem; letter-spacing: 0.22em;
-    padding: 4px 10px; text-align: left; cursor: pointer; transition: all 0.18s;
-    font-family: var(--font-serif);
+    color: rgba(232, 236, 244, 0.72); font-size: 0.82rem; letter-spacing: 0.22em;
+    padding: 5px 12px 5px 8px; text-align: left; cursor: pointer; transition: all 0.18s;
+    font-family: var(--font-serif); white-space: nowrap;
+  }
+  .hud__dock button::before {
+    content: ''; width: 8px; height: 8px; border-radius: 50%; flex: none;
+    background: var(--tint, #8a94a8);
+    box-shadow: 0 0 8px var(--tint, #8a94a8);
   }
   .hud__dock button:hover { color: #ffd9a0; border-color: rgba(255, 200, 120, 0.35); }
   .hud__dock button.on { color: #ff8a97; border-color: rgba(232, 56, 79, 0.55); }
@@ -411,17 +461,19 @@ import Base from '../../layouts/Base.astro';
     .hud__title h1 { letter-spacing: 0.2em; }
     .hud__clock { bottom: 56px; }
     .hud__score { bottom: 34px; font-size: 0.64rem; }
-    .hud__dock button { font-size: 0.7rem; padding: 3px 8px; }
-    .hud__hint { display: none; }
+    .hud__hint { font-size: 0.66rem; bottom: 78px; }
     .card { right: 12px; left: 12px; width: auto; top: auto; bottom: 90px; }
-    .hud__actions { gap: 6px; }
-    .hud__btn { padding: 6px 8px; font-size: 0.74rem; }
+    .hud__fold-btn { padding: 6px 12px; font-size: 0.76rem; }
+    .hud__menu { width: 136px; }
+    .hud__menu .hud__btn { padding: 6px 8px; font-size: 0.76rem; }
+    .hud__dock button { font-size: 0.76rem; padding: 4px 10px 4px 6px; }
+    .beauty { width: 196px; }
   }
   @media (max-width: 420px) { #btn-full { display: none; } }
-  /* 矮横屏：导航坞双列，避开底部遥测 */
+  /* 矮横屏：天体坞双列，避开底部遥测 */
   @media (max-height: 520px) and (pointer: coarse) {
-    .hud__dock { display: grid; grid-template-columns: repeat(2, auto); gap: 2px 12px; top: 50%; }
-    .hud__dock button { font-size: 0.66rem; padding: 2px 6px; }
+    .hud__dock.open { display: grid; grid-template-columns: repeat(2, auto); gap: 2px 10px; }
+    .hud__dock button { font-size: 0.7rem; padding: 2px 6px; }
   }
 </style>
 
@@ -462,7 +514,7 @@ import Base from '../../layouts/Base.astro';
   let tourOn = false;
   function syncTourButton() {
     btnTour.setAttribute('aria-pressed', String(tourOn));
-    btnTour.textContent = tourOn ? '巡 · 开' : '巡航';
+    btnTour.textContent = tourOn ? '巡航 · 开' : '巡航';
   }
   btnTour.addEventListener('click', () => {
     if (!handle) return;
@@ -487,6 +539,7 @@ import Base from '../../layouts/Base.astro';
     const show = beautyPanel.hidden;
     beautyPanel.hidden = !show;
     btnBeauty.setAttribute('aria-pressed', String(show));
+    if (show) closeMenu();
   });
   function saveBeauty() {
     try { localStorage.setItem(BEAUTY_STORE, JSON.stringify(beautyState)); } catch { /* 私隐模式 */ }
@@ -542,14 +595,18 @@ import Base from '../../layouts/Base.astro';
     beOrbits.checked = beautyState.orbits;
   }
 
-  // ---- 屏保模式：隐藏全部界面，纯净画面（H 键切换） ----
+  // ---- 壁纸模式：隐藏全部界面，纯净画面（H 键切换） ----
   function toggleCinema() {
     const on = !document.body.classList.contains('cinema');
     document.body.classList.toggle('cinema', on);
     btnCinema.setAttribute('aria-pressed', String(on));
-    btnCinema.textContent = on ? '屏·开' : '屏';
+    btnCinema.textContent = on ? '壁纸 · 开' : '壁纸';
   }
-  btnCinema.textContent = '屏';
+  btnCinema.textContent = '壁纸';
+  // 操作提示：触屏与桌面各说各话
+  hudHint.innerHTML = coarse
+    ? '<b>左半屏</b> 摇杆航行 · <b>右半屏</b> 拖动转视角 · <b>双指捏合</b> 调速 · <b>双击</b> 疾冲 · 点天体前往'
+    : '<b>WASD</b> 航行 · <b>拖拽</b> 视角 · <b>滚轮</b> 调速 · 空格/Q 上升 · C 下降 · Shift 加速 · <b>V</b> 剧场 · <b>H</b> 壁纸 · 点击行星前往';
   btnCinema.addEventListener('click', toggleCinema);
   if (new URLSearchParams(location.search).has('cinema')) {
     setTimeout(toggleCinema, 100); // 调试/壁纸截图：无头验证用
@@ -632,14 +689,47 @@ import Base from '../../layouts/Base.astro';
     if (selectedKey) handle.flyTo(selectedKey);
   });
 
-  // ---- 导航坞 ----
+  // ---- 导航坞（左上折叠菜单，带行星色点） ----
+  const TINTS: Record<string, string> = {
+    sun: '#ffd9a0', mercury: '#9a948e', venus: '#d9b77e', earth: '#4f8fd9', mars: '#c07a5a',
+    jupiter: '#d8b58a', saturn: '#d9c9a5', uranus: '#9fd4d9', neptune: '#5478d2', pluto: '#bfae9a',
+  };
+  const btnDock = document.getElementById('btn-dock') as HTMLButtonElement;
+  btnDock.addEventListener('click', () => {
+    const open = dock.classList.toggle('open');
+    btnDock.setAttribute('aria-expanded', String(open));
+    if (open) closeMenu();
+  });
   const dockKeys = ['sun', ...PLANETS.map((p) => p.key)];
   dockKeys.forEach((k) => {
     const btn = document.createElement('button');
     btn.textContent = k === 'sun' ? '太阳' : byKey(k)!.name;
     btn.dataset.key = k;
-    btn.addEventListener('click', () => { handle.flyTo(k); });
+    btn.style.setProperty('--tint', TINTS[k] ?? '#8a94a8');
+    btn.addEventListener('click', () => {
+      handle.flyTo(k);
+      dock.classList.remove('open'); // 选完即收，还视野给星空
+      btnDock.setAttribute('aria-expanded', 'false');
+    });
     dock.appendChild(btn);
+  });
+
+  // ---- 功能菜单（右上折叠） ----
+  const btnMenu = document.getElementById('btn-menu') as HTMLButtonElement;
+  const menuEl = document.getElementById('menu')!;
+  function closeMenu() {
+    menuEl.classList.remove('open');
+    btnMenu.setAttribute('aria-expanded', 'false');
+  }
+  btnMenu.addEventListener('click', () => {
+    const open = menuEl.classList.toggle('open');
+    btnMenu.setAttribute('aria-expanded', String(open));
+    if (open) {
+      beautyPanel.hidden = true;
+      btnBeauty.setAttribute('aria-pressed', 'false');
+      dock.classList.remove('open');
+      btnDock.setAttribute('aria-expanded', 'false');
+    }
   });
   function markDock(key: string | null) {
     dock.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.key === key));
@@ -647,8 +737,8 @@ import Base from '../../layouts/Base.astro';
 
   // ---- 环境音 ----
   const audio = new CosmosAudio();
-  const coarseLabel = (on: boolean) => (coarse ? (on ? '音·开' : '音') : on ? '音 · 开' : '音 · 关');
-  btnSound.textContent = coarse ? '音' : '音 · 关';
+  const coarseLabel = (on: boolean) => (coarse ? (on ? '声音' : '声音') : on ? '声音 · 开' : '声音 · 关');
+  btnSound.textContent = coarse ? '声音' : '声音 · 关';
   btnSound.addEventListener('click', () => {
     const on = audio.toggle();
     btnSound.textContent = coarseLabel(on);
@@ -665,7 +755,7 @@ import Base from '../../layouts/Base.astro';
   let theaterOn = false;
   function syncTheaterButton() {
     btnTheater.setAttribute('aria-pressed', String(theaterOn));
-    btnTheater.textContent = theaterOn ? '剧·映' : '剧';
+    btnTheater.textContent = theaterOn ? '剧场 · 开' : '剧场';
   }
   btnTheater.addEventListener('click', () => {
     if (!handle) return;
@@ -801,7 +891,7 @@ import Base from '../../layouts/Base.astro';
     if (t.lightMode !== lightOn) {
       lightOn = t.lightMode;
       btnLight.setAttribute('aria-pressed', String(lightOn));
-      btnLight.textContent = lightOn ? '光·航' : '光速';
+      btnLight.textContent = lightOn ? '光速 · 开' : '光速航行';
     }
     if (t.theater !== theaterOn) {
       theaterOn = t.theater;

@@ -2141,9 +2141,16 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     }
   }
 
+  // ---- 双击疾冲：向视线方向来一记短促的推进脉冲 ----
+  function dashPulse() {
+    const f = tmpV.set(0, 0, -1).applyQuaternion(camera.quaternion);
+    vel.addScaledVector(f, 260);
+    flash = Math.max(flash, 0.25);
+    opts.onEvent?.('疾冲');
+  }
+
   // ---- 引力弹弓：向最近天体借一记切向加速 ----
-  function slingshot() {
-    let bestPos: THREE.Vector3 | null = null;
+  function slingshot() {    let bestPos: THREE.Vector3 | null = null;
     let bestD = 520;
     const consider = (pos: THREE.Vector3) => {
       const d = camera.position.distanceTo(pos);
@@ -2259,6 +2266,9 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
   const sticks: { id: number; kind: 'move' | 'look'; sx: number; sy: number; x: number; y: number }[] = [];
   let mouseDrag: { id: number; x: number; y: number } | null = null;
   let moved = 0;
+  const pinchIds = new Set<number>(); // 双指捏合（右半屏）：调速
+  let pinchDist = 0;
+  let lastTapT = 0, lastTapX = 0, lastTapY = 0; // 双击疾冲
 
   canvas.addEventListener('pointerdown', (e) => {
     canvas.setPointerCapture?.(e.pointerId);
@@ -2266,7 +2276,14 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     if (e.pointerType === 'touch') {
       const isLeft = e.clientX < innerWidth * 0.44;
       sticks.push({ id: e.pointerId, kind: isLeft ? 'move' : 'look', sx: e.clientX, sy: e.clientY, x: e.clientX, y: e.clientY });
-      if (isLeft) showStick(e.clientX, e.clientY);
+      showStick(isLeft ? 'move' : 'look', e.clientX, e.clientY);
+      if (!isLeft) {
+        pinchIds.add(e.pointerId);
+        if (pinchIds.size === 2) {
+          const pts = sticks.filter((s) => pinchIds.has(s.id));
+          if (pts.length === 2) pinchDist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+        }
+      }
     } else {
       mouseDrag = { id: e.pointerId, x: e.clientX, y: e.clientY };
     }
@@ -2275,8 +2292,27 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     if (e.pointerType === 'touch') {
       const st = sticks.find((s) => s.id === e.pointerId);
       if (st) {
+        const dx = e.clientX - st.x;
+        const dy = e.clientY - st.y;
         st.x = e.clientX; st.y = e.clientY;
-        moved += 4;
+        moved += Math.abs(dx) + Math.abs(dy);
+        if (pinchIds.size === 2 && pinchIds.has(e.pointerId)) {
+          // 双指捏合：调速优先，视角让位
+          const pts = sticks.filter((s) => pinchIds.has(s.id));
+          if (pts.length === 2) {
+            const d = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+            if (pinchDist > 0 && d > 0) {
+              speed = Math.max(1.2, Math.min(1600, speed * Math.pow(d / pinchDist, 1.4)));
+              opts.onSpeedToast?.(speed);
+            }
+            pinchDist = d;
+          }
+        } else if (st.kind === 'look') {
+          // 右半屏拖动 = 视角（与鼠标拖拽同一套公式）
+          yaw -= dx * 0.0032;
+          pitch = Math.max(-1.45, Math.min(1.45, pitch - dy * 0.0032));
+          if (moved > 6) breakAutopilot();
+        }
       }
       return;
     }
@@ -2292,11 +2328,22 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
   });
   const endPointer = (e: PointerEvent) => {
     const stIdx = sticks.findIndex((s) => s.id === e.pointerId);
+    const wasKind = stIdx >= 0 ? sticks[stIdx].kind : null;
     if (stIdx >= 0) sticks.splice(stIdx, 1);
-    if (!sticks.some((s) => s.kind === 'move')) hideStick();
+    if (wasKind) hideStick(wasKind);
+    pinchIds.delete(e.pointerId);
+    if (pinchIds.size < 2) pinchDist = 0;
     if (mouseDrag && e.pointerId === mouseDrag.id) {
-      if (moved < 6) handleTap(e.clientX, e.clientY);
+      if (moved < 6) void handleTap(e.clientX, e.clientY);
       mouseDrag = null;
+      return;
+    }
+    if (wasKind && moved < 6) {
+      const now = performance.now();
+      const isDouble = now - lastTapT < 320 && Math.hypot(e.clientX - lastTapX, e.clientY - lastTapY) < 48;
+      lastTapT = now; lastTapX = e.clientX; lastTapY = e.clientY;
+      const hit = handleTap(e.clientX, e.clientY);
+      if (isDouble && !hit) dashPulse(); // 双击空处：向前疾冲一记
     }
   };
   canvas.addEventListener('pointerup', endPointer);
@@ -2310,7 +2357,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
 
   const raycaster = new THREE.Raycaster();
   const ndc = new THREE.Vector2();
-  function handleTap(x: number, y: number) {
+  function handleTap(x: number, y: number): boolean {
     const rect = canvas.getBoundingClientRect();
     ndc.set(((x - rect.left) / rect.width) * 2 - 1, -((y - rect.top) / rect.height) * 2 + 1);
     raycaster.setFromCamera(ndc, camera);
@@ -2325,28 +2372,33 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
         const b = bodies.find((bn) => bn.mesh === mesh);
         key = b?.key ?? '';
       }
-      if (key) { flyTo(key); return; }
+      if (key) { flyTo(key); return true; }
     }
+    return false;
   }
 
-  let stickEl: HTMLDivElement | null = null;
-  let stickKnob: HTMLDivElement | null = null;
-  function showStick(x: number, y: number) {
-    if (!stickEl) {
-      stickEl = document.createElement('div');
-      stickEl.id = 'cosmos-stick';
-      stickEl.innerHTML = '<div class="knob"></div>';
-      document.body.appendChild(stickEl);
-      stickKnob = stickEl.querySelector('.knob');
+  // 双色摇杆：左=航行（金）右=视角（青），各一枚互不复用
+  const stickEls: Record<'move' | 'look', HTMLDivElement | null> = { move: null, look: null };
+  function showStick(kind: 'move' | 'look', x: number, y: number) {
+    if (!stickEls[kind]) {
+      const el = document.createElement('div');
+      el.id = 'cosmos-stick';
+      el.className = kind;
+      el.innerHTML = '<div class="knob"></div>';
+      document.body.appendChild(el);
+      stickEls[kind] = el;
     }
-    stickEl.style.display = 'block';
-    stickEl.style.left = `${x}px`;
-    stickEl.style.top = `${y}px`;
+    const el = stickEls[kind]!;
+    el.style.display = 'block';
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+    (el.querySelector('.knob') as HTMLElement).style.transform = 'translate(-50%, -50%)';
   }
-  function hideStick() {
-    if (stickEl) {
-      stickEl.style.display = 'none';
-      if (stickKnob) stickKnob.style.transform = 'translate(-50%, -50%)';
+  function hideStick(kind: 'move' | 'look') {
+    const el = stickEls[kind];
+    if (el) {
+      el.style.display = 'none';
+      (el.querySelector('.knob') as HTMLElement).style.transform = 'translate(-50%, -50%)';
     }
   }
 
@@ -2473,10 +2525,11 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
       const c = joystickClamp(dx / 56, -dy / 56);
       side = c.x;
       fwd = -c.y;
-      if (stickKnob) {
+      const knob = stickEls.move?.querySelector('.knob') as HTMLElement | null;
+      if (knob) {
         const mm = Math.min(1, Math.hypot(dx, dy) / 56);
         const ang = Math.atan2(dy, dx);
-        stickKnob.style.transform = `translate(calc(-50% + ${Math.cos(ang) * mm * 34}px), calc(-50% + ${Math.sin(ang) * mm * 34}px))`;
+        knob.style.transform = `translate(calc(-50% + ${Math.cos(ang) * mm * 34}px), calc(-50% + ${Math.sin(ang) * mm * 34}px))`;
       }
     }
     if (keys.has('w')) fwd += 1;
