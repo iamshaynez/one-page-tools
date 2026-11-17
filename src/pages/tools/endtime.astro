@@ -4,7 +4,7 @@ import Base from '../../layouts/Base.astro';
 ---
 <Base
   title="时间的尽头 · 玩具展馆"
-  description="一座已死的巨钟坍缩成奇点：Three.js 实时渲染的吸积盘、幽灵表盘与钟之残骸。拖拽环视，按住令时间倒流。"
+  description="一座已死的巨钟坍缩成奇点：吸积盘、引力透镜与时间膨胀。坠向视界令你的钟变慢，按住令时间倒流至 t=0，见证下一个宇宙。"
 >
   <script is:inline>
     // 本展品永远处于黑暗中
@@ -13,6 +13,9 @@ import Base from '../../layouts/Base.astro';
 
   <div class="void">
     <canvas id="stage" aria-label="时间的尽头 — 三维场景"></canvas>
+
+    <!-- 学者模式标签（由场景投影定位） -->
+    <div class="labels" id="labels" aria-hidden="true"></div>
 
     <!-- HUD 叠层 -->
     <div class="hud" id="hud">
@@ -25,20 +28,34 @@ import Base from '../../layouts/Base.astro';
       </div>
 
       <div class="hud__actions">
+        <button class="hud__btn" id="btn-scholar" aria-pressed="false" title="学者模式：为万物标注学名">注 · 关</button>
         <button class="hud__btn" id="btn-sound" aria-pressed="false" title="环境音">音 · 关</button>
         <button class="hud__btn" id="btn-full" title="全屏">⛶ 全屏</button>
       </div>
 
       <div class="hud__clock">
         <span class="hud__time" id="hud-time">00:00:00</span>
+        <span class="hud__coord" id="hud-coord"></span>
         <span class="hud__state" id="hud-state">你的时间仍在流逝</span>
         <span class="hud__dwell muted" id="hud-dwell"></span>
       </div>
 
+      <div class="hud__score" id="hud-score" hidden></div>
+
       <div class="hud__hint" id="hud-hint">
-        拖拽环视 · 滚轮推近 · <b>按住</b>令时间倒流 · <b>轻点</b>荡开余烬
+        拖拽环视 · 滚轮坠向视界 · <b>按住</b>令时间倒流
       </div>
     </div>
+
+    <!-- t = 0 凝滞叠层 -->
+    <div class="t0" id="t0" hidden>
+      <div class="t0__glyph">t = 0</div>
+      <div class="t0__bar"><i id="t0-fill"></i></div>
+      <p class="t0__note">万物凝滞 —— 继续按住，见证下一次开始</p>
+    </div>
+
+    <!-- 大反弹白闪 -->
+    <div class="flash" id="flash" aria-hidden="true"></div>
 
     <!-- 加载幕 -->
     <div class="veil" id="veil">
@@ -57,6 +74,29 @@ import Base from '../../layouts/Base.astro';
 
 <style is:global>
   html, body { background: #050507 !important; overflow: hidden; }
+  /* 学者标签由场景 JS 动态创建，带不上 scoped 属性，样式必须全局 */
+  .labels { position: absolute; inset: 0; pointer-events: none; z-index: 8; }
+  .labels:not(.on) .scholar-label { visibility: hidden; }
+  .scholar-label {
+    position: absolute; top: 0; left: 0;
+    display: flex; align-items: center; gap: 7px;
+    opacity: 0; transition: opacity 0.5s;
+    will-change: transform;
+  }
+  .labels.on .scholar-label { opacity: 1; }
+  .scholar-label i {
+    width: 5px; height: 5px; border-radius: 50%;
+    background: #ffb35c; box-shadow: 0 0 8px rgba(255, 179, 92, 0.9);
+    flex-shrink: 0;
+  }
+  .scholar-label span {
+    font-family: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+    font-size: 13px; letter-spacing: 0.12em; font-weight: 600;
+    color: rgba(252, 249, 242, 0.97); white-space: nowrap;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 1), 0 0 4px rgba(0, 0, 0, 1), 0 0 14px rgba(0, 0, 0, 0.95);
+    border-bottom: 1px solid rgba(255, 179, 92, 0.5);
+    padding-bottom: 2px;
+  }
 </style>
 
 <style>
@@ -68,6 +108,8 @@ import Base from '../../layouts/Base.astro';
   }
   #stage { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
   #stage:active { cursor: grabbing; }
+
+  /* 学者标签样式见顶部 is:global（动态元素无法命中 scoped 选择器） */
 
   /* ---------- HUD ---------- */
   .hud { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
@@ -136,9 +178,25 @@ import Base from '../../layouts/Base.astro';
     color: #ece7de; text-shadow: 0 0 18px rgba(255, 179, 92, 0.25);
     font-variant-numeric: tabular-nums;
   }
+  .hud__coord {
+    font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.1em;
+    color: rgba(180, 200, 230, 0.55); font-variant-numeric: tabular-nums;
+  }
   .hud__state { font-size: 0.78rem; color: rgba(236, 231, 222, 0.55); letter-spacing: 0.12em; }
   .hud__state.rewind { color: #ff8a97; text-shadow: 0 0 12px rgba(232, 56, 79, 0.5); }
+  .hud__state.slow { color: #9fb8dc; }
+  .hud__state.dead { color: #c9a35a; }
+  .hud__state.epoch { color: #ffd9a0; text-shadow: 0 0 14px rgba(255, 179, 92, 0.6); }
   .hud__dwell { font-size: 0.72rem; color: rgba(236, 231, 222, 0.35); }
+
+  .hud__score {
+    position: absolute; right: 20px; bottom: 18px;
+    font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.1em;
+    color: rgba(236, 231, 222, 0.6); text-align: right;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+    font-variant-numeric: tabular-nums;
+  }
+  .hud__score b { color: #ffd9a0; font-weight: 600; }
 
   .hud__hint {
     position: absolute; bottom: calc(22px + env(safe-area-inset-bottom, 0px));
@@ -149,8 +207,41 @@ import Base from '../../layouts/Base.astro';
     opacity: 0; transition: opacity 1.2s var(--ease);
   }
   .hud__hint.shown { opacity: 1; }
-  .hud__hint b { color: rgba(255, 179, 92, 0.9); font-weight: 600; }
+  .hud__hint b { color: rgba(255, 179, 92, 0.95); font-weight: 600; }
   .hud__hint.gone { opacity: 0 !important; }
+
+  /* ---------- t = 0 ---------- */
+  .t0 {
+    position: absolute; inset: 0; z-index: 20;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+    pointer-events: none;
+  }
+  .t0[hidden] { display: none; }
+  .t0__glyph {
+    font-family: var(--font-serif); font-weight: 600;
+    font-size: clamp(2.6rem, 8vw, 4.6rem); letter-spacing: 0.3em; text-indent: 0.3em;
+    color: #f8f4ec;
+    text-shadow: 0 0 40px rgba(255, 190, 120, 0.5), 0 2px 12px rgba(0, 0, 0, 1);
+  }
+  .t0__bar {
+    width: min(320px, 60vw); height: 2px;
+    background: rgba(236, 231, 222, 0.16); overflow: hidden;
+  }
+  .t0__bar i {
+    display: block; height: 100%; width: 0%;
+    background: linear-gradient(to right, #ce1432, #ffb35c);
+    box-shadow: 0 0 12px rgba(255, 100, 60, 0.8);
+  }
+  .t0__note { margin: 0; font-size: 0.8rem; letter-spacing: 0.3em; color: rgba(236, 231, 222, 0.6); }
+
+  /* ---------- 大反弹白闪 ---------- */
+  .flash { position: absolute; inset: 0; z-index: 30; background: #fff; opacity: 0; pointer-events: none; }
+  .flash.on { animation: bigbang 1.2s var(--ease) forwards; }
+  @keyframes bigbang {
+    0% { opacity: 0; }
+    12% { opacity: 0.9; }
+    100% { opacity: 0; }
+  }
 
   /* ---------- 加载幕 ---------- */
   .veil {
@@ -180,10 +271,21 @@ import Base from '../../layouts/Base.astro';
   .fatal p { margin: 0; font-family: var(--font-serif); }
 
   @media (max-width: 560px) {
-    .hud__title h1 { letter-spacing: 0.18em; }
+    .hud__title h1 { letter-spacing: 0.18em; text-shadow: 0 1px 3px rgba(0,0,0,1), 0 2px 12px rgba(0,0,0,1), 0 0 30px rgba(0,0,0,0.9); }
     .hud__time { font-size: 1.15rem; }
-    .hud__hint { font-size: 0.68rem; max-width: 92vw; white-space: normal; text-align: center; }
     .hud__clock { bottom: 64px; }
+    .hud__score { bottom: 40px; font-size: 0.66rem; }
+    .hud__hint { font-size: 0.68rem; max-width: 92vw; white-space: normal; text-align: center; }
+    .hud__actions { gap: 6px; }
+    .hud__btn { padding: 6px 8px; font-size: 0.74rem; letter-spacing: 0.02em; }
+    .hud::before {
+      background:
+        linear-gradient(to bottom, rgba(2, 2, 3, 0.85) 0%, transparent 17%),
+        linear-gradient(to top, rgba(2, 2, 3, 0.7) 0%, transparent 15%);
+    }
+  }
+  @media (max-width: 420px) {
+    #btn-full { display: none; } /* 极窄屏保两个核心开关（全屏在移动端本就少用） */
   }
 </style>
 
@@ -197,12 +299,19 @@ import Base from '../../layouts/Base.astro';
   const fatal = document.getElementById('fatal')!;
   const fatalMsg = document.getElementById('fatal-msg')!;
   const hudTime = document.getElementById('hud-time')!;
+  const hudCoord = document.getElementById('hud-coord')!;
   const hudState = document.getElementById('hud-state')!;
   const hudDwell = document.getElementById('hud-dwell')!;
   const hudHint = document.getElementById('hud-hint')!;
   const hudTitle = document.getElementById('hud-title')!;
+  const hudScore = document.getElementById('hud-score')!;
+  const t0Box = document.getElementById('t0')!;
+  const t0Fill = document.getElementById('t0-fill')!;
+  const flashBox = document.getElementById('flash')!;
+  const labels = document.getElementById('labels')!;
   const btnSound = document.getElementById('btn-sound') as HTMLButtonElement;
   const btnFull = document.getElementById('btn-full') as HTMLButtonElement;
+  const btnScholar = document.getElementById('btn-scholar') as HTMLButtonElement;
 
   function die(msg: string) {
     fatal.hidden = false;
@@ -216,38 +325,125 @@ import Base from '../../layouts/Base.astro';
     try { return !!canvas.getContext('webgl2'); } catch { return false; }
   }
 
-  // ---- HUD 时钟：正流前进，逆流加速倒退 ----
+  // ---- 双时钟：τ 你的固有时（受膨胀与倒流支配）/ t 远方的坐标时 ----
   const now0 = new Date();
-  let virtualSec = now0.getHours() * 3600 + now0.getMinutes() * 60 + now0.getSeconds(); // 本地今日已过秒
+  const startSec = now0.getHours() * 3600 + now0.getMinutes() * 60 + now0.getSeconds();
+  let properSec = startSec;   // τ
+  let coordSec = startSec;    // t（远方，永远 1×）
   let lastTick = performance.now();
   let lastReversal = 0;
+  let lastPhase = 'idle';
+  let paradoxUntil = 0;
+  let lastStatus = '';
 
-  function onTick(info: SceneTick) {
+  // ---- 递进引导：每条只出现一次 ----
+  interface HintSpec { id: string; when(s: SceneTick): boolean; text: string; dur: number }
+  const hints: HintSpec[] = [];
+  const seenHints = new Set<string>();
+  let hintTimer: ReturnType<typeof setTimeout> | undefined;
+  function pushHint(s: SceneTick) {
+    const next = hints.find((h) => !seenHints.has(h.id) && h.when(s));
+    if (!next) return;
+    seenHints.add(next.id);
+    hints.splice(hints.indexOf(next), 1);
+    hudHint.innerHTML = next.text;
+    hudHint.classList.add('shown');
+    if (hintTimer) clearTimeout(hintTimer);
+    hintTimer = setTimeout(() => hudHint.classList.remove('shown'), next.dur);
+  }
+
+  function statusFor(s: SceneTick, now: number): { text: string; cls: string } {
+    if (s.phase === 'expand' || s.phase === 'reform') return { text: `宇宙重生 · 第 ${s.bounceCount} 纪元`, cls: 'epoch' };
+    if (s.phase === 't0') return { text: 't = 0 · 万物凝滞', cls: 'rewind' };
+    if (now < paradoxUntil) return { text: '视界保存了它们坠落的全部历史', cls: 'rewind' };
+    if (s.reversal > 0.5) return { text: '⟲ 时间正在倒流', cls: 'rewind' };
+    if (s.entropy > 0.85) return { text: '表盘已死 · 按住可令其复原', cls: 'dead' };
+    if (s.entropy > 0.45) return { text: '钟面正在死去', cls: 'dead' };
+    if (s.dilation < 0.55) return { text: '你在视界近旁 —— 你的钟正在变慢', cls: 'slow' };
+    return { text: '你的时间仍在流逝', cls: '' };
+  }
+
+  function onTick(s: SceneTick) {
     const now = performance.now();
     const dt = Math.min((now - lastTick) / 1000, 0.1);
     lastTick = now;
-    virtualSec += dt * (1 - 3.8 * info.reversal);
-    if (virtualSec < 0) virtualSec += 86400;
-    hudTime.textContent = formatClock(virtualSec);
-    const rewinding = info.reversal > 0.5;
-    if (rewinding !== lastReversal > 0.5) {
-      hudState.textContent = rewinding ? '⟲ 时间正在倒流' : '你的时间仍在流逝';
-      hudState.classList.toggle('rewind', rewinding);
+
+    // τ：正流受膨胀减速，倒流加速后退；t：远方坐标时恒速前进
+    properSec += dt * (1 - 3.8 * s.reversal) * s.dilation;
+    coordSec += dt;
+    if (properSec < 0) properSec += 86400;
+    if (coordSec >= 86400) coordSec -= 86400;
+
+    hudTime.textContent = formatClock(properSec);
+    const lost = (coordSec - properSec + 86400) % 86400;
+    hudCoord.textContent =
+      `远方 ${formatClock(coordSec)} · 流速 ×${s.dilation.toFixed(2)}` +
+      (lost > 5 && s.reversal < 0.5 ? ` · 远方已多活 ${Math.floor(lost)} 秒` : '');
+
+    // 倒流上升沿：信息悖论一句（全息原理）
+    if (s.reversal > 0.5 && lastReversal <= 0.5) paradoxUntil = now + 3500;
+    lastReversal = s.reversal;
+
+    const st = statusFor(s, now);
+    const key = st.text + st.cls;
+    if (key !== lastStatus) {
+      hudState.textContent = st.text;
+      hudState.className = `hud__state ${st.cls}`.trim();
+      lastStatus = key;
     }
-    lastReversal = info.reversal;
-    hudDwell.textContent = dwellText(info.elapsed);
+    hudDwell.textContent = dwellText(s.elapsed);
+
+    // 计数板
+    if (s.photons > 0 || s.energy > 0 || s.bounceCount > 0) {
+      hudScore.hidden = false;
+      const parts: string[] = [];
+      if (s.photons > 0) parts.push(`逃逸光子 <b>×${s.photons}</b>`);
+      if (s.energy > 0) parts.push(`抽取能量 <b>×${s.energy}</b>`);
+      if (s.bounceCount > 0) parts.push(`宇宙纪元 <b>第 ${s.bounceCount} 个</b>`);
+      hudScore.innerHTML = parts.join(' · ');
+    }
+
+    // t=0 叠层
+    t0Box.hidden = s.phase !== 't0';
+    if (s.phase === 't0') t0Fill.style.width = `${Math.round(s.t0Progress * 100)}%`;
+
+    // 大反弹白闪（上升沿）
+    if ((s.phase === 'expand') && lastPhase !== 'expand') {
+      flashBox.classList.remove('on');
+      void flashBox.offsetWidth; // 重启动画
+      flashBox.classList.add('on');
+    }
+    lastPhase = s.phase;
+
+    pushHint(s);
   }
 
-  // 触屏设备换一套措辞（滚轮不存在）
-  if (matchMedia('(pointer: coarse)').matches) {
-    hudHint.innerHTML = '单指环视 · 双指推近 · <b>按住</b>令时间倒流 · <b>轻点</b>荡开余烬';
+  // ---- 递进引导的条件与文案（触屏另有一套措辞） ----
+  const coarse = matchMedia('(pointer: coarse)').matches;
+  function primeHints() {
+    hints.push(
+      { id: 'dive', when: (s) => s.dilation < 0.62, text: '你在坠向视界 —— <b>你的钟正在变慢</b>，世界正在变红', dur: 5200 },
+      { id: 'hawking', when: (s) => s.elapsed > 14, text: coarse ? '蓝白色的光正在逃离 —— <b>轻点</b>，接住它' : '蓝白色的光正在逃离视界 —— <b>轻点</b>，接住一颗', dur: 5200 },
+      { id: 'penrose', when: (s) => s.elapsed > 26, text: '残骸驶入能层时会亮起 —— <b>点击它</b>，抽取黑洞转动的能量', dur: 5600 },
+      { id: 'entropy', when: (s) => s.entropy > 0.35, text: '钟面正在一片片剥落 —— <b>按住倒流</b>，令其复原', dur: 5200 },
+      { id: 't0', when: (s) => s.phase === 't0', text: 't = 0 —— <b>继续按住</b>，见证下一次开始', dur: 6000 },
+    );
+  }
+
+  // 触屏设备换一套措辞（滚轮不存在），并用单字按钮防溢出
+  if (coarse) {
+    hudHint.innerHTML = '单指环视 · 双指坠向视界 · <b>按住</b>令时间倒流';
+    btnScholar.textContent = '注';
+    btnSound.textContent = '音';
+    btnFull.textContent = '⛶';
   }
 
   // ---- 环境音 ----
   const audio = new EndOfTimeAudio();
+  const soundLabel = (on: boolean) => (coarse ? (on ? '音·开' : '音') : on ? '音 · 开' : '音 · 关');
   btnSound.addEventListener('click', () => {
     const on = audio.toggle();
-    btnSound.textContent = on ? '音 · 开' : '音 · 关';
+    btnSound.textContent = soundLabel(on);
     btnSound.setAttribute('aria-pressed', String(on));
   });
 
@@ -256,12 +452,28 @@ import Base from '../../layouts/Base.astro';
     else void document.documentElement.requestFullscreen().catch(() => {});
   });
 
+  let setScholar: ((on: boolean) => void) | null = null;
+  btnScholar.addEventListener('click', () => {
+    const on = btnScholar.getAttribute('aria-pressed') !== 'true';
+    btnScholar.textContent = coarse ? (on ? '注·开' : '注') : on ? '注 · 开' : '注 · 关';
+    btnScholar.setAttribute('aria-pressed', String(on));
+    setScholar?.(on);
+  });
+
   try {
     if (!webgl2OK()) {
       die('此浏览器不支持 WebGL2，无法凝视尽头。');
     } else {
-      createScene(canvas, {
-        audio: { bell: () => audio.bell(), reversal: (on) => audio.reversal(on) },
+      primeHints();
+      const handle = createScene(canvas, {
+        audio: {
+          bell: () => audio.bell(),
+          reversal: (on) => audio.reversal(on),
+          ping: () => audio.ping(),
+          whoosh: () => audio.whoosh(),
+          boom: () => audio.boom(),
+          dilation: (d) => audio.dilation(d),
+        },
         onTick,
         onReady: () => {
           veil.classList.add('lit');
@@ -275,9 +487,15 @@ import Base from '../../layouts/Base.astro';
             hudHint.classList.add('shown');
             hudHint.style.opacity = '1';
           }, 3400);
+          setTimeout(() => {
+            hudHint.classList.remove('shown');
+            hudHint.style.opacity = '';
+          }, 11000);
         },
-        onFirstTouch: () => hudHint.classList.add('gone'),
+        onFirstTouch: () => hudHint.classList.remove('shown'),
+        labels,
       });
+      setScholar = handle.setScholar;
     }
   } catch (err) {
     const stack = err instanceof Error ? `${err.name}: ${err.message} @ ${(err.stack || '').split('\n')[1]?.trim()}` : String(err);

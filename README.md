@@ -12,7 +12,7 @@
 npm ci
 npm run dev       # 本地预览 http://localhost:4321
 npm run build     # 构建到 dist/，可直接部署 Cloudflare Pages
-npm test          # 112 个单元测试（游戏核心/工具核心纯函数）
+npm test          # 118 个单元测试（游戏核心/工具核心纯函数）
 ```
 
 部署：Cloudflare Pages 连接本仓库，构建命令 `npm run build`，输出目录 `dist`。旧版 URL（`/snake.html` 等）由 `public/_redirects` 301 到新路径。
@@ -45,7 +45,7 @@ npm test          # 112 个单元测试（游戏核心/工具核心纯函数）
 
 ## 工程
 
-- **测试**：`tests/` 覆盖贪食蛇（食物不落蛇身、撞尾判定）、扫雷（首击安全、chord、3BV）、计分（撤销重做、CSV）、Cron（解析/求值/人话）、2048（合并规则）、1A2B、五子棋 AI（必赢必堵）、JSON/YAML 互转、汉字时钟（亮灯连读即报时）、周易（卦序全表、变卦、爻题）、24 点（分数精确求解、算式解析校验）、时间的尽头（螺旋坠落重生、开普勒差速、罗马数字钟盘）
+- **测试**：`tests/` 覆盖贪食蛇（食物不落蛇身、撞尾判定）、扫雷（首击安全、chord、3BV）、计分（撤销重做、CSV）、Cron（解析/求值/人话）、2048（合并规则）、1A2B、五子棋 AI（必赢必堵）、JSON/YAML 互转、汉字时钟（亮灯连读即报时）、周易（卦序全表、变卦、爻题）、24 点（分数精确求解、算式解析校验）、时间的尽头（螺旋坠落重生、开普勒差速、时间膨胀、潮汐拉伸、熵死时刻表）
 - **CI**：GitHub Actions 跑测试 + 构建 + 广告代码扫描
 - **PWA**：`public/sw.js` 预缓存核心资源，页面 network-first，资产 cache-first
 

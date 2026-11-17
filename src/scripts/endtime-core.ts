@@ -121,5 +121,59 @@ export function dwellText(seconds: number): string {
 // ---------- 缓动 ----------
 
 export const easeOutCubic = (t: number): number => 1 - Math.pow(1 - t, 3);
+export const easeInCubic = (t: number): number => t * t * t;
 export const easeInOutSine = (t: number): number => -(Math.cos(Math.PI * t) - 1) / 2;
 export const clamp01 = (t: number): number => Math.min(1, Math.max(0, t));
+
+// ---------- 广义相对论玩具箱 ----------
+
+/**
+ * 引力时间膨胀（艺术放大版史瓦西度规）：dτ/dt = √(1 − rs/d)。
+ * rs 取 13.5（比视界 6.3 大，让相机推近时效应肉眼可感），下限 0.05。
+ */
+export function dilationFactor(camDist: number, rs = 13.5): number {
+  if (camDist <= 0) throw new RangeError('相机距离必须为正');
+  return Math.sqrt(Math.max(1 - rs / camDist, 0.05));
+}
+
+/** 红移视觉强度：固有时流速越慢，画面越沉入暗红 */
+export function redshiftFromDilation(dilation: number): number {
+  return clamp01((0.92 - dilation) / 0.55);
+}
+
+/**
+ * 潮汐拉伸倍率：r ≥ rTidal 为 1；越靠近视界沿径向拉得越长（spaghettification）。
+ * k·x³ 在 r = rTidal·(1−0.33) 处 ≈ 1.27，在坠入界 ≈ 1.9。
+ */
+export function tidalStretch(r: number, rTidal = 13, k = 22): number {
+  if (r <= 0 || rTidal <= 0) throw new RangeError('半径必须为正');
+  const x = Math.max(0, (rTidal - r) / rTidal);
+  return 1 + k * x * x * x;
+}
+
+/** 残骸是否处于彭罗斯能层（可抽取转动能量的环带） */
+export function inErgosphere(r: number, inner = 11.5, outer = 16.5): boolean {
+  return r >= inner && r <= outer;
+}
+
+/**
+ * 表盘熵死时刻表：N 个元素在 (0, duration] 内无重复地依次剥落。
+ * 返回 detachAt[i]（秒）；给定 rng 保证可复现。
+ */
+export function entropySchedule(n: number, duration: number, r: () => number): number[] {
+  if (n <= 0) throw new RangeError('元素数必须为正');
+  if (duration <= 0) throw new RangeError('时长必须为正');
+  const slots = Array.from({ length: n }, (_, i) => (duration * (i + 0.5)) / n);
+  // Fisher–Yates 洗牌：谁先死去由命运（种子）决定
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(r() * (i + 1));
+    [slots[i], slots[j]] = [slots[j], slots[i]];
+  }
+  return slots;
+}
+
+/** 元素熵态：0 附着于表盘 … 1 完全坠亡。倒流时 entropyTime 回退，状态自然复原。 */
+export function entropyState(detachAt: number, fallDur: number, entropyTime: number): number {
+  if (fallDur <= 0) throw new RangeError('坠落时长必须为正');
+  return clamp01((entropyTime - detachAt) / fallDur);
+}

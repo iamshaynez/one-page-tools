@@ -2,12 +2,18 @@
  * 《时间的尽头》场景 — 一座已死的巨钟，中心坍缩成奇点。
  *
  * 构图：事件视界（纯黑球 + 菲涅尔红晕 + 光子环）
- *   ← 吸积盘（差速旋转的着色器光环，金红渐层）
- *   ← 幽灵表盘（六十刻度 + 十二罗马数字，逆向缓行）
- *   ← 钟之残骸（表针三针组、陀螺环、断裂弧，倾斜轨道漂流）
- *   ← 余烬尘埃（GPU 螺旋，开普勒差速，坠入即焚）
- *   ← 远方星尘。
- * 交互：拖拽环视 · 滚轮推近 · 按住令时倒流 · 轻点荡开涟漪。
+ *   ← 吸积盘（差速旋转着色器，多普勒集束）
+ *   ← ISCO 环 / 潮汐半径 / 能层（彭罗斯）
+ *   ← 幽灵表盘（六十刻 + 十二罗马数字，熵死剥落）
+ *   ← 钟之残骸（表针、陀螺环、断裂弧；潮汐拉伸撕裂）
+ *   ← 余烬尘埃（GPU 螺旋）+ 霍金辐射（CPU 逃逸粒子，可接住）
+ *   ← 远方星尘；引力透镜后期 + 红移调色 + 暗角颗粒。
+ *
+ * 理论交互：
+ *   · 推近视界 → 引力时间膨胀（dτ/dt=√(1−rs/d)，HUD 双时钟）+ 引力红移
+ *   · 按住 → 时间倒流；推到 t=0 继续按住 → 大反弹（新纪元）
+ *   · 轻点蓝色逃逸光子 → 接住（霍金辐射）
+ *   · 能层内点击残骸 → 彭罗斯弹弓（抽取转动能量）
  */
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -18,23 +24,49 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import {
   rng, range, pick, ROMAN_CLOCK, handSpeed, handLengths,
-  easeOutCubic, clamp01,
+  easeOutCubic, easeInCubic, easeInOutSine, clamp01,
+  dilationFactor, redshiftFromDilation, tidalStretch, inErgosphere,
+  entropySchedule, entropyState,
 } from './endtime-core';
 
+export type BouncePhase = 'idle' | 't0' | 'expand' | 'reform';
+
 export interface SceneTick {
-  reversal: number;   // 0 正流 … 1 逆流
-  elapsed: number;    // 场景已存在秒数
+  reversal: number;        // 0 正流 … 1 逆流
+  elapsed: number;         // 场景已存在秒数
+  dilation: number;        // 你的固有时流速 dτ/dt
+  phase: BouncePhase;
+  t0Progress: number;      // t=0 凝滞进度（到 1 触发大反弹）
+  bounceCount: number;     // 宇宙纪元
+  photons: number;         // 已接住的霍金光子
+  energy: number;          // 已抽取的彭罗斯能量
+  entropy: number;         // 表盘熵死比例 0..1
+}
+
+export interface SceneAudio {
+  bell(): void;
+  reversal(on: boolean): void;
+  ping(): void;                                // 接住光子
+  whoosh(): void;                              // 彭罗斯弹弓
+  boom(): void;                                // 大反弹
+  dilation(d: number): void;                   // 时间膨胀 → 声音降调
 }
 
 export interface SceneOptions {
-  audio?: { bell(): void; reversal(on: boolean): void };
+  audio?: Partial<SceneAudio>;
   onTick?(info: SceneTick): void;
   onReady?(): void;
   onFirstTouch?(): void;
+  labels?: HTMLElement | null;                 // 学者模式标签容器
 }
 
 const VOID = 0x050507;
 const RED = new THREE.Color('#ce1432');
+const HORIZON_R = 6.3;
+const TIDAL_R = 13;
+const ERGO_IN = 11.5, ERGO_OUT = 16.5;
+const ENTROPY_DURATION = 480;                  // 表盘在 8 分钟观看后全部剥落
+const ENTROPY_FALL = 3.5;                      // 每个元素坠落时长
 
 /** 通幅噪声（GLSL 里的老朋友） */
 const GLSL_NOISE = /* glsl */ `
@@ -107,6 +139,7 @@ function glowTexture(inner: string, outer: string): THREE.Texture {
 export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) {
   const quality = (matchMedia('(pointer: coarse)').matches || innerWidth < 720) ? 'low' : 'high';
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const audio = opts.audio ?? {};
 
   const renderer = new THREE.WebGLRenderer({
     canvas,
@@ -129,8 +162,8 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
   controls.enableDamping = true;
   controls.dampingFactor = 0.055;
   controls.enablePan = false;
-  controls.minDistance = 17;
-  controls.maxDistance = 95;
+  controls.minDistance = 15;   // 时间膨胀戏剧区间：dτ/dt ≈ 0.23
+  controls.maxDistance = 110;
   controls.minPolarAngle = 0.55;
   controls.maxPolarAngle = 2.45;
   controls.rotateSpeed = 0.55;
@@ -156,22 +189,21 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
     map: glowTexture('rgba(255,84,70,0.55)', 'rgba(120,18,24,0.28)'),
     blending: THREE.AdditiveBlending,
     depthWrite: false,
-    opacity: 0.85,
+    opacity: 0.34,
   }));
   abyss.scale.setScalar(150);
-  abyss.material.opacity = 0.34;
   scene.add(abyss);
 
   // ============================ 奇点 ============================
-  const singularity = new THREE.Group();
-  scene.add(singularity);
+  const holeGroup = new THREE.Group(); // 大反弹时整体缩放
+  scene.add(holeGroup);
 
   // 事件视界：纯黑球
   const horizon = new THREE.Mesh(
-    new THREE.SphereGeometry(6.3, 64, 48),
+    new THREE.SphereGeometry(HORIZON_R, 64, 48),
     new THREE.MeshBasicMaterial({ color: 0x000000 }),
   );
-  singularity.add(horizon);
+  holeGroup.add(horizon);
 
   // 菲涅尔红晕（呼吸的视界）
   const rimMat = new THREE.ShaderMaterial({
@@ -182,6 +214,7 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
     uniforms: {
       uTime: { value: 0 },
       uReversal: { value: 0 },
+      uFade: { value: 1 },
     },
     vertexShader: /* glsl */ `
       varying vec3 vN; varying vec3 vV;
@@ -193,7 +226,7 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
       }
     `,
     fragmentShader: /* glsl */ `
-      uniform float uTime; uniform float uReversal;
+      uniform float uTime; uniform float uReversal; uniform float uFade;
       varying vec3 vN; varying vec3 vV;
       void main() {
         float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.6);
@@ -202,12 +235,12 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
         vec3 hot  = vec3(1.0, 0.42, 0.2);
         vec3 col = mix(deep, hot, f * (0.55 + 0.45 * uReversal)) * (1.2 + 1.4 * uReversal);
         // 加性混合 (SRC_ALPHA, ONE)：alpha 只乘一次，rgb 不再预乘
-        gl_FragColor = vec4(col, f * breathe);
+        gl_FragColor = vec4(col, f * breathe * uFade);
       }
     `,
   });
   const rimShell = new THREE.Mesh(new THREE.SphereGeometry(8.4, 48, 36), rimMat);
-  singularity.add(rimShell);
+  holeGroup.add(rimShell);
 
   // 光子环：引力透镜的戏仿，永远面向镜头
   const photonMat = new THREE.ShaderMaterial({
@@ -215,20 +248,20 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     depthTest: false,
-    uniforms: { uTime: { value: 0 }, uReversal: { value: 0 } },
+    uniforms: { uTime: { value: 0 }, uReversal: { value: 0 }, uFade: { value: 1 } },
     vertexShader: /* glsl */ `
       varying vec2 vUv;
       void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
     `,
     fragmentShader: /* glsl */ `
-      uniform float uTime; uniform float uReversal;
+      uniform float uTime; uniform float uReversal; uniform float uFade;
       varying vec2 vUv;
       void main() {
         vec2 d = vUv - 0.5;
         float r = length(d) * 2.0;
         float ring = exp(-pow((r - 0.82) * 22.0, 2.0));
         float breathe = 0.75 + 0.25 * sin(uTime * 0.9 + 1.2);
-        float a = ring * breathe * (0.62 + 0.5 * uReversal);
+        float a = ring * breathe * (0.62 + 0.5 * uReversal) * uFade;
         vec3 col = mix(vec3(1.0, 0.55, 0.28), vec3(1.0, 0.9, 0.72), ring);
         gl_FragColor = vec4(col * 1.3, a);
       }
@@ -238,7 +271,7 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
   photonRing.renderOrder = 5;
   scene.add(photonRing);
 
-  // ============================ 盘面（吸积盘 + 幽灵表盘） ============================
+  // ============================ 盘面 ============================
   const diskGroup = new THREE.Group();
   diskGroup.rotation.set(-0.42, 0, 0.16);
   scene.add(diskGroup);
@@ -254,6 +287,7 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
       uDiskTime: { value: 0 },
       uInner: { value: DISK_IN },
       uOuter: { value: DISK_OUT },
+      uFade: { value: 1 },
     },
     vertexShader: /* glsl */ `
       uniform float uDiskTime;
@@ -267,7 +301,7 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
       }
     `,
     fragmentShader: /* glsl */ `
-      uniform float uDiskTime; uniform float uInner; uniform float uOuter;
+      uniform float uDiskTime; uniform float uInner; uniform float uOuter; uniform float uFade;
       varying vec3 vPos;
       ${GLSL_NOISE}
       void main() {
@@ -296,7 +330,7 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
         // 内外缘羽化（迎面一侧的盘更「实」，背离侧更稀薄）
         float edge = smoothstep(0.0, 0.05, rn) * (1.0 - smoothstep(0.8, 1.0, rn));
         float alpha = clamp(density * edge * (0.38 + 0.42 * heat) * (0.68 + 0.32 * (beam + 1.0) * 0.5), 0.0, 0.9);
-        gl_FragColor = vec4(col * beaming, alpha);
+        gl_FragColor = vec4(col * beaming, alpha * uFade);
       }
     `,
   });
@@ -304,45 +338,47 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
   disk.renderOrder = 2;
   diskGroup.add(disk);
 
-  // ---- 幽灵表盘：六十细刻 + 十二粗刻（曾是一座钟的脸） ----
+  // ---- ISCO：最内稳定圆轨道的细环（盘的内缘就是它） ----
+  const iscoRing = new THREE.Mesh(
+    new THREE.RingGeometry(DISK_IN - 0.08, DISK_IN + 0.12, 180),
+    new THREE.MeshBasicMaterial({
+      color: 0xffe8c8, transparent: true, opacity: 0.16,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    }),
+  );
+  diskGroup.add(iscoRing);
+
+  // ---- 能层环带（彭罗斯）：有残骸驶入时脉亮 ----
+  const ergoMat = new THREE.MeshBasicMaterial({
+    color: 0xff9a5c, transparent: true, opacity: 0.045,
+    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+  });
+  const ergoBand = new THREE.Mesh(new THREE.RingGeometry(ERGO_IN, ERGO_OUT, 160), ergoMat);
+  diskGroup.add(ergoBand);
+
+  // ============================ 幽灵表盘（熵死） ============================
   const gold = new THREE.MeshStandardMaterial({
     color: 0xe0bc72, metalness: 0.88, roughness: 0.34,
     emissive: 0xc07020, emissiveIntensity: 2.2,
+  });
+  const goldBright = new THREE.MeshStandardMaterial({
+    color: 0xf0cf86, metalness: 0.85, roughness: 0.3,
+    emissive: 0xd88a2e, emissiveIntensity: 4.0,
   });
   const dial = new THREE.Group();
   diskGroup.add(dial);
   const TICKS = quality === 'low' ? 60 : 90;
   const tickGeo = new THREE.BoxGeometry(0.09, 0.8, 0.09);
-  const goldBright = new THREE.MeshStandardMaterial({
-    color: 0xf0cf86, metalness: 0.85, roughness: 0.3,
-    emissive: 0xd88a2e, emissiveIntensity: 4.0,
-  });
   const tickBig = new THREE.BoxGeometry(0.3, 3.6, 0.16);
   const tickMeshes = new THREE.InstancedMesh(tickGeo, gold, TICKS);
   const bigTickMeshes = new THREE.InstancedMesh(tickBig, goldBright, 12);
-  {
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 0, 1);
-    // 刻度长轴沿径向（钟面分钟刻度的方向）：+π/2 把盒子的 y 轴转到半径方向
-    for (let i = 0; i < TICKS; i++) {
-      const a = (i / TICKS) * Math.PI * 2;
-      q.setFromAxisAngle(up, a + Math.PI / 2);
-      m.compose(new THREE.Vector3(Math.cos(a) * 32.2, Math.sin(a) * 32.2, 0), q, new THREE.Vector3(1, 1, 1));
-      tickMeshes.setMatrixAt(i, m);
-    }
-    for (let i = 0; i < 12; i++) {
-      const a = (i / 12) * Math.PI * 2;
-      q.setFromAxisAngle(up, a + Math.PI / 2);
-      m.compose(new THREE.Vector3(Math.cos(a) * 33.6, Math.sin(a) * 33.6, 0), q, new THREE.Vector3(1, 1, 1));
-      bigTickMeshes.setMatrixAt(i, m);
-    }
-  }
   dial.add(tickMeshes, bigTickMeshes);
 
-  // ---- 十二罗马数字铭牌：躺卧在盘面上，随幽灵表盘缓行 ----
+  // 十二罗马数字铭牌
   const numeralGroup = new THREE.Group();
   diskGroup.add(numeralGroup);
+  const numeralMats: THREE.MeshBasicMaterial[] = [];
   ROMAN_CLOCK.forEach((num, i) => {
-    const a = (i / 12) * Math.PI * 2 - Math.PI / 2;
     const mat = new THREE.MeshBasicMaterial({
       map: numeralTexture(num),
       transparent: true,
@@ -351,60 +387,187 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
       opacity: 1,
       side: THREE.DoubleSide,
     });
+    numeralMats.push(mat);
     const plaque = new THREE.Mesh(new THREE.PlaneGeometry(6.6, 6.6), mat);
+    const a = (i / 12) * Math.PI * 2 - Math.PI / 2;
     plaque.position.set(Math.cos(a) * 36, Math.sin(a) * 36, 0);
-    plaque.rotation.z = a + Math.PI / 2; // 沿切向躺卧
-    plaque.rotation.x = -Math.PI / 2;    // 平贴盘面（盘面局部 xy 为平面）
+    plaque.rotation.z = a + Math.PI / 2; // 沿切向站立
+    plaque.rotation.x = -Math.PI / 2;
     numeralGroup.add(plaque);
   });
 
+  // ---- 熵死时刻表与矩阵复原数据 ----
+  const seedRng = rng(20261117);
+  interface EntropyItem {
+    basePos: THREE.Vector3;
+    baseQuat: THREE.Quaternion;
+    detachAt: number;
+    lastP: number;
+    plaque?: THREE.Mesh;              // 数字铭牌走网格而非实例矩阵
+    mat?: THREE.MeshBasicMaterial;
+  }
+  const entropyRng = rng(4321);
+  const FALL_SIGN = (i: number) => (i % 2 === 0 ? 1 : -1);
+  const entropySys: { mesh: THREE.InstancedMesh; items: EntropyItem[] }[] = [];
+  {
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 0, 1);
+    const mk = (mesh: THREE.InstancedMesh, count: number, radius: number): EntropyItem[] => {
+      const items: EntropyItem[] = [];
+      for (let i = 0; i < count; i++) {
+        const a = (i / count) * Math.PI * 2;
+        q.setFromAxisAngle(up, a + Math.PI / 2); // 刻度长轴沿径向
+        const pos = new THREE.Vector3(Math.cos(a) * radius, Math.sin(a) * radius, 0);
+        m.compose(pos, q, new THREE.Vector3(1, 1, 1));
+        mesh.setMatrixAt(i, m);
+        items.push({ basePos: pos, baseQuat: q.clone(), detachAt: 0, lastP: 0 });
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      return items;
+    };
+    entropySys.push({ mesh: tickMeshes, items: mk(tickMeshes, TICKS, 32.2) });
+    entropySys.push({ mesh: bigTickMeshes, items: mk(bigTickMeshes, 12, 33.6) });
+    // 数字铭牌走同一时刻表（每块一个条目，直接持有网格引用）
+    numeralGroup.children.forEach((plaque, i) => {
+      entropySys.push({
+        mesh: null as unknown as THREE.InstancedMesh,
+        items: [{
+          basePos: plaque.position.clone(),
+          baseQuat: plaque.quaternion.clone(),
+          detachAt: 0,
+          lastP: 0,
+          plaque: plaque as THREE.Mesh,
+          mat: numeralMats[i],
+        }],
+      });
+    });
+    const all = entropySys.flatMap((s) => s.items);
+    const schedule = entropySchedule(all.length, ENTROPY_DURATION, entropyRng);
+    all.forEach((item, i) => { item.detachAt = schedule[i]; });
+  }
+
+  let entropyTime = 0; // 前进=熵增，倒流=复原；大反弹归零
+  const entM = new THREE.Matrix4(), entS = new THREE.Vector3();
+  function updateEntropy() {
+    let dirty = false;
+    for (const sys of entropySys) {
+      for (let i = 0; i < sys.items.length; i++) {
+        const item = sys.items[i];
+        const p = entropyState(item.detachAt, ENTROPY_FALL, entropyTime);
+        if (Math.abs(p - item.lastP) < 0.004) continue;
+        item.lastP = p;
+        dirty = true;
+        if (!sys.mesh) {
+          // 数字铭牌：位置/透明度动画
+          const plaque = item.plaque!;
+          if (p <= 0) {
+            plaque.position.copy(item.basePos);
+            plaque.quaternion.copy(item.baseQuat);
+            item.mat!.opacity = 1;
+          } else if (p >= 1) {
+            item.mat!.opacity = 0;
+          } else {
+            const baseR = item.basePos.length();
+            const baseA = Math.atan2(item.basePos.y, item.basePos.x);
+            const r = baseR + (8.5 - baseR) * easeInCubic(p);
+            const a = baseA + p * 2.4 * FALL_SIGN(i);
+            plaque.position.set(Math.cos(a) * r, Math.sin(a) * r, Math.sin(p * Math.PI) * 1.6);
+            item.mat!.opacity = 1 - p * 0.95;
+          }
+          continue;
+        }
+        if (p <= 0) {
+          entS.set(1, 1, 1);
+          entM.compose(item.basePos, item.baseQuat, entS);
+        } else if (p >= 1) {
+          entS.setScalar(0.0001);
+          entM.compose(item.basePos, item.baseQuat, entS);
+        } else {
+          const baseR = item.basePos.length();
+          const baseA = Math.atan2(item.basePos.y, item.basePos.x);
+          const r = baseR + (8.5 - baseR) * easeInCubic(p);
+          const a = baseA + p * 2.4 * FALL_SIGN(i);
+          const s = 1 - 0.75 * p;
+          entS.setScalar(s);
+          entM.compose(
+            new THREE.Vector3(Math.cos(a) * r, Math.sin(a) * r, Math.sin(p * Math.PI) * 1.6),
+            item.baseQuat,
+            entS,
+          );
+        }
+        sys.mesh.setMatrixAt(i, entM);
+        sys.mesh.instanceMatrix.needsUpdate = true;
+      }
+    }
+    return dirty;
+  }
+
   // ============================ 钟之残骸 ============================
-  // 表针三针组、陀螺环、断裂弧——各自在倾斜轨道上漂流、缓慢坠落
   interface Drift {
-    pivot: THREE.Group;
+    pivot: THREE.Group;      // 轨道倾斜
+    carrier: THREE.Group;    // 位于轨道点，+X 指向径向（潮汐拉伸轴）
+    obj: THREE.Group;        // 翻滚的残骸本体
+    ergo: THREE.Sprite;      // 能层高亮
     orbitSpeed: number;
     tumble: THREE.Vector3;
     angle: number;
     radius: number;
-    fall: number;          // 每秒坠落的半径
+    fall: number;
+    bounceBase: number;      // 大反弹时的基准半径
     hands?: THREE.Object3D[];
     handSpeeds?: number[];
+    spreadDirs?: number[];   // 潮汐撕裂：子件分离方向
+    flungTo?: number;        // 彭罗斯弹弓目标半径
+    spinBoost: number;       // 弹弓后的旋转爆发
   }
   const drifts: Drift[] = [];
-  const shards = new THREE.Group();
-  scene.add(shards);
-  const seedRng = rng(20261117);
+  const shardsGroup = new THREE.Group();
+  scene.add(shardsGroup);
+  const shardMeshes: THREE.Mesh[] = []; // 彭罗斯点击拾取
   const HAND_SETS = quality === 'low' ? 6 : 9;
   const GYROS = quality === 'low' ? 3 : 5;
   const ARCS = quality === 'low' ? 2 : 4;
 
-  const mkDrift = (obj: THREE.Object3D, i: number, extra?: Partial<Drift>): Drift => {
+  const mkDrift = (obj: THREE.Group, extra?: Partial<Drift>): Drift => {
     const pivot = new THREE.Group();
     pivot.rotation.set(range(seedRng, -0.9, 0.9), range(seedRng, 0, Math.PI * 2), range(seedRng, -0.6, 0.6));
-    const radius = range(seedRng, 15, 29);
-    const angle = seedRng() * Math.PI * 2;
-    obj.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+    const carrier = new THREE.Group();
+    pivot.add(carrier);
     obj.rotation.set(seedRng() * Math.PI, seedRng() * Math.PI, seedRng() * Math.PI);
-    pivot.add(obj);
-    shards.add(pivot);
-    return {
+    carrier.add(obj);
+    // 能层高亮光斑
+    const ergo = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTexture('rgba(255,190,120,0.9)', 'rgba(255,120,60,0.3)'),
+      blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0,
+    }));
+    ergo.scale.setScalar(4.2);
+    obj.add(ergo);
+    shardsGroup.add(pivot);
+    const radius = range(seedRng, 15, 29);
+    const d: Drift = {
       pivot,
+      carrier,
+      obj,
+      ergo,
       orbitSpeed: pick(seedRng, [0.05, -0.04, 0.07, -0.06, 0.035, -0.08]) * 0.7,
       tumble: new THREE.Vector3(range(seedRng, -0.3, 0.3), range(seedRng, -0.4, 0.4), range(seedRng, -0.3, 0.3)),
-      angle,
+      angle: seedRng() * Math.PI * 2,
       radius,
       fall: range(seedRng, 0.05, 0.16),
+      bounceBase: radius,
+      spinBoost: 0,
       ...extra,
     };
+    return d;
   };
 
-  // 表针三针组（时针/分针/秒针，几何平移到绕一端旋转；带表轴 hub）
+  // 表针三针组（时针/分针/秒针 + 表轴 hub）
   for (let i = 0; i < HAND_SETS; i++) {
     const clock = new THREE.Group();
     const r = range(seedRng, 2.0, 3.4);
     const lens = handLengths(r);
     const hands: THREE.Object3D[] = [];
     const speeds: number[] = [];
+    const spreadDirs: number[] = [0]; // hub 不动
     const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.16, 16), gold);
     hub.rotation.x = Math.PI / 2;
     clock.add(hub);
@@ -420,15 +583,16 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
       clock.add(hand);
       hands.push(hand);
       speeds.push(handSpeed(i * 3 + j) * (j === 2 ? 3.2 : 1));
+      spreadDirs.push(j === 0 ? 1 : j === 1 ? -1 : 1.8);
     });
-    const d = mkDrift(clock, i, { hands, handSpeeds: speeds });
-    drifts.push(d);
+    drifts.push(mkDrift(clock, { hands, handSpeeds: speeds, spreadDirs }));
   }
 
   // 陀螺环（像被拆下的机芯）
   for (let i = 0; i < GYROS; i++) {
     const ringR = range(seedRng, 2.1, 4.3);
     const gyro = new THREE.Group();
+    const dirs: number[] = [];
     for (let j = 0; j < 2 + Math.floor(seedRng() * 2); j++) {
       const t = new THREE.Mesh(
         new THREE.TorusGeometry(ringR * (1 - j * 0.22), 0.1 + j * 0.02, 10, 72),
@@ -436,26 +600,33 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
       );
       t.rotation.set(seedRng() * Math.PI, seedRng() * Math.PI, 0);
       gyro.add(t);
+      dirs.push(j % 2 === 0 ? 1 + j * 0.4 : -(1 + j * 0.4));
     }
-    drifts.push(mkDrift(gyro, i));
+    drifts.push(mkDrift(gyro, { spreadDirs: dirs }));
   }
 
   // 断裂弧（碎掉的表圈）
   for (let i = 0; i < ARCS; i++) {
     const arcR = range(seedRng, 3.0, 5.6);
-    const arc = new THREE.Mesh(
+    const arc = new THREE.Group();
+    arc.add(new THREE.Mesh(
       new THREE.TorusGeometry(arcR, 0.14, 10, 80, range(seedRng, Math.PI * 0.7, Math.PI * 1.6)),
       gold,
-    );
-    drifts.push(mkDrift(arc, i));
+    ));
+    drifts.push(mkDrift(arc, { spreadDirs: [0] }));
   }
+
+  // 拾取列表（不含光斑）
+  drifts.forEach((d) => d.obj.traverse((o) => {
+    if ((o as THREE.Mesh).isMesh) shardMeshes.push(o as THREE.Mesh);
+  }));
 
   // ============================ 余烬尘埃（GPU 螺旋） ============================
   const EMBERS = quality === 'low' ? 3200 : 7500;
   const R_MIN = 9.8, R_MAX = 44; // 内界在盘内缘之外：不遮蔽事件视界的黑色剪影
   const emberGeo = new THREE.BufferGeometry();
   {
-    const pos = new Float32Array(EMBERS * 3); // 占位，真正位置在顶点着色器里算
+    const pos = new Float32Array(EMBERS * 3);
     const aSeed = new Float32Array(EMBERS);
     const aR0 = new Float32Array(EMBERS);
     const aAngle0 = new Float32Array(EMBERS);
@@ -464,7 +635,6 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
     const aSize = new Float32Array(EMBERS);
     for (let i = 0; i < EMBERS; i++) {
       aSeed[i] = seedRng();
-      // 近均匀分布（内缘过度堆积会把中心堆成白块）
       aR0[i] = R_MIN + Math.pow(seedRng(), 0.95) * (R_MAX - R_MIN);
       aAngle0[i] = seedRng() * Math.PI * 2;
       aRadial[i] = range(seedRng, 0.25, 0.85);
@@ -491,12 +661,13 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
       uShockR: { value: -1 },
       uShockAmp: { value: 0 },
       uShockCenter: { value: new THREE.Vector2(999, 999) },
+      uExpand: { value: 0 },
     },
     vertexShader: /* glsl */ `
-      uniform float uDiskTime, uRMin, uRMax, uPx, uShockR, uShockAmp;
+      uniform float uDiskTime, uRMin, uRMax, uPx, uShockR, uShockAmp, uExpand;
       uniform vec2 uShockCenter;
       attribute float aSeed, aR0, aAngle0, aRadial, aYOff, aSize;
-      varying float vAlpha; varying vec3 vColor;
+      varying float vAlpha; varying vec3 vColor; varying vec2 vRadial;
       void main() {
         // 与 endtime-core.spiralState 同一公式：锯齿式坠落 + 开普勒差速
         float cycle = (uRMax - uRMin) / aRadial;
@@ -506,11 +677,14 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
         float theta = aAngle0 + 10.0 * pow(max(r, 1.0), -1.5) * uDiskTime * 3.0;
         // 湍流抖动
         theta += sin(uDiskTime * (0.4 + aSeed) + aSeed * 40.0) * 0.05;
+        // 大反弹：全体向外飞散
+        r *= 1.0 + 2.4 * uExpand;
         vec2 xy = vec2(cos(theta), sin(theta)) * r;
+        vRadial = normalize(xy + 0.001);
         // 涟漪：从点击处荡开一圈推挤与增亮
         float shockD = distance(xy, uShockCenter);
         float wave = exp(-pow((shockD - uShockR) * 0.55, 2.0)) * uShockAmp;
-        xy += normalize(xy - uShockCenter + 0.001) * wave * 2.2;
+        xy += vRadial * wave * 2.2;
         vec3 p = vec3(xy, aYOff * (1.0 + 0.2 * sin(uDiskTime * 0.3 + aSeed * 20.0)));
         vec4 mv = modelViewMatrix * vec4(p, 1.0);
         float rn = clamp((r - uRMin) / (uRMax - uRMin), 0.0, 1.0);
@@ -522,30 +696,94 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
         vColor = mix(vec3(0.68, 0.1, 0.05), vec3(1.0, 0.72, 0.34), 1.0 - rn);
         vColor = mix(vColor, vec3(1.0, 0.92, 0.75), deathGlow);
         vAlpha = min(twinkle * (0.3 + 0.6 * (1.0 - rn)) * birth * horizonFade * (1.0 + deathGlow * 1.2 + wave * 2.2), 0.85);
+        vAlpha *= 1.0 - 0.82 * uExpand;
         gl_PointSize = aSize * uPx / max(-mv.z, 1.0) * (1.0 + deathGlow * 0.8 + wave);
         gl_Position = projectionMatrix * mv;
       }
     `,
     fragmentShader: /* glsl */ `
-      varying float vAlpha; varying vec3 vColor;
+      varying float vAlpha; varying vec3 vColor; varying vec2 vRadial;
       void main() {
         vec2 d = gl_PointCoord - 0.5;
-        float m = smoothstep(0.5, 0.08, length(d));
+        // 视界近旁的潮汐拉长：沿径向把光点抻成短线
+        float along = dot(d, vRadial);
+        float perp = dot(d, vec2(-vRadial.y, vRadial.x));
+        float squash = 0.34 + 0.66 * clamp(vAlpha * 1.4, 0.0, 1.0);
+        float m = smoothstep(0.5, 0.06, length(vec2(along * squash, perp)));
         gl_FragColor = vec4(vColor * 1.25, vAlpha * m);
       }
     `,
   });
   const embers = new THREE.Points(emberGeo, emberMat);
-  embers.frustumCulled = false; // 位置在 GPU 上算，包围盒失效
+  embers.frustumCulled = false;
   diskGroup.add(embers);
 
   // 涟漪环（点击处的可见波纹）
-  interface Ripple { mesh: THREE.Mesh; born: number; }
-  const ripples: Ripple[] = [];
+  const ripples: { mesh: THREE.Mesh; born: number }[] = [];
   const rippleMatProto = new THREE.MeshBasicMaterial({
     color: 0xffc98a, transparent: true, opacity: 0,
     blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
   });
+
+  // ============================ 霍金辐射（逃逸光子） ============================
+  // 视界会吐出辐射：蓝白微粒逆着引力向外漂，可被轻点「接住」。
+  const HAWKING = quality === 'low' ? 90 : 180;
+  interface Hawk { pos: THREE.Vector3; vel: THREE.Vector3; life: number; total: number; flare: number }
+  const hawks: Hawk[] = [];
+  const hawkGeo = new THREE.BufferGeometry();
+  const hawkPos = new Float32Array(HAWKING * 3);
+  const hawkAlpha = new Float32Array(HAWKING);
+  const hawkSize = new Float32Array(HAWKING);
+  hawkGeo.setAttribute('position', new THREE.BufferAttribute(hawkPos, 3));
+  hawkGeo.setAttribute('aAlpha', new THREE.BufferAttribute(hawkAlpha, 1));
+  hawkGeo.setAttribute('aSize', new THREE.BufferAttribute(hawkSize, 1));
+  const hawkMat = new THREE.ShaderMaterial({
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    uniforms: { uPx: { value: DPR * 130 } },
+    vertexShader: /* glsl */ `
+      uniform float uPx;
+      attribute float aAlpha, aSize;
+      varying float vA;
+      void main() {
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vA = aAlpha;
+        gl_PointSize = aSize * uPx / max(-mv.z, 1.0);
+        gl_Position = projectionMatrix * mv;
+      }
+    `,
+    fragmentShader: /* glsl */ `
+      varying float vA;
+      void main() {
+        vec2 d = gl_PointCoord - 0.5;
+        float m = smoothstep(0.5, 0.05, length(d));
+        vec3 col = mix(vec3(0.62, 0.78, 1.0), vec3(0.95, 0.98, 1.0), m);
+        gl_FragColor = vec4(col * 1.6, vA * m);
+      }
+    `,
+  });
+  const hawkPoints = new THREE.Points(hawkGeo, hawkMat);
+  hawkPoints.frustumCulled = false;
+  scene.add(hawkPoints);
+  let hawkSpawnT = 0;
+  let photonsCaught = 0;
+
+  function spawnHawk() {
+    if (hawks.length >= HAWKING) return;
+    // 从视界边缘随机方向出发，略偏向盘面法向上下
+    const a = seedRng() * Math.PI * 2;
+    const up = (seedRng() - 0.5) * 1.2;
+    const dir = new THREE.Vector3(Math.cos(a), up * 0.45, Math.sin(a)).normalize();
+    const speed = range(seedRng, 1.4, 2.6);
+    hawks.push({
+      pos: dir.clone().multiplyScalar(HORIZON_R + 0.4),
+      vel: dir.multiplyScalar(speed),
+      life: range(seedRng, 5.5, 9.5),
+      total: 9.5,
+      flare: 0,
+    });
+  }
 
   // ============================ 远方星尘 ============================
   const STARS = quality === 'low' ? 900 : 1900;
@@ -554,7 +792,6 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
     const pos = new Float32Array(STARS * 3);
     const seed2 = new Float32Array(STARS);
     for (let i = 0; i < STARS; i++) {
-      // 均匀球壳分布
       const u = seedRng() * 2 - 1;
       const t = seedRng() * Math.PI * 2;
       const s = Math.sqrt(1 - u * u);
@@ -597,7 +834,8 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
   const stars = new THREE.Points(starGeo, starMat);
   scene.add(stars);
 
-  // ============================ 后期：辉光 + 暗角颗粒 ============================
+  // ============================ 后期链 ============================
+  // 渲染 → 辉光 → 色调映射 → 引力透镜 → 调色（暗角/颗粒/色散/红移）
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
   const bloom = new UnrealBloomPass(
@@ -605,20 +843,62 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
     0.72, 0.5, 0.35,
   );
   composer.addPass(bloom);
-  composer.addPass(new OutputPass()); // 色调映射 + sRGB，之后的调色在显示空间上进行
+  composer.addPass(new OutputPass());
 
-  const finalPass = new ShaderPass({
+  // 引力透镜：屏幕空间绕奇点向内拖拽采样，附三色色散（爱因斯坦环的戏仿）
+  const lensPass = new ShaderPass({
     uniforms: {
       tDiffuse: { value: null },
-      uTime: { value: 0 },
-      uReversal: { value: 0 },
+      uCenter: { value: new THREE.Vector2(0.5, 0.5) },
+      uRadius: { value: 0.1 },
+      uAspect: { value: 1.7 },
+      uStrength: { value: 0.0 },
     },
     vertexShader: /* glsl */ `
       varying vec2 vUv;
       void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
     `,
     fragmentShader: /* glsl */ `
-      uniform sampler2D tDiffuse; uniform float uTime, uReversal;
+      uniform sampler2D tDiffuse;
+      uniform vec2 uCenter; uniform float uRadius, uAspect, uStrength;
+      varying vec2 vUv;
+      // 采样点绕洞心向内拖拽：背景在剪影边缘被拉成环
+      vec2 bend(vec2 uv, float f) {
+        vec2 v = uv - uCenter;
+        v.x *= uAspect;
+        float r = max(length(v), 1e-4);
+        float pull = uStrength * f / r;
+        float r2 = max(r - pull, 0.015);
+        vec2 dir = v / r;
+        vec2 out_ = dir * (r2 - r);
+        out_.x /= uAspect;
+        return uv + out_;
+      }
+      void main() {
+        if (uStrength < 1e-4) { gl_FragColor = texture2D(tDiffuse, vUv); return; }
+        vec3 col;
+        col.r = texture2D(tDiffuse, bend(vUv, 1.06)).r;
+        col.g = texture2D(tDiffuse, bend(vUv, 1.0)).g;
+        col.b = texture2D(tDiffuse, bend(vUv, 0.94)).b;
+        gl_FragColor = vec4(col, 1.0);
+      }
+    `,
+  });
+  composer.addPass(lensPass);
+
+  const finalPass = new ShaderPass({
+    uniforms: {
+      tDiffuse: { value: null },
+      uTime: { value: 0 },
+      uReversal: { value: 0 },
+      uRedshift: { value: 0 },
+    },
+    vertexShader: /* glsl */ `
+      varying vec2 vUv;
+      void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+    `,
+    fragmentShader: /* glsl */ `
+      uniform sampler2D tDiffuse; uniform float uTime, uReversal, uRedshift;
       varying vec2 vUv;
       float hash(vec2 p) {
         return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
@@ -632,6 +912,9 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
         col.r = texture2D(tDiffuse, vUv + off).r;
         col.g = texture2D(tDiffuse, vUv).g;
         col.b = texture2D(tDiffuse, vUv - off).b;
+        // 引力红移：靠近视界，世界沉入暗红
+        col *= vec3(1.0, 1.0 - 0.38 * uRedshift, 1.0 - 0.6 * uRedshift);
+        col *= 1.0 - 0.16 * uRedshift;
         // 暗角
         col *= 1.0 - smoothstep(0.18, 0.62, r2) * 0.42;
         // 胶片颗粒
@@ -642,21 +925,65 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
   });
   composer.addPass(finalPass);
 
+  // ============================ 学者模式标签 ============================
+  interface Label { el: HTMLDivElement; anchor: THREE.Object3D; world: THREE.Vector3 }
+  const labels: Label[] = [];
+  let scholar = false;
+  if (opts.labels) {
+    const defs: { text: string; parent: THREE.Object3D; pos: [number, number, number] }[] = [
+      { text: '事件视界', parent: scene, pos: [-7.8, -2.8, 0] },
+      { text: '光子球', parent: scene, pos: [7.4, 2.6, 0] },
+      { text: '霍金辐射 · 逃逸的光', parent: scene, pos: [1.5, 11.5, -2] },
+      { text: '潮汐撕裂半径', parent: diskGroup, pos: [-12.4, 5.2, 0.4] },
+      { text: '能层 · 彭罗斯', parent: diskGroup, pos: [-10.7, -9.4, 0.4] },
+      { text: 'ISCO · 最内稳定圆轨道', parent: diskGroup, pos: [9.2, 4.4, 0.4] },
+      { text: '吸积盘 · 差速旋转', parent: diskGroup, pos: [-20.4, -4.6, 0.6] },
+      { text: '余烬螺旋', parent: diskGroup, pos: [-12.6, 22.8, 0.8] },
+      { text: '幽灵表盘 · 熵死中', parent: diskGroup, pos: [19.4, 25.6, 0.5] },
+      { text: '钟之残骸', parent: diskGroup, pos: [9.4, -15.8, 0.8] },
+    ];
+    for (const def of defs) {
+      const el = document.createElement('div');
+      el.className = 'scholar-label';
+      el.innerHTML = '<i></i><span></span>';
+      el.querySelector('span')!.textContent = def.text;
+      opts.labels.appendChild(el);
+      const anchor = new THREE.Object3D();
+      anchor.position.set(...def.pos);
+      def.parent.add(anchor);
+      labels.push({ el, anchor, world: new THREE.Vector3() });
+    }
+  }
+  function setScholar(on: boolean) {
+    scholar = on;
+    opts.labels?.classList.toggle('on', on);
+  }
+
   // ============================ 交互 ============================
-  let reversalTarget = 0;   // 目标（0/1）
-  let reversal = 0;         // 平滑后的系数
-  let diskTime = 0;         // 盘面时间（可倒流）
+  let reversalTarget = 0;
+  let reversal = 0;
+  let reversalEngaged = false;
+  let reversalLatched = false;
+  let diskTime = 0;
   let elapsed = 0;
   let shockR = -1, shockAmp = 0;
   const shockCenter = new THREE.Vector2(999, 999);
-  let reversalEngaged = false;
-  let reversalLatched = false; // 音效状态去抖
+  let penroseCount = 0;
+  let dilation = 1;
+  let dilationSent = 1;
+
+  // 大反弹状态机
+  let phase: BouncePhase = 'idle';
+  let t0Hold = 0;
+  let uExpand = 0;
+  let expandT = 0, reformT = 0;
+  let bounceCount = 0;
+  let flash = 0;
 
   const raycaster = new THREE.Raycaster();
   const diskPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1).applyEuler(diskGroup.rotation), 0);
   const hit = new THREE.Vector3();
 
-  // 指针状态
   let pDown = false;
   let pMoved = 0;
   let pDownAt = 0;
@@ -671,14 +998,15 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
   };
 
   const engageReversal = () => {
+    if (phase !== 'idle') return; // 大反弹进行中不接受新的倒流
     reversalEngaged = true;
     reversalTarget = 1;
-    if (!reversalLatched) { reversalLatched = true; opts.audio?.reversal(true); }
+    if (!reversalLatched) { reversalLatched = true; audio.reversal?.(true); }
   };
   const releaseReversal = () => {
     reversalEngaged = false;
     reversalTarget = 0;
-    if (reversalLatched) { reversalLatched = false; opts.audio?.reversal(false); }
+    if (reversalLatched) { reversalLatched = false; audio.reversal?.(false); }
   };
 
   canvas.addEventListener('pointerdown', (e) => {
@@ -704,7 +1032,7 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
     if (reversalEngaged) {
       releaseReversal();
     } else if (quick && pMoved < 7) {
-      spawnRipple(e.clientX, e.clientY);
+      routeTap(e.clientX, e.clientY);
     }
     pDown = false;
   });
@@ -719,12 +1047,51 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
     pDown = false;
   });
 
-  /** 点击处荡开涟漪：raycast 到盘面 */
-  function spawnRipple(x: number, y: number) {
+  /** 轻点路由：接住霍金光子 → 彭罗斯弹弓 → 盘面涟漪 */
+  function routeTap(x: number, y: number) {
     setNdc(x, y);
     raycaster.setFromCamera(ndc, camera);
+
+    // 1) 霍金光子：找离射线最近的存活光子
+    let best = -1, bestD = 2.1;
+    for (let i = 0; i < hawks.length; i++) {
+      const h = hawks[i];
+      const a = hawkAlphaAt(h);
+      if (a < 0.25) continue;
+      const d = raycaster.ray.distanceToPoint(h.pos);
+      if (d < bestD) { bestD = d; best = i; }
+    }
+    if (best >= 0) {
+      const h = hawks[best];
+      h.flare = 1;
+      h.life = Math.min(h.life, 0.5); // 焚亮后谢幕
+      photonsCaught++;
+      spawnSparkRing(h.pos);
+      audio.ping?.();
+      return;
+    }
+
+    // 2) 彭罗斯弹弓：能层内的残骸
+    const hits = raycaster.intersectObjects(shardMeshes, false);
+    if (hits.length > 0) {
+      const mesh = hits[0].object as THREE.Mesh;
+      const drift = drifts.find((d) => {
+        let found = false;
+        d.obj.traverse((o) => { if (o === mesh) found = true; });
+        return found;
+      });
+      if (drift && inErgosphere(drift.radius, ERGO_IN, ERGO_OUT)) {
+        drift.flungTo = Math.min(drift.radius + 7.5, 34);
+        drift.spinBoost = 6;
+        drift.ergo.material.opacity = 1;
+        penroseCount++;
+        audio.whoosh?.();
+        return;
+      }
+    }
+
+    // 3) 盘面涟漪
     if (raycaster.ray.intersectPlane(diskPlane, hit)) {
-      // 转到余烬所在的盘面局部坐标
       const local = diskGroup.worldToLocal(hit.clone());
       const r = Math.hypot(local.x, local.y);
       if (r < R_MAX + 4 && r > 2) {
@@ -736,9 +1103,24 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
         mesh.renderOrder = 3;
         diskGroup.add(mesh);
         ripples.push({ mesh, born: elapsed });
-        opts.audio?.bell();
+        audio.bell?.();
       }
     }
+  }
+
+  function hawkAlphaAt(h: Hawk): number {
+    const fadeIn = clamp01((h.total - h.life) / 0.7);
+    const fadeOut = clamp01(h.life / 1.6);
+    return fadeIn * fadeOut * (1 + h.flare * 1.5);
+  }
+
+  function spawnSparkRing(worldPos: THREE.Vector3) {
+    const mesh = new THREE.Mesh(new THREE.RingGeometry(0.5, 0.62, 64), rippleMatProto.clone());
+    (mesh.material as THREE.MeshBasicMaterial).color.set(0xbfe0ff);
+    mesh.position.copy(worldPos);
+    mesh.renderOrder = 3;
+    scene.add(mesh);
+    ripples.push({ mesh, born: elapsed });
   }
 
   // 空格键也能倒流（无障碍；不劫持按钮上的空格）
@@ -763,56 +1145,174 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
     idleTimer = setTimeout(() => { controls.autoRotate = !reducedMotion; }, 5000);
   });
 
+  // ---- 调试参数（无头验证各状态用，日常无害） ----
+  // 注意：无头虚拟时间下 rAF 帧稀疏（dt 被钳制），DOM 定时器与场景时间脱钩，
+  // 因此时间类状态一律按「场景时钟」调度或直接跳相位。
+  const q = new URLSearchParams(location.search);
+  const debugHooks: (() => void)[] = [];
+  if (q.has('dive')) debugHooks.push(() => {
+    const dist = camera.position.distanceTo(controls.target);
+    if (dist > 18) {
+      const dir = camera.position.clone().sub(controls.target).normalize();
+      camera.position.copy(controls.target.clone().add(dir.multiplyScalar(16)));
+    }
+  });
+  if (q.has('scholar')) debugHooks.push(() => setScholar(true)); // 首帧即开：无头帧稀疏时 transform 也能就位
+  if (q.has('probe')) setInterval(() => {
+    document.title = `r${reversal.toFixed(2)} e${+reversalEngaged} d${diskTime.toFixed(1)} ${phase} f${frameN} e${elapsed.toFixed(1)}`;
+  }, 300);
+  const holdMode = q.has('rewind') ? 1 : 0;
+  let enteredDebugPhase = false;
+  if (holdMode) {
+    // 首帧立即全量倒流并钉住（无头帧稀疏，跳过一切阈值）
+    debugHooks.push(() => {
+      if (!enteredDebugPhase) {
+        enteredDebugPhase = true;
+        engageReversal();
+      }
+      reversal = 1;
+      diskTime = 5.0; // 钉在正值：可见的逆向螺旋，但不抵达 t=0
+      if (phase === 't0') { phase = 'idle'; t0Hold = 0; }
+    });
+  }
+  if (q.has('t0')) debugHooks.push(() => {
+    if (!enteredDebugPhase && phase === 'idle') {
+      enteredDebugPhase = true;
+      engageReversal();
+      reversal = 1;
+      reversalTarget = 1;
+      diskTime = 0;
+      phase = 't0';
+      t0Hold = 2.55;
+    }
+    if (phase === 't0') t0Hold = Math.min(t0Hold, 2.55); // 钉在 85%，便于稳定观察
+    if (phase === 'expand') { phase = 't0'; t0Hold = 2.55; } // 不触发反弹
+  });
+  if (q.has('bounce')) debugHooks.push(() => {
+    if (!enteredDebugPhase) {
+      enteredDebugPhase = true;
+      diskTime = 0;
+      reversal = 0.5;
+      phase = 'expand';
+      expandT = 1.4;
+      bounceCount = 1;
+      flash = 0.4;
+      uExpand = easeOutCubic(clamp01(expandT / 3.5));
+      for (const d of drifts) d.bounceBase = d.radius;
+      entropyTime = 0;
+      hawks.length = 0;
+    }
+    if (phase === 'expand' && expandT > 1.6) expandT = 1.4; // 钉在中段绽放
+    if (phase === 'reform') { phase = 'expand'; expandT = 1.4; } // 不走出绽放段
+  });
+  if (q.has('age')) entropyTime = Number(q.get('age')) || 0;
+
   // ============================ 主循环 ============================
   const clock = new THREE.Clock();
   const camIntroFrom = camera.position.clone();
   const camIntroTo = new THREE.Vector3(-13.5, 14.5, 40);
-  const skipIntro = reducedMotion || new URLSearchParams(location.search).has('fast');
+  const skipIntro = reducedMotion || q.has('fast');
   let introT = skipIntro ? 1 : 0;
   let ready = false;
   let raf = 0;
+  let frameN = 0; // 调试探针：实际执行帧数
 
   const tmpV = new THREE.Vector3();
+  const tmpV2 = new THREE.Vector3();
   const candleSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), 34);
+  const holeNdc = new THREE.Vector3();
 
   function frame() {
     raf = requestAnimationFrame(frame);
+    frameN++;
     const dt = Math.min(clock.getDelta(), 0.05);
     const t = clock.elapsedTime;
     elapsed += dt;
+    for (const h of debugHooks) h();
 
-    // 入场推近
+    // ---- 大反弹状态机 ----
+    if (phase === 'idle') {
+      diskTime += dt * (1 - 2.8 * reversal);
+      if (diskTime < 0) {
+        diskTime = 0;
+        if (reversalEngaged) { phase = 't0'; t0Hold = 0; }
+      }
+    } else if (phase === 't0') {
+      diskTime = 0;
+      if (reversalEngaged) {
+        t0Hold += dt;
+        if (t0Hold >= 3) {
+          phase = 'expand';
+          expandT = 0;
+          bounceCount++;
+          entropyTime = 0;     // 新宇宙换一座新钟
+          flash = 1;
+          for (const d of drifts) d.bounceBase = d.radius;
+          hawks.length = 0;
+          releaseReversal();
+          audio.boom?.();
+        }
+      } else {
+        phase = 'idle'; // 松手：时间重新流动
+      }
+    } else if (phase === 'expand') {
+      expandT += dt;
+      uExpand = easeOutCubic(clamp01(expandT / 3.5));
+      diskTime = 0;
+      if (expandT >= 3.5) { phase = 'reform'; reformT = 0; }
+    } else { // reform
+      reformT += dt;
+      uExpand = 1 - easeInOutSine(clamp01(reformT / 6));
+      diskTime = 0;
+      if (reformT >= 6) { phase = 'idle'; uExpand = 0; }
+    }
+
+    // ---- 倒流系数 / 熵时钟 ----
+    reversal += (reversalTarget - reversal) * Math.min(dt * 2.6, 1);
+    if (phase === 'idle') {
+      entropyTime = Math.max(0, entropyTime + dt * (1 - 3.2 * reversal));
+    }
+
+    // ---- 引力时间膨胀（相机到视界的距离决定你的钟速） ----
+    dilation = dilationFactor(camera.position.distanceTo(controls.target));
+    const redshift = redshiftFromDilation(dilation);
+    if (audio.dilation && Math.abs(dilation - dilationSent) > 0.02) {
+      dilationSent = dilation;
+      audio.dilation(dilation);
+    }
+
+    // ---- 入场推近 ----
     if (introT < 1) {
       introT = Math.min(introT + dt / 3.4, 1);
       const k = easeOutCubic(introT);
       camera.position.lerpVectors(camIntroFrom, camIntroTo, k);
-      if (introT >= 1) { controls.enabled = true; }
+      if (introT >= 1) controls.enabled = true;
     }
-
-    // 倒流系数平滑
-    reversal += (reversalTarget - reversal) * Math.min(dt * 2.6, 1);
-    // 盘面时间：正流 +1.0/s，逆流 -1.8/s
-    diskTime += dt * (1 - 2.8 * reversal);
-    if (diskTime < 0) diskTime = 0; // 时间不允许早于尽头
-
     controls.update();
 
-    // ---- 奇点呼吸 ----
+    // ---- 奇点呼吸与大反弹缩放 ----
+    const holeScale = 1 - 0.88 * uExpand;
     const breathe = 1 + 0.02 * Math.sin(t * 0.9);
-    horizon.scale.setScalar(breathe);
-    rimShell.scale.setScalar(breathe * (1 + reversal * 0.05));
+    holeGroup.scale.setScalar(holeScale * breathe);
     rimMat.uniforms.uTime.value = t;
     rimMat.uniforms.uReversal.value = reversal;
+    rimMat.uniforms.uFade.value = 1 - uExpand * 0.9;
     photonMat.uniforms.uTime.value = t;
     photonMat.uniforms.uReversal.value = reversal;
-    photonRing.quaternion.copy(camera.quaternion); // 永远面向镜头
-    abyss.material.opacity = 0.6 + 0.3 * reversal + 0.07 * Math.sin(t * 0.9);
+    photonMat.uniforms.uFade.value = 1 - uExpand * 0.85;
+    photonRing.quaternion.copy(camera.quaternion);
+    photonRing.scale.setScalar(holeScale);
+    abyss.material.opacity = (0.34 + 0.3 * reversal + 0.07 * Math.sin(t * 0.9)) * (1 - uExpand);
 
-    // ---- 盘面 ----
+    // ---- 盘面 / 幽灵表盘 / 熵死 ----
     diskMat.uniforms.uDiskTime.value = diskTime;
+    diskMat.uniforms.uFade.value = 1 - uExpand * 0.88;
     emberMat.uniforms.uDiskTime.value = diskTime;
-    dial.rotation.z -= dt * 0.012 * (1 - 2 * reversal); // 幽灵表盘逆向缓行（倒流时随之回摆）
+    emberMat.uniforms.uExpand.value = uExpand;
+    iscoRing.material.opacity = 0.16 * (1 - uExpand);
+    dial.rotation.z -= dt * 0.012 * (1 - 2 * reversal);
     numeralGroup.rotation.z = dial.rotation.z;
+    updateEntropy();
 
     // ---- 涟漪推进 ----
     if (shockAmp > 0.001) {
@@ -831,25 +1331,49 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
       rp.mesh.scale.setScalar(1 + k * 30);
       (rp.mesh.material as THREE.MeshBasicMaterial).opacity = (1 - k) * 0.55;
       if (k >= 1) {
-        diskGroup.remove(rp.mesh);
+        (rp.mesh.parent as THREE.Object3D).remove(rp.mesh);
         rp.mesh.geometry.dispose();
         (rp.mesh.material as THREE.Material).dispose();
         ripples.splice(i, 1);
       }
     }
 
-    // ---- 残骸漂流 ----
+    // ---- 残骸漂流 / 潮汐拉伸 / 彭罗斯 ----
+    let ergoOccupied = false;
     for (const d of drifts) {
-      const dir = 1 - 2 * reversal; // 倒流时反向公转
+      const dir = 1 - 2 * reversal;
       d.angle += d.orbitSpeed * dir * dt * (1 + reversal * 1.6);
-      d.radius -= d.fall * dt * (1 - 2.2 * reversal); // 倒流时被推回去
-      if (d.radius < 8.6) d.radius = 29;      // 坠入后重生
-      if (d.radius > 30) d.radius = 30;
-      const obj = d.pivot.children[0];
-      obj.position.set(Math.cos(d.angle) * d.radius, 0, Math.sin(d.angle) * d.radius);
-      obj.rotation.x += d.tumble.x * dt;
-      obj.rotation.y += d.tumble.y * dt;
-      obj.rotation.z += d.tumble.z * dt * 0.5;
+      if (d.flungTo !== undefined) {
+        d.radius += (d.flungTo - d.radius) * Math.min(dt * 2.2, 1);
+        if (Math.abs(d.flungTo - d.radius) < 0.1) d.flungTo = undefined;
+      } else if (phase === 'expand' || phase === 'reform') {
+        d.radius = d.bounceBase * (1 + 2.5 * uExpand);
+      } else {
+        d.radius -= d.fall * dt * (1 - 2.2 * reversal);
+      }
+      if (d.radius < 8.6) d.radius = 29;  // 坠入后重生
+      if (d.radius > 34) d.radius = 34;
+
+      d.carrier.position.set(Math.cos(d.angle) * d.radius, 0, Math.sin(d.angle) * d.radius);
+      d.carrier.rotation.y = -d.angle; // carrier +X 指向径向
+      // 潮汐拉伸：径向拉长、切向压扁（保体积）
+      const st = tidalStretch(d.radius, TIDAL_R);
+      d.carrier.scale.set(st, 1 / Math.sqrt(st), 1 / Math.sqrt(st));
+      // 撕裂分离：子件沿径向散开
+      if (d.spreadDirs) {
+        const sep = (st - 1) * 1.6;
+        d.obj.children.forEach((c, j) => {
+          if (j >= (d.spreadDirs?.length ?? 0)) return;
+          if (c === d.ergo) return;
+          c.position.x = d.spreadDirs![Math.min(j, d.spreadDirs!.length - 1)] * sep;
+        });
+      }
+      // 翻滚（弹弓时爆发）
+      const boost = 1 + d.spinBoost;
+      d.spinBoost *= Math.pow(0.3, dt);
+      d.obj.rotation.x += d.tumble.x * dt * boost;
+      d.obj.rotation.y += d.tumble.y * dt * boost;
+      d.obj.rotation.z += d.tumble.z * dt * 0.5 * boost;
       // 表针：熵衰减慢下来，倒流时反向狂转
       if (d.hands && d.handSpeeds) {
         const decay = Math.exp(-elapsed / 90);
@@ -857,7 +1381,45 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
           d.hands[i].rotation.z += d.handSpeeds[i] * dt * (decay * (1 - 3.4 * reversal) + reversal * -1.2);
         }
       }
+      // 能层高亮
+      const inZone = phase === 'idle' && inErgosphere(d.radius, ERGO_IN, ERGO_OUT);
+      if (inZone) ergoOccupied = true;
+      const target = inZone ? 0.42 + 0.22 * Math.sin(t * 7) : 0;
+      const m = d.ergo.material;
+      m.opacity += (target - m.opacity) * Math.min(dt * 6, 1);
     }
+    ergoMat.opacity = (ergoOccupied ? 0.11 : 0.045) * (1 + 0.4 * Math.sin(t * 2.2)) * (1 - uExpand);
+
+    // ---- 霍金辐射 ----
+    if (phase === 'idle' && !reducedMotion) {
+      hawkSpawnT += dt;
+      const interval = quality === 'low' ? 0.5 : 0.28;
+      while (hawkSpawnT > interval) {
+        hawkSpawnT -= interval;
+        spawnHawk();
+      }
+    }
+    for (let i = hawks.length - 1; i >= 0; i--) {
+      const h = hawks[i];
+      h.life -= dt;
+      // 倒流时辐射被收回视界
+      h.pos.addScaledVector(h.vel, dt * (1 - 2.4 * reversal));
+      h.flare *= Math.pow(0.2, dt);
+      if (h.life <= 0 || h.pos.length() > 70) hawks.splice(i, 1);
+    }
+    for (let i = 0; i < HAWKING; i++) {
+      if (i < hawks.length) {
+        const h = hawks[i];
+        hawkPos[i * 3] = h.pos.x; hawkPos[i * 3 + 1] = h.pos.y; hawkPos[i * 3 + 2] = h.pos.z;
+        hawkAlpha[i] = Math.min(hawkAlphaAt(h), 1.2);
+        hawkSize[i] = 0.5 + 0.5 * Math.min(hawkAlphaAt(h), 1) + h.flare * 1.4;
+      } else {
+        hawkAlpha[i] = 0;
+      }
+    }
+    hawkGeo.attributes.position.needsUpdate = true;
+    hawkGeo.attributes.aAlpha.needsUpdate = true;
+    hawkGeo.attributes.aSize.needsUpdate = true;
 
     // ---- 星尘 ----
     starMat.uniforms.uTime.value = t;
@@ -870,14 +1432,71 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
     }
     candle.intensity = 60 + 14 * Math.sin(t * 1.3);
 
+    // ---- 引力透镜：算出洞心的屏幕坐标与视半径 ----
+    holeGroup.getWorldPosition(tmpV);
+    tmpV.y += 1.2;
+    tmpV.project(camera);
+    if (tmpV.z < 1 && Math.abs(tmpV.x) < 1.4 && Math.abs(tmpV.y) < 1.4) {
+      holeNdc.set(1, 0, 0).applyQuaternion(camera.quaternion); // 相机右向
+      tmpV2.copy(holeGroup.getWorldPosition(tmpV2)).addScaledVector(holeNdc, HORIZON_R * holeScale);
+      tmpV2.y += 1.2;
+      tmpV2.project(camera);
+      const ru = Math.hypot(tmpV2.x - tmpV.x, tmpV2.y - tmpV.y) * 0.5; // NDC→uv 半径
+      lensPass.uniforms.uCenter.value.set(tmpV.x * 0.5 + 0.5, tmpV.y * 0.5 + 0.5);
+      lensPass.uniforms.uRadius.value = ru;
+      const aspect = (canvas.clientWidth || innerWidth) / (canvas.clientHeight || innerHeight);
+      lensPass.uniforms.uAspect.value = aspect;
+      // 强度随视直径增长；洞占满屏幕时收敛（避免畸变失控）
+      lensPass.uniforms.uStrength.value = Math.min(ru * 0.5, 0.06) * (1 + reversal * 0.25);
+    } else {
+      lensPass.uniforms.uStrength.value = 0;
+    }
+
+    // ---- 学者模式标签跟随 ----
+    if (scholar && opts.labels) {
+      const w = canvas.clientWidth || innerWidth;
+      const h = canvas.clientHeight || innerHeight;
+      for (const lb of labels) {
+        lb.anchor.getWorldPosition(lb.world);
+        lb.world.project(camera);
+        if (lb.world.z > 1 || Math.abs(lb.world.x) > 1.2 || Math.abs(lb.world.y) > 1.2) {
+          lb.el.style.opacity = '0';
+        } else {
+          lb.el.style.opacity = '1';
+          lb.el.style.transform =
+            `translate(${((lb.world.x * 0.5 + 0.5) * w).toFixed(1)}px, ${((-lb.world.y * 0.5 + 0.5) * h).toFixed(1)}px)`;
+        }
+      }
+    }
+
     // ---- 后期 ----
     finalPass.uniforms.uTime.value = t;
     finalPass.uniforms.uReversal.value = reversal;
-    bloom.strength = 0.95 + reversal * 0.5;
+    finalPass.uniforms.uRedshift.value = redshift;
+    flash *= Math.pow(0.25, dt);
+    bloom.strength = 0.72 + reversal * 0.5 + uExpand * 0.4 + flash * 2.6;
     composer.render();
 
     if (!ready) { ready = true; opts.onReady?.(); }
-    opts.onTick?.({ reversal, elapsed });
+    // 熵死比例（供 HUD 状态行）
+    let deadFrac = 0;
+    {
+      const all = entropySys.flatMap((s) => s.items);
+      let dead = 0;
+      for (const it of all) if (entropyTime > it.detachAt + ENTROPY_FALL * 0.7) dead++;
+      deadFrac = all.length ? dead / all.length : 0;
+    }
+    opts.onTick?.({
+      reversal,
+      elapsed,
+      dilation,
+      phase,
+      t0Progress: phase === 't0' ? clamp01(t0Hold / 3) : 0,
+      bounceCount,
+      photons: photonsCaught,
+      energy: penroseCount,
+      entropy: deadFrac,
+    });
   }
 
   // ---- 尺寸 ----
@@ -908,6 +1527,7 @@ export function createScene(canvas: HTMLCanvasElement, opts: SceneOptions = {}) 
   raf = requestAnimationFrame(frame);
 
   return {
+    setScholar,
     dispose() {
       cancelAnimationFrame(raf);
       removeEventListener('resize', resize);

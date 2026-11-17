@@ -9,6 +9,8 @@ export class EndOfTimeAudio {
   private droneGain: GainNode | null = null;
   private riserGain: GainNode | null = null;
   private riserOsc: OscillatorNode | null = null;
+  private droneOscs: { osc: OscillatorNode; base: number }[] = [];
+  private droneLp: BiquadFilterNode | null = null;
   private enabled = false;
 
   get running(): boolean {
@@ -47,6 +49,7 @@ export class EndOfTimeAudio {
       this.droneGain.gain.value = 0.16;
       const lp = ac.createBiquadFilter();
       lp.type = 'lowpass'; lp.frequency.value = 240;
+      this.droneLp = lp;
       this.droneGain.connect(lp); lp.connect(this.master!);
       for (const [freq, level] of [[55, 0.5], [55.6, 0.42], [82.41, 0.3], [110.3, 0.14]] as const) {
         const osc = ac.createOscillator();
@@ -59,6 +62,7 @@ export class EndOfTimeAudio {
         lfo.connect(lfoG); lfoG.connect(g.gain);
         osc.connect(g); g.connect(this.droneGain);
         osc.start(); lfo.start();
+        this.droneOscs.push({ osc, base: freq });
       }
       // ---- 风噪：带通白噪，中心频率缓慢游走 ----
       const wind = ac.createBufferSource();
@@ -103,6 +107,83 @@ export class EndOfTimeAudio {
       g.gain.exponentialRampToValueAtTime(0.0004, t + dur);
       osc.connect(g); g.connect(this.master);
       osc.start(t); osc.stop(t + dur + 0.1);
+    }
+  }
+
+  /** 时间膨胀：靠近视界，一切声音降调压暗（dτ/dt → 音高系数） */
+  dilation(d: number) {
+    if (!this.ac || !this.enabled) return;
+    const t = this.ac.currentTime;
+    const f = 0.55 + 0.45 * d; // 不至于完全沉入次声
+    for (const { osc, base } of this.droneOscs) {
+      osc.frequency.setTargetAtTime(base * f, t, 0.6);
+    }
+    this.droneLp?.frequency.setTargetAtTime(120 + 200 * d, t, 0.8);
+  }
+
+  /** 接住霍金光子：明亮的短促双音 */
+  ping() {
+    if (!this.enabled || !this.ac || !this.master) return;
+    const ac = this.ac, t = ac.currentTime;
+    for (const [freq, level, dur] of [[1318.5, 0.14, 1.2], [1975.5, 0.07, 0.8]] as const) {
+      const osc = ac.createOscillator();
+      osc.type = 'sine'; osc.frequency.value = freq;
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(level, t + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0003, t + dur);
+      osc.connect(g); g.connect(this.master);
+      osc.start(t); osc.stop(t + dur + 0.1);
+    }
+  }
+
+  /** 彭罗斯弹弓：风噪向上掠过 */
+  whoosh() {
+    if (!this.enabled || !this.ac || !this.master) return;
+    const ac = this.ac, t = ac.currentTime;
+    const src = ac.createBufferSource();
+    const buf = ac.createBuffer(1, ac.sampleRate * 0.8, ac.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    src.buffer = buf;
+    const bp = ac.createBiquadFilter();
+    bp.type = 'bandpass'; bp.Q.value = 1.2;
+    bp.frequency.setValueAtTime(280, t);
+    bp.frequency.exponentialRampToValueAtTime(1600, t + 0.55);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.22, t + 0.1);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.8);
+    src.connect(bp); bp.connect(g); g.connect(this.master);
+    src.start(t); src.stop(t + 0.85);
+  }
+
+  /** 大反弹：深渊轰鸣 + 上升微光 */
+  boom() {
+    if (!this.enabled || !this.ac || !this.master) return;
+    const ac = this.ac, t = ac.currentTime;
+    const osc = ac.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(52, t);
+    osc.frequency.exponentialRampToValueAtTime(26, t + 2.4);
+    const g = ac.createGain();
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.5, t + 0.06);
+    g.gain.exponentialRampToValueAtTime(0.0004, t + 3.2);
+    osc.connect(g); g.connect(this.master);
+    osc.start(t); osc.stop(t + 3.3);
+    // 微光：三枚高音缓慢上滑，像新星点亮
+    for (const [f0, delay] of [[1046.5, 0.15], [1318.5, 0.3], [1568, 0.45]] as const) {
+      const s = ac.createOscillator();
+      s.type = 'sine';
+      s.frequency.setValueAtTime(f0 * 0.6, t + delay);
+      s.frequency.linearRampToValueAtTime(f0, t + delay + 1.8);
+      const sg = ac.createGain();
+      sg.gain.setValueAtTime(0, t + delay);
+      sg.gain.linearRampToValueAtTime(0.05, t + delay + 0.8);
+      sg.gain.exponentialRampToValueAtTime(0.0003, t + delay + 2.8);
+      s.connect(sg); sg.connect(this.master);
+      s.start(t + delay); s.stop(t + delay + 3);
     }
   }
 
