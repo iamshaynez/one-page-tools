@@ -127,7 +127,8 @@ import { QUESTIONS, DIM_INFO } from '../../data/mbti-questions';
     width: 30px; height: 30px; font-size: 0.85rem;
     border: 1.5px solid var(--ink); border-radius: var(--radius-s);
   }
-  .opt:hover .opt-key { background: var(--red); border-color: var(--red); color: #fff; }
+  /* hover 落墨而非染红：漆红只留给「当前/选中」，避免切题后指针下的红块被误读为选中残留 */
+  .opt:hover .opt-key { background: var(--ink); color: var(--paper); }
   .opt-text { line-height: 1.6; font-size: 1rem; }
   .q-foot { justify-content: space-between; margin-top: 18px; }
 

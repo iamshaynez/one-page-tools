@@ -128,7 +128,8 @@ import { CENTERS } from '../../data/enneagram-types';
   }
   @keyframes optIn { from { opacity: 0; transform: translateY(6px); } }
   .rate:hover { border-color: var(--ink); transform: translateY(-2px); box-shadow: var(--shadow-card); }
-  .rate:hover .rate-key { background: var(--red); border-color: var(--red); color: #fff; }
+  /* hover 落墨而非染红：漆红只留给「当前/选中」，避免切题后指针下的红块被误读为选中残留 */
+  .rate:hover .rate-key { background: var(--ink); color: var(--paper); }
   .rate-key {
     display: grid; place-items: center;
     width: 28px; height: 28px; font-size: 0.85rem;
