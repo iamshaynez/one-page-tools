@@ -121,14 +121,14 @@ import { QUESTIONS, DIM_INFO } from '../../data/mbti-questions';
   }
   .opt:nth-child(2) { animation-delay: 0.05s; }
   @keyframes optIn { from { opacity: 0; transform: translateY(6px); } }
-  .opt:hover { border-color: var(--ink); transform: translateY(-1px); box-shadow: var(--shadow-card); }
   .opt-key {
     display: grid; place-items: center; flex-shrink: 0;
     width: 30px; height: 30px; font-size: 0.85rem;
     border: 1.5px solid var(--ink); border-radius: var(--radius-s);
   }
-  /* hover 落墨而非染红：漆红只留给「当前/选中」，避免切题后指针下的红块被误读为选中残留 */
-  .opt:hover .opt-key { background: var(--ink); color: var(--paper); }
+  /* 悬停仅在指针真正移动时生效：切题后指针未挪窝不留高亮（hover-guard），选项回到空白 */
+  .opts:not(.hover-guard) .opt:hover { border-color: var(--ink); transform: translateY(-1px); box-shadow: var(--shadow-card); }
+  .opts:not(.hover-guard) .opt:hover .opt-key { background: var(--ink); color: var(--paper); }
   .opt-text { line-height: 1.6; font-size: 1rem; }
   .q-foot { justify-content: space-between; margin-top: 18px; }
 
@@ -234,8 +234,22 @@ import { QUESTIONS, DIM_INFO } from '../../data/mbti-questions';
   let answers: Answers = Array(N).fill(null);
   let idx = 0;
 
+  // 切题后屏蔽悬停残留：指针未挪窝时选项保持空白，动了鼠标才恢复 hover
+  const optsBox = document.querySelector<HTMLElement>('.opts')!;
+  let hoverGuarded = false;
+  document.addEventListener('pointermove', () => {
+    if (!hoverGuarded) return;
+    hoverGuarded = false;
+    optsBox.classList.remove('hover-guard');
+  }, { passive: true });
+  function armHoverGuard() {
+    hoverGuarded = true;
+    optsBox.classList.add('hover-guard');
+  }
+
   // ---- 答题视图 ----
   function renderQuestion() {
+    armHoverGuard();
     const q = QUESTIONS[idx];
     qNo.textContent = `第 ${idx + 1} / ${N} 题`;
     qDim.textContent = DIM_LABEL[q.dim];
