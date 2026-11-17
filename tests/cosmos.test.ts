@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
-  rng, range, auToScene, kmToUnits, SUN, PLANETS, MOON, byKey,
+  rng, range, auToScene, kmToUnits, SUN, PLANETS, MOON, MOONS, BELT_DWARFS, byKey,
   keplerE, heliocentricAU, eclipticToScene, bodyScenePos, moonScenePos,
   rotationAngle, EGGS, fmtDist, TIME_SCALES, TIME_LABELS, joystickClamp, approachDist,
+  sceneToAU, fmtLightTime, C_SCENE, AU_LIGHT_SEC,
 } from '../src/scripts/cosmos-core';
 
 const RAD = Math.PI / 180;
@@ -159,6 +160,47 @@ describe('《宇宙漫游》核心 — 轨道与尺度', () => {
     expect(j2.y).toBeCloseTo(0.8, 6);
     expect(approachDist(kmToUnits(69911))).toBeCloseTo(kmToUnits(69911) * 4.5, 6);
     expect(approachDist(0.5)).toBe(6);
+  });
+
+  it('卫星登记表：键唯一、父天体存在、周期与轨距合理', () => {
+    expect(new Set(MOONS.map((m) => m.key)).size).toBe(MOONS.length);
+    for (const m of MOONS) {
+      expect(byKey(m.parent)).toBeDefined();
+      expect(m.periodDays).toBeGreaterThan(0.2);
+      expect(m.distUnits).toBeGreaterThan(2);
+      expect(m.radiusKm).toBeGreaterThan(4);
+      expect(m.desc.length).toBeGreaterThan(6);
+      expect(m.facts.length).toBeGreaterThanOrEqual(1);
+    }
+    // 木星四卫轨距递增（真实顺序 io<europa<ganymede<callisto）
+    const jup = MOONS.filter((m) => m.parent === 'jupiter').map((m) => m.distUnits);
+    expect(jup).toEqual([...jup].sort((a, b) => a - b));
+  });
+
+  it('带内矮行星：轨道在小行星带内、显示半径放大且标注', () => {
+    for (const d of BELT_DWARFS) {
+      expect(d.aAU).toBeGreaterThan(2.1);
+      expect(d.aAU).toBeLessThan(3.4);
+      expect(d.displayR).toBeGreaterThan(kmToUnits(d.radiusKm)); // 放大以便观赏
+      expect(d.facts.some((f) => f.includes('放大'))).toBe(true); // 诚实标注
+    }
+  });
+
+  it('距离反演：sceneToAU 与 auToScene 互逆', () => {
+    for (const au of [0.3, 1, 5.2, 30.11, 48]) {
+      expect(sceneToAU(auToScene(au))).toBeCloseTo(au, 6);
+    }
+    expect(() => sceneToAU(0)).toThrow(RangeError);
+    expect(() => sceneToAU(-1)).toThrow(RangeError);
+  });
+
+  it('光行时间：换算与人话格式', () => {
+    expect(AU_LIGHT_SEC).toBeCloseTo(499.005, 3);
+    expect(C_SCENE * AU_LIGHT_SEC).toBeCloseTo(42, 6); // 光速 = 42u / 499s
+    expect(fmtLightTime(1 / AU_LIGHT_SEC * 1.3)).toBe('1.3 光秒');
+    expect(fmtLightTime(3 / AU_LIGHT_SEC * 60)).toBe('3.0 光分');
+    expect(fmtLightTime(2 / AU_LIGHT_SEC * 3600)).toBe('2.0 光时');
+    expect(fmtLightTime(5 / AU_LIGHT_SEC * 86400)).toBe('5.0 光日');
   });
 
   it('随机种子可复现', () => {

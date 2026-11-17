@@ -56,6 +56,7 @@ export interface CosmosTick {
   eggsTotal: number;
   autopilot: string | null;
   tour: boolean;            // 巡航模式进行中
+  theater: boolean;         // 剧场放映中
   lightMode: boolean;       // 光速航行中
 }
 
@@ -66,6 +67,7 @@ export interface CosmosEvents {
   onSelect?(key: string | null): void;
   onSpeedToast?(speed: number): void;
   onEvent?(text: string): void;   // 事件横幅：日全食、引力弹弓……
+  onCaption?(text: string | null): void; // 剧场字幕（null = 隐藏）
 }
 
 /** 美观调节参数（「美」面板滑杆，实时生效，1 = 默认） */
@@ -83,6 +85,7 @@ export interface CosmosOptions extends CosmosEvents {
 
 const EGG_STORE = 'opt-cosmos-eggs';
 const SUN_LIGHT_BASE = 190;   // 太阳点光基础强度（× beauty.sun）
+const GALAXY_DIR = new THREE.Vector3(0.55, 0.28, 0.79).normalize(); // 远方旋涡星系方向
 
 // ═══════════════════════════════════════════════════════════════
 // 程序化纹理（可平铺经度方向；颜色 + 高度同步生成）
@@ -403,6 +406,187 @@ function softDotTexture(): THREE.Texture {
   return t;
 }
 
+/** 赤道坐标（RA/Dec，度）→ 场景方向（黄道面 = XZ 平面，+Y 北） */
+function radecToScene(raDeg: number, decDeg: number): THREE.Vector3 {
+  const a = raDeg * Math.PI / 180, d = decDeg * Math.PI / 180;
+  const e = 23.4393 * Math.PI / 180; // 黄赤交角
+  const cd = Math.cos(d), sd = Math.sin(d);
+  const x = cd * Math.cos(a);
+  const yEcl = cd * Math.sin(a) * Math.cos(e) - sd * Math.sin(e);
+  const zEcl = cd * Math.sin(a) * Math.sin(e) + sd * Math.cos(e);
+  return new THREE.Vector3(x, zEcl, -yEcl).normalize();
+}
+
+/** 全天最亮恒星（近似 RA/Dec/mag/B-V，内嵌零素材）：亮星层用真实位置与光谱色 */
+export const STARS_BRIGHT: { n: string; ra: number; dec: number; mag: number; bv: number }[] = [
+  { n: 'Sirius', ra: 101.29, dec: -16.72, mag: -1.46, bv: 0.0 },
+  { n: 'Canopus', ra: 95.99, dec: -52.7, mag: -0.74, bv: 0.15 },
+  { n: 'Rigil Kent', ra: 219.9, dec: -60.83, mag: -0.27, bv: 0.71 },
+  { n: 'Arcturus', ra: 213.92, dec: 19.18, mag: -0.05, bv: 1.23 },
+  { n: 'Vega', ra: 279.23, dec: 38.78, mag: 0.03, bv: 0.0 },
+  { n: 'Capella', ra: 79.17, dec: 45.99, mag: 0.08, bv: 0.8 },
+  { n: 'Rigel', ra: 78.63, dec: -8.2, mag: 0.13, bv: -0.03 },
+  { n: 'Procyon', ra: 114.83, dec: 5.22, mag: 0.34, bv: 0.42 },
+  { n: 'Betelgeuse', ra: 88.79, dec: 7.41, mag: 0.42, bv: 1.85 },
+  { n: 'Achernar', ra: 24.43, dec: -57.24, mag: 0.46, bv: -0.16 },
+  { n: 'Hadar', ra: 210.96, dec: -60.37, mag: 0.61, bv: -0.23 },
+  { n: 'Altair', ra: 297.7, dec: 8.87, mag: 0.76, bv: 0.22 },
+  { n: 'Acrux', ra: 186.65, dec: -63.1, mag: 0.77, bv: -0.24 },
+  { n: 'Aldebaran', ra: 68.98, dec: 16.51, mag: 0.85, bv: 1.54 },
+  { n: 'Spica', ra: 201.3, dec: -11.16, mag: 0.98, bv: -0.23 },
+  { n: 'Antares', ra: 247.35, dec: -26.43, mag: 1.06, bv: 1.83 },
+  { n: 'Pollux', ra: 116.33, dec: 28.03, mag: 1.14, bv: 1.0 },
+  { n: 'Fomalhaut', ra: 344.41, dec: -29.62, mag: 1.16, bv: 0.09 },
+  { n: 'Deneb', ra: 310.36, dec: 45.28, mag: 1.25, bv: 0.09 },
+  { n: 'Regulus', ra: 152.09, dec: 11.97, mag: 1.35, bv: -0.11 },
+  { n: 'Adhara', ra: 104.66, dec: -28.97, mag: 1.5, bv: -0.21 },
+  { n: 'Castor', ra: 113.65, dec: 31.89, mag: 1.57, bv: 0.03 },
+  { n: 'Shaula', ra: 263.4, dec: -37.1, mag: 1.62, bv: -0.22 },
+  { n: 'Gacrux', ra: 187.79, dec: -57.07, mag: 1.63, bv: 1.59 },
+  { n: 'Bellatrix', ra: 83.78, dec: 6.35, mag: 1.64, bv: -0.22 },
+  { n: 'Elnath', ra: 81.57, dec: 28.61, mag: 1.65, bv: -0.13 },
+  { n: 'Alnilam', ra: 83.99, dec: -1.94, mag: 1.69, bv: -0.18 },
+  { n: 'Alnair', ra: 332.06, dec: -46.96, mag: 1.74, bv: -0.13 },
+  { n: 'Alnitak', ra: 85.19, dec: -1.94, mag: 1.77, bv: -0.21 },
+  { n: 'Alioth', ra: 125.23, dec: 55.96, mag: 1.77, bv: -0.02 },
+  { n: 'Dubhe', ra: 165.93, dec: 61.75, mag: 1.79, bv: 1.07 },
+  { n: 'Mirfak', ra: 51.08, dec: 49.86, mag: 1.79, bv: 0.48 },
+  { n: 'Wezen', ra: 107.1, dec: -26.39, mag: 1.83, bv: 0.67 },
+  { n: 'Kaus Australis', ra: 274.39, dec: -34.38, mag: 1.85, bv: -0.04 },
+  { n: 'Avior', ra: 135.54, dec: -59.51, mag: 1.86, bv: 1.2 },
+  { n: 'Alkaid', ra: 204.96, dec: 49.31, mag: 1.86, bv: -0.19 },
+  { n: 'Peacock', ra: 306.4, dec: -56.74, mag: 1.94, bv: -0.2 },
+];
+
+/** 程序银河天球：真实银道面取向 + 尘埃暗隙 + 银心增亮 + 恒星形成区（hi 档） */
+function milkyWayTexture(): THREE.Texture {
+  const W = 2048, H = 1024;
+  const n = makeNoise(4242);
+  const cv = document.createElement('canvas');
+  cv.width = W; cv.height = H;
+  const g = cv.getContext('2d')!;
+  const img = g.createImageData(W, H);
+  const wrapped = (lon: number, lat: number, fx: number, fy: number, oct = 4) =>
+    n.fbm(Math.cos(lon) * fx + lat * fy + 11, Math.sin(lon) * fx - lat * fy * 0.7 + 7, oct);
+  for (let py = 0; py < H; py++) {
+    const lat = (0.5 - py / H) * Math.PI;
+    for (let px = 0; px < W; px++) {
+      const lon = (px / W) * Math.PI * 2;
+      // 银纬高斯带 + 沿带密度起伏（圆域采样保证经度无缝）
+      const clump = wrapped(lon, lat, 2.6, 5.5);
+      const sigma = 0.11 + 0.06 * Math.exp(-(lon * lon) / 1.2);
+      let b = Math.exp(-(lat * lat) / (sigma * sigma)) * (0.35 + 0.85 * clump);
+      // 银心方向（经度 0）增亮成核球
+      const core = Math.exp(-(lon * lon + lat * lat * 6) / 0.5);
+      b *= 1 + core * 2.4;
+      // 尘埃暗隙：贴着带中心的一串暗纹（真实银河的大暗隙）
+      const rift = Math.max(0, Math.exp(-(lat * lat) / 0.006) * wrapped(lon, lat, 4.2, 16, 3) - 0.42);
+      b *= Math.max(0.08, 1 - rift * 1.5);
+      // 恒星形成区：带内稀疏的粉色结
+      const knot = Math.max(0, wrapped(lon + 2.2, lat, 7.5, 22, 3) - 0.74) * Math.exp(-(lat * lat) / 0.02);
+      const r = Math.min(1, b * 0.62 + core * 0.5) * 255;
+      const gg = Math.min(1, b * 0.68 + core * 0.46) * 255;
+      const bl = Math.min(1, b * 0.92 + core * 0.3) * 255;
+      const o = (py * W + px) * 4;
+      img.data[o] = r + knot * 260;
+      img.data[o + 1] = gg + knot * 150;
+      img.data[o + 2] = bl + knot * 170;
+      img.data[o + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/** 英雄星云：有结构的纤维/尘埃脉络/中心星（替换均匀光斑） */
+function heroNebulaTexture(tintA: number, tintB: number, seed: number): THREE.Texture {
+  const S = 512;
+  const n = makeNoise(seed);
+  const cv = document.createElement('canvas');
+  cv.width = S; cv.height = S;
+  const g = cv.getContext('2d')!;
+  const img = g.createImageData(S, S);
+  const ar = tA(tintA), br = tA(tintB);
+  function tA(c: number): [number, number, number] { return [c >> 16 & 255, c >> 8 & 255, c & 255]; }
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const u = x / S - 0.5, v = y / S - 0.5;
+      const rx = u * 1.55, ry = v; // 拉长的椭圆轮廓
+      const rad = Math.exp(-(rx * rx + ry * ry) * 7);
+      const fib = n.fbm(u * 5.5 + 3, v * 5.5 + 8, 5);
+      const veil = Math.max(0, n.fbm(u * 9 + 21, v * 9 + 5, 4) - 0.5) * 1.6; // 尘埃脉络
+      let a = Math.max(0, rad * (fib - 0.34) * 2.6 - veil * 0.45);
+      a = Math.min(1, a);
+      const mix2 = n.fbm(u * 3 + 31, v * 3 + 17, 3);
+      const r = (ar[0] + (br[0] - ar[0]) * mix2) / 255;
+      const gg = (ar[1] + (br[1] - ar[1]) * mix2) / 255;
+      const b = (ar[2] + (br[2] - ar[2]) * mix2) / 255;
+      // 中心埋一颗亮星
+      const star = Math.exp(-(u * u + v * v) * 2600) * 1.5;
+      const o = (y * S + x) * 4;
+      img.data[o] = Math.min(255, (r * a + star) * 255);
+      img.data[o + 1] = Math.min(255, (gg * a + star * 0.98) * 255);
+      img.data[o + 2] = Math.min(255, (b * a + star * 0.95) * 255);
+      img.data[o + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+/** 远方旋涡星系（对数旋臂 + 核球 + 尘埃）：缩放结尾的主角 */
+function galaxyTexture(): THREE.Texture {
+  const S = 512;
+  const gr = rng(5150);
+  const cv = document.createElement('canvas');
+  cv.width = S; cv.height = S;
+  const g = cv.getContext('2d')!;
+  g.fillStyle = '#000';
+  g.fillRect(0, 0, S, S);
+  // 核球
+  const core = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S * 0.22);
+  core.addColorStop(0, 'rgba(255,238,208,0.95)');
+  core.addColorStop(0.4, 'rgba(232,206,168,0.35)');
+  core.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = core;
+  g.fillRect(0, 0, S, S);
+  // 两条对数旋臂的星点（加性亮点画在暗底上，贴图整体做加性 sprite）
+  for (let i = 0; i < 9000; i++) {
+    const arm = i % 2;
+    const t = Math.pow(gr(), 0.8) * 2.1 + 0.35;           // 沿臂参数
+    const r = 0.16 * Math.exp(0.62 * t);                    // 对数螺线
+    if (r > 0.5) continue;
+    const th = t + arm * Math.PI + (gr() - 0.5) * 0.5;
+    const x = S / 2 + Math.cos(th) * r * S * 0.92;
+    const y = S / 2 + Math.sin(th) * r * S * 0.92 * 0.62;   // 倾斜的盘
+    const warm = gr();
+    const hii = gr() < 0.05;
+    g.fillStyle = hii
+      ? `rgba(255,170,190,${0.5 + gr() * 0.4})`
+      : `rgba(${205 + warm * 40},${210 + warm * 30},255,${0.16 + gr() * 0.3})`;
+    g.fillRect(x, y, hii ? 2.2 : 1.4, hii ? 2.2 : 1.4);
+  }
+  // 盘面薄雾
+  const disc = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S * 0.48);
+  disc.addColorStop(0, 'rgba(190,200,235,0.30)');
+  disc.addColorStop(0.6, 'rgba(140,160,215,0.12)');
+  disc.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = disc;
+  g.save();
+  g.translate(S / 2, S / 2);
+  g.scale(1, 0.62);
+  g.translate(-S / 2, -S / 2);
+  g.fillRect(0, 0, S, S);
+  g.restore();
+  const t = new THREE.CanvasTexture(cv);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
 /** 亮星衍射十字贴图 */
 function starFlareTexture(): THREE.Texture {
   const S = 128;
@@ -619,8 +803,8 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     mkFlares(30, 44, 0.78, 2400);  // 次级群星
     mkFlares(46, 26, 0.55, 2200);  // 群星背景耀斑
 
-    // 银河带：粒子 + 暗尘埃裂隙（减光的暖带）
-    const bandN = hi ? 4600 : 2200;
+    // 银河带：低配用粒子近似；hi 档由「银河天球」接管（见下）
+    const bandN = hi ? 2200 : 2200;
     const bpos = new Float32Array(bandN * 3);
     const bseed = new Float32Array(bandN);
     const bandTilt = 1.05;
@@ -663,8 +847,8 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     });
     sky.add(new THREE.Points(bgeo, bandMat));
 
-    // 银河雾霭：沿带铺几片大尺度低透明辉光，把粒子带黏成「发光的河」
-    for (let i = 0; i < 5; i++) {
+    // 银河雾霭：低配沿带铺几片大尺度低透明辉光（hi 由银河天球接管）
+    for (let i = 0; i < (hi ? 0 : 5); i++) {
       const a = (i / 5) * Math.PI * 2 + 0.9;
       const y2 = Math.sin(a) * Math.sin(1.05);
       const z2 = Math.sin(a) * Math.cos(1.05);
@@ -691,17 +875,75 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
       ['rgba(120,168,188,0.17)', 'rgba(52,90,108,0.05)'],
     ];
     nebulaColors.forEach(([inner, outer], i) => {
+      const hero = hi && (i === 1 || i === 4 || i === 7);
+      const heroPairs: Record<number, [number, number]> = {
+        1: [0x2a4a8a, 0xd98a5a],  // 蓝-橙 洞穴
+        4: [0x8a2a3a, 0xffb060],  // 绯红-金
+        7: [0x4a2a7a, 0x60c8d8],  // 紫-青
+      };
       const sp = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: glowTextureRGB(inner, outer),
-        blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.92,
+        map: hero ? heroNebulaTexture(heroPairs[i][0], heroPairs[i][1], 900 + i) : glowTextureRGB(inner, outer),
+        blending: THREE.AdditiveBlending, depthWrite: false, opacity: hero ? 0.8 : 0.92,
       }));
       const a = (i / nebulaColors.length) * Math.PI * 2 + 0.35;
       const y2 = Math.sin(a) * Math.sin(1.05);
       const z2 = Math.sin(a) * Math.cos(1.05);
       sp.position.set(Math.cos(a) * 3100, y2 * 3100, z2 * 3100);
-      sp.scale.setScalar(range(skyRng, 520, 840));
+      sp.scale.setScalar(hero ? range(skyRng, 1250, 1750) : range(skyRng, 520, 840));
       sky.add(sp);
     });
+
+    // 真实亮星层：真实位置 / 星等分级 / 光谱色（十字衍射点精灵）
+    for (const [list, size, opacity] of [
+      [STARS_BRIGHT.filter((s) => s.mag < 0.5), 92, 1.0],
+      [STARS_BRIGHT.filter((s) => s.mag >= 0.5), 54, 0.85],
+    ] as [typeof STARS_BRIGHT, number, number][]) {
+      if (!list.length) continue;
+      const pos = new Float32Array(list.length * 3);
+      const cols = new Float32Array(list.length * 3);
+      list.forEach((s, i) => {
+        const d = radecToScene(s.ra, s.dec).multiplyScalar(2600);
+        pos[i * 3] = d.x; pos[i * 3 + 1] = d.y; pos[i * 3 + 2] = d.z;
+        const c = s.bv < 0 ? [0.62, 0.74, 1.0] : s.bv < 0.6 ? [1, 0.97, 0.92] : s.bv < 1.2 ? [1, 0.87, 0.7] : [1, 0.72, 0.5];
+        cols[i * 3] = c[0]; cols[i * 3 + 1] = c[1]; cols[i * 3 + 2] = c[2];
+      });
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+      sky.add(new THREE.Points(geo, new THREE.PointsMaterial({
+        map: starFlareTexture(), size, transparent: true, opacity, vertexColors: true,
+        blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
+      })));
+    }
+
+    // 银河天球（hi）：真实银道面取向 + 尘埃暗隙 + 银心核球
+    if (hi) {
+      const pole = radecToScene(192.8595, 27.1284);   // 银北极
+      const gc = radecToScene(266.405, -28.936);      // 银心（人马座）
+      const skySphere = new THREE.Mesh(
+        new THREE.SphereGeometry(5400, 64, 40),
+        new THREE.MeshBasicMaterial({
+          map: milkyWayTexture(), side: THREE.BackSide,
+          blending: THREE.AdditiveBlending, depthWrite: false, transparent: true,
+        }),
+      );
+      // 贴图银心画在经度 0（球面局部 -X 方向）→ 用两步旋转对齐真实银道与银心
+      const q1 = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), pole);
+      const c1 = new THREE.Vector3(-1, 0, 0).applyQuaternion(q1);
+      const ang = Math.atan2(new THREE.Vector3().crossVectors(c1, gc).dot(pole), c1.dot(gc));
+      skySphere.quaternion.copy(new THREE.Quaternion().setFromAxisAngle(pole, ang).multiply(q1));
+      skySphere.renderOrder = -10;
+      sky.add(skySphere);
+    }
+
+    // 远方旋涡星系：缩放结尾的主角，平时也是深空一景
+    const galaxySprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: galaxyTexture(), transparent: true, opacity: 0.9,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    galaxySprite.position.copy(GALAXY_DIR).multiplyScalar(4600);
+    galaxySprite.scale.set(1500, 1500 * 0.66, 1);
+    sky.add(galaxySprite);
 
     // 远方星系：几枚微小的拉长光斑，深空再多一层纵深
     {
@@ -1934,6 +2176,49 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     if (r < 1e-6) return out.set(0, 0, 0);
     return out.copy(v).multiplyScalar(sceneToAU(r) / r);
   };
+
+  // ═══════════ 旅行者剧场：一段 90 秒的自动叙事 ═══════════
+  interface TheaterSeg {
+    key: string | null;                     // 目标天体；null = 缩放段
+    dur: number;
+    off: [number, number, number];          // 相机停位（背日向 / 侧向 / 上方）
+    cap: string;
+    zoom?: { from: number; to: number; lookGalaxy?: boolean };
+  }
+  const THEATER: TheaterSeg[] = [
+    { key: 'earth', dur: 9, off: [3, 10, 2.5], cap: '一切都从这里开始——一粒悬浮在阳光里的微尘。' },
+    { key: 'moon', dur: 9, off: [2.5, 0.6, 0.9], cap: '38 万公里：阿波罗用三天走完，光，只要 1.3 秒。' },
+    { key: 'sun', dur: 11, off: [68, 26, 14], cap: '它每秒把四百万吨自己变成光。你看到的，是八分钟前的它。' },
+    { key: 'jupiter', dur: 11, off: [10, 62, 20], cap: '一千三百个地球装得下它；那场风暴，刮了三百五十年。' },
+    { key: 'saturn', dur: 10, off: [6, 58, 6], cap: '环宽二十八万公里，厚不足百米——一张对折的纸。' },
+    { key: 'neptune', dur: 9, off: [4, 34, 12], cap: '这里的一年，是 165 个地球年。阳光暗得像深夜。' },
+    { key: 'pluto', dur: 8, off: [3, 20, 8], cap: '再往外，是彗星的牧场，与四光时外的寂静。' },
+    { key: null, dur: 14, off: [0, 0, 0], cap: '后退，再后退——太阳系缩成一粒尘埃。', zoom: { from: 320, to: 2500 } },
+    { key: null, dur: 11, off: [0, 0, 0], cap: '你在这里。一粒星尘上，一段刚好够看星空的一生。', zoom: { from: 2500, to: 2500, lookGalaxy: true } },
+  ];
+  const theater = {
+    on: false, t: 0, idx: 0, savedScale: 2, capShown: false,
+    zoomDir: new THREE.Vector3(1, 0.2, 0).normalize(),
+  };
+  function startTheater() {
+    if (theater.on) return;
+    theater.on = true;
+    theater.t = 0;
+    theater.idx = 0;
+    theater.capShown = false;
+    theater.savedScale = timeScaleIdx;
+    timeScaleIdx = 3; // 1天/秒：行星缓缓流动，字幕有呼吸
+    tour.on = false;
+    lightMode = false;
+    theater.zoomDir.copy(camera.position).normalize();
+    opts.onEvent?.('旅行者剧场 · 任意操作退出');
+  }
+  function cancelTheater(restore = true) {
+    if (!theater.on) return;
+    theater.on = false;
+    if (restore) timeScaleIdx = theater.savedScale;
+    opts.onCaption?.(null);
+  }
   function tourNext() {
     tourGoto(TOUR[(TOUR.indexOf(tour.key) + 1) % TOUR.length]);
   }
@@ -1945,6 +2230,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     opts.onSelect?.(key);
   }
   function breakAutopilot() {
+    cancelTheater(); // 手动接管：剧场谢幕
     tour.on = false; // 手动接管：巡航让位
     if (autopilotKey) { autopilotKey = null; opts.onSelect?.(null); }
   }
@@ -2193,8 +2479,58 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     if (keys.has('c')) lift -= 1;
     boost = keys.has('shift');
 
-    // ---- 自动导航 / 巡航环绕 ----
-    if (autopilotKey) {
+    // ---- 旅行者剧场：镜头叙事接管一切 ----
+    if (theater.on) {
+      const seg = THEATER[theater.idx];
+      theater.t += dt;
+      if (!theater.capShown && theater.t > 0.5) {
+        theater.capShown = true;
+        opts.onCaption?.(seg.cap);
+      }
+      if (seg.zoom) {
+        const k = THREE.MathUtils.smoothstep(theater.t / seg.dur, 0, 1);
+        const r = seg.zoom.from + (seg.zoom.to - seg.zoom.from) * k;
+        camera.position.copy(theater.zoomDir).multiplyScalar(r);
+        camera.position.x += Math.sin(theater.t * 0.12) * 40; // 缓慢漂移，画面不死板
+        camera.position.y += Math.cos(theater.t * 0.09) * 26;
+        const look = seg.zoom.lookGalaxy
+          ? tmpV.set(0, 0, 0).lerp(tmpV2.copy(GALAXY_DIR).multiplyScalar(4600), Math.min(1, theater.t / 6))
+          : tmpV.set(0, 0, 0);
+        const mtx = new THREE.Matrix4().lookAt(camera.position, look, up);
+        tmpQ.setFromRotationMatrix(mtx);
+        camera.quaternion.slerp(tmpQ, Math.min(dt * 2.5, 1));
+        const eu = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+        yaw = eu.y; pitch = eu.x;
+      } else {
+        const tgt = resolveTarget(seg.key!);
+        if (tgt) {
+          const out = tmpV.copy(tgt.pos).normalize();
+          const side = tmpV2.crossVectors(out, up).normalize();
+          const want = new THREE.Vector3()
+            .addScaledVector(out, seg.off[0])
+            .addScaledVector(side, seg.off[1])
+            .addScaledVector(up, seg.off[2])
+            .add(tgt.pos);
+          camera.position.lerp(want, Math.min(dt * 1.6, 1));
+          const mtx = new THREE.Matrix4().lookAt(camera.position, tgt.pos, up);
+          tmpQ.setFromRotationMatrix(mtx);
+          camera.quaternion.slerp(tmpQ, Math.min(dt * 2.5, 1));
+          const eu = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
+          yaw = eu.y; pitch = eu.x;
+        }
+      }
+      vel.multiplyScalar(Math.pow(0.02, dt));
+      if (theater.t >= seg.dur) {
+        theater.idx++;
+        theater.t = 0;
+        theater.capShown = false;
+        opts.onCaption?.(null);
+        if (theater.idx >= THEATER.length) {
+          cancelTheater();
+          opts.onEvent?.('剧场结束');
+        }
+      }
+    } else if (autopilotKey) {
       const tgt = resolveTarget(autopilotKey);
       if (!tgt) { autopilotKey = null; }
       else {
@@ -2397,6 +2733,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
       eggsTotal: EGGS.length,
       autopilot: autopilotKey,
       tour: tour.on,
+      theater: theater.on,
       lightMode,
     });
   }
@@ -2463,6 +2800,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     for (const egg of eggs) { if (!egg.found) egg.label?.classList.add('reveal'); }
   }
   if (q.has('tour')) setTour(true); // 无头验证巡航模式
+  if (q.has('theater')) startTheater(); // 无头验证剧场
   if (q.has('eclipse')) {
     // 站进月影锥：日全食验证机位
     const e = bodyScenePos(byKey('earth')!, startDays);
@@ -2515,6 +2853,8 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
   return {
     flyTo,
     setTour,
+    startTheater,
+    cancelTheater,
     setBeauty,
     setBeltVisible,
     setOrbitsVisible,
