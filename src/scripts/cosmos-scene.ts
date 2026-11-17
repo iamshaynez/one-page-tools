@@ -2504,7 +2504,10 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
       } else {
         const tgt = resolveTarget(seg.key!);
         if (tgt) {
-          const out = tmpV.copy(tgt.pos).normalize();
+          // 背日向基向量：太阳在原点会退化，改用「从镜头方向看来的一侧」
+          const out = tmpV.copy(tgt.pos);
+          if (out.lengthSq() < 1e-4) out.copy(camera.position);
+          out.normalize();
           const side = tmpV2.crossVectors(out, up).normalize();
           const want = new THREE.Vector3()
             .addScaledVector(out, seg.off[0])
