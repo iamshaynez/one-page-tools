@@ -29,6 +29,7 @@ import Base from '../../layouts/Base.astro';
         <button class="hud__btn" id="btn-time" title="宇宙时间流速（T 键切换）">6时/秒</button>
         <button class="hud__btn" id="btn-sound" aria-pressed="false" title="环境音">音 · 关</button>
         <button class="hud__btn" id="btn-cinema" aria-pressed="false" title="屏保模式：隐藏全部界面（H 键）">屏</button>
+        <button class="hud__btn" id="btn-tour" aria-pressed="false" title="巡航模式：自动逐站漫游太阳系（任意手动操作即退出）">巡航</button>
         <button class="hud__btn" id="btn-full" title="全屏">⛶ 全屏</button>
       </div>
 
@@ -365,7 +366,21 @@ import Base from '../../layouts/Base.astro';
   const btnSound = document.getElementById('btn-sound') as HTMLButtonElement;
   const btnFull = document.getElementById('btn-full') as HTMLButtonElement;
   const btnCinema = document.getElementById('btn-cinema') as HTMLButtonElement;
+  const btnTour = document.getElementById('btn-tour') as HTMLButtonElement;
   const coarse = matchMedia('(pointer: coarse)').matches;
+
+  // ---- 巡航模式：自动逐站漫游，任意手动操作即退出 ----
+  let tourOn = false;
+  function syncTourButton() {
+    btnTour.setAttribute('aria-pressed', String(tourOn));
+    btnTour.textContent = tourOn ? '巡 · 开' : '巡航';
+  }
+  btnTour.addEventListener('click', () => {
+    if (!handle) return;
+    tourOn = !tourOn;
+    handle.setTour(tourOn);
+    syncTourButton();
+  });
 
   // ---- 屏保模式：隐藏全部界面，纯净画面（H 键切换） ----
   function toggleCinema() {
@@ -475,6 +490,10 @@ import Base from '../../layouts/Base.astro';
       ? `漂浮物 <b>${t.eggsFound} / ${t.eggsTotal}</b>`
       : `漂浮物 0 / ${t.eggsTotal} · 宇宙某处`;
     markDock(t.autopilot);
+    if (t.tour !== tourOn) { // 手动操作可能已在场景内退出巡航，按钮跟随
+      tourOn = t.tour;
+      syncTourButton();
+    }
     if (t.autopilot && t.autopilot !== selectedKey) {
       selectedKey = t.autopilot;
       fillCard(t.autopilot);
