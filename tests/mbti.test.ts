@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { QUESTIONS, DIM_INFO } from '../src/data/mbti-questions';
+import { QUESTIONS, DIM_INFO, WORDPAIR_PROMPT } from '../src/data/mbti-questions';
 import { MBTI_TYPES, ROLES } from '../src/data/mbti-types';
 import {
   tally, dimScores, typeCode, roleOf, scoreMbti,
@@ -11,11 +11,20 @@ const POLES_OF: Record<string, [Pole, Pole]> = {
 };
 
 describe('mbti · 题库结构', () => {
-  it('共三十六题，每维度恰九题', () => {
-    expect(QUESTIONS).toHaveLength(36);
+  it('共六十题，每维度恰十五题（情境九 + 词对六）', () => {
+    expect(QUESTIONS).toHaveLength(60);
     for (const dim of Object.keys(POLES_OF) as (keyof typeof POLES_OF)[]) {
-      expect(QUESTIONS.filter((q) => q.dim === dim)).toHaveLength(9);
+      const of = QUESTIONS.filter((q) => q.dim === dim);
+      expect(of).toHaveLength(15);
+      expect(of.filter((q) => q.kind === 'situation')).toHaveLength(9);
+      expect(of.filter((q) => q.kind === 'wordpair')).toHaveLength(6);
     }
+  });
+
+  it('词对题统一引导语', () => {
+    const wp = QUESTIONS.filter((q) => q.kind === 'wordpair');
+    expect(wp).toHaveLength(24);
+    for (const q of wp) expect(q.text).toBe(WORDPAIR_PROMPT);
   });
 
   it('四维轮转排布：相邻四题不重维', () => {
@@ -25,15 +34,22 @@ describe('mbti · 题库结构', () => {
     }
   });
 
-  it('aPole 与维度匹配，文案非空且不重复', () => {
-    const seen = new Set<string>();
+  it('aPole 与维度匹配，文案非空且不重复（情境题面与词对词对各不重复）', () => {
+    const texts = new Set<string>();
+    const pairs = new Set<string>();
     for (const q of QUESTIONS) {
       expect(POLES_OF[q.dim]).toContain(q.aPole);
-      expect(q.text.length).toBeGreaterThan(4);
-      expect(q.a.length).toBeGreaterThan(2);
+      expect(q.a.length).toBeGreaterThanOrEqual(2); // 词对题选项仅二至四字
       expect(q.b).not.toBe(q.a);
-      expect(seen.has(q.text)).toBe(false);
-      seen.add(q.text);
+      if (q.kind === 'wordpair') {
+        const key = [q.a, q.b].sort().join('/');
+        expect(pairs.has(key)).toBe(false);
+        pairs.add(key);
+      } else {
+        expect(q.text.length).toBeGreaterThan(4);
+        expect(texts.has(q.text)).toBe(false);
+        texts.add(q.text);
+      }
     }
   });
 
@@ -103,7 +119,7 @@ describe('mbti-core · 计分', () => {
     const answers: Answers = QUESTIONS.map((_, i) => (i % 2 ? null : 'a'));
     const t = tally(answers);
     const total = Object.values(t).reduce((s, n) => s + n, 0);
-    expect(total).toBe(18);
+    expect(total).toBe(30);
   });
 
   it('同分裁决沿用惯例 I/N/F/P', () => {
@@ -118,20 +134,23 @@ describe('mbti-core · 计分', () => {
     expect(typeCode(ds)).toBe('INFP');
   });
 
-  it('清晰度分档：9:0 显著 · 7:2 显著 · 6:3 分明 · 5:4 略偏', () => {
-    const mk = (l: number, r: number) => dimScores({ E: l, I: r, S: 0, N: 9, T: 0, F: 9, J: 0, P: 9 })[0];
-    expect(mk(9, 0).clarity).toBe('显著');
-    expect(mk(7, 2).clarity).toBe('显著');
-    expect(mk(6, 3).clarity).toBe('分明');
-    expect(mk(5, 4).clarity).toBe('略偏');
-    expect(mk(9, 0).ratio).toBeCloseTo(1);
-    expect(mk(6, 3).ratio).toBeCloseTo(2 / 3);
+  it('偏好四档（对照官方叫法）：13:2 绝对 · 11:4 明确 · 10:5 中等 · 8:7 轻微', () => {
+    const mk = (l: number, r: number) => dimScores({ E: l, I: r, S: 0, N: 15, T: 0, F: 15, J: 0, P: 15 })[0];
+    expect(mk(15, 0).clarity).toBe('绝对');
+    expect(mk(13, 2).clarity).toBe('绝对');
+    expect(mk(12, 3).clarity).toBe('明确');
+    expect(mk(11, 4).clarity).toBe('明确');
+    expect(mk(10, 5).clarity).toBe('中等');
+    expect(mk(9, 6).clarity).toBe('中等');
+    expect(mk(8, 7).clarity).toBe('轻微');
+    expect(mk(15, 0).ratio).toBeCloseTo(1);
+    expect(mk(9, 6).ratio).toBeCloseTo(0.6);
   });
 
   it('scoreMbti：未答完或长度不符返回 null', () => {
-    expect(scoreMbti(Array(36).fill('a'))).not.toBeNull();
-    expect(scoreMbti(Array(35).fill('a'))).toBeNull();
-    expect(scoreMbti([...Array(35).fill('a'), null])).toBeNull();
+    expect(scoreMbti(Array(60).fill('a'))).not.toBeNull();
+    expect(scoreMbti(Array(59).fill('a'))).toBeNull();
+    expect(scoreMbti([...Array(59).fill('a'), null])).toBeNull();
   });
 
   it('十六型皆可由构造答案得出（typeByCode 全命中）', () => {
@@ -156,7 +175,7 @@ describe('mbti-core · 计分', () => {
         ? TIE_DEFAULT[d.dim]
         : d.leftCount > d.rightCount ? d.left : d.right;
       expect(d.winner).toBe(win);
-      expect(d.leftCount + d.rightCount).toBe(9);
+      expect(d.leftCount + d.rightCount).toBe(15);
     }
     const r = scoreMbti(allA)!;
     expect(r.code).toBe(ds.map((d) => d.winner).join(''));

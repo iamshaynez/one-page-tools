@@ -1,37 +1,38 @@
 ---
 import ToolShell from '../../layouts/ToolShell.astro';
-import { RATING_LABELS } from '../../data/enneagram-questions';
-import { CENTERS } from '../../data/enneagram-types';
+import { PAIR_PROMPT } from '../../data/enneagram-questions';
+import { CENTERS, type Center } from '../../data/enneagram-types';
 ---
 <ToolShell toolKey="enneagram">
   <!-- 答题视图 -->
   <div class="tool-grid tool-grid--2" id="quiz-view">
     <div class="card panel stage-left">
       <div class="q-top">
-        <span class="muted small" id="q-no">第 1 / 36 条</span>
+        <span class="muted small" id="q-no">第 1 / 36 组</span>
         <span class="tag tag--red hidden" id="q-dim">中心</span>
       </div>
       <div class="q-progress"><i id="q-progress-fill"></i></div>
 
-      <h2 class="q-text serif" id="q-text">陈述</h2>
-
-      <div class="rating-row" id="rating-row">
-        {([1, 2, 3, 4, 5] as const).map((r) => (
-          <button class="rate" data-rate={r} id={`rate-${r}`}>
-            <span class="rate-key mono">{r}</span>
-            <span class="rate-label">{RATING_LABELS[r]}</span>
-          </button>
-        ))}
+      <p class="q-prompt muted" id="q-prompt"></p>
+      <div class="opts" id="opts">
+        <button class="opt" id="opt-a">
+          <span class="opt-key mono">A</span>
+          <span class="opt-text" id="opt-a-text"></span>
+        </button>
+        <button class="opt" id="opt-b">
+          <span class="opt-key mono">B</span>
+          <span class="opt-text" id="opt-b-text"></span>
+        </button>
       </div>
 
       <div class="row q-foot">
-        <button class="btn btn--ghost btn--sm" id="prev">← 上一条</button>
-        <span class="muted small">凭第一直觉，像不像自己 · 键盘 1–5</span>
+        <button class="btn btn--ghost btn--sm" id="prev">← 上一组</button>
+        <span class="muted small">键盘 A / B 作答 · ← 回退</span>
       </div>
     </div>
 
     <div class="card panel stage-right">
-      <p class="muted small" style="margin:0 0 12px;">逐条读陈述，按「像不像你」打分。答满三十六条，得主型、翼型与九型全谱。诚实一点，结果才有意思。</p>
+      <p class="muted small" style="margin:0 0 12px;">每组两句陈述，选更像「一生中大多数时候的你」的那句——不是此刻的心情。两句都不像时，选更接近的一句；诚实一点，结果才准。</p>
       <div class="dots" id="dots"></div>
       <div class="center-guide">
         {(Object.keys(CENTERS) as (keyof typeof CENTERS)[]).map((c) => (
@@ -111,33 +112,32 @@ import { CENTERS } from '../../data/enneagram-types';
 <style is:global>
   .panel { padding: 24px; }
 
-  /* ---- 答题 ---- */
+  /* ---- 答题（二选一迫选） ---- */
   .q-top { display: flex; justify-content: space-between; align-items: center; }
-  .q-progress { height: 3px; background: var(--paper-sunken); border-radius: 99px; margin: 10px 0 22px; overflow: hidden; }
+  .q-progress { height: 3px; background: var(--paper-sunken); border-radius: 99px; margin: 10px 0 18px; overflow: hidden; }
   .q-progress i { display: block; height: 100%; width: 0; background: var(--red); transition: width 0.3s var(--ease); }
-  .q-text { font-size: 1.3rem; line-height: 1.8; margin: 0 0 24px; min-height: 4.2em; }
-
-  .rating-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
-  .rate {
-    display: flex; flex-direction: column; align-items: center; gap: 8px;
-    padding: 14px 6px;
+  .q-prompt { margin: 0 0 14px; font-size: 0.95rem; letter-spacing: 0.02em; }
+  .opts { display: flex; flex-direction: column; gap: 12px; }
+  .opt {
+    display: flex; align-items: center; gap: 14px; width: 100%;
+    padding: 13px 16px; text-align: left;
     background: var(--paper-raised); color: var(--ink);
     border: 1.5px solid var(--line); border-radius: var(--radius-m);
     transition: border-color 0.15s, transform 0.15s var(--ease), box-shadow 0.15s;
     animation: optIn 0.28s var(--ease);
   }
+  .opt:nth-child(2) { animation-delay: 0.05s; }
   @keyframes optIn { from { opacity: 0; transform: translateY(6px); } }
-  /* 悬停仅在指针真正移动时生效：切题后指针未挪窝不留高亮（hover-guard），选项回到空白 */
-  .rating-row:not(.hover-guard) .rate:hover { border-color: var(--ink); transform: translateY(-2px); box-shadow: var(--shadow-card); }
-  .rating-row:not(.hover-guard) .rate:hover .rate-key { background: var(--ink); color: var(--paper); }
-  .rate-key {
-    display: grid; place-items: center;
-    width: 28px; height: 28px; font-size: 0.85rem;
+  .opt-key {
+    display: grid; place-items: center; flex-shrink: 0;
+    width: 30px; height: 30px; font-size: 0.85rem;
     border: 1.5px solid var(--ink); border-radius: var(--radius-s);
-    transition: background 0.15s, border-color 0.15s;
   }
-  .rate-label { font-size: 0.85rem; white-space: nowrap; }
-  .q-foot { justify-content: space-between; margin-top: 20px; }
+  /* 悬停仅在指针真正移动时生效：切题后指针未挪窝不留高亮（hover-guard），选项回到空白 */
+  .opts:not(.hover-guard) .opt:hover { border-color: var(--ink); transform: translateY(-1px); box-shadow: var(--shadow-card); }
+  .opts:not(.hover-guard) .opt:hover .opt-key { background: var(--ink); color: var(--paper); }
+  .opt-text { line-height: 1.6; font-size: 1rem; }
+  .q-foot { justify-content: space-between; margin-top: 18px; }
 
   .dots { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 20px; }
   .dot {
@@ -211,22 +211,18 @@ import { CENTERS } from '../../data/enneagram-types';
     .r-name { font-size: 1.5rem; }
     .r-list--cols { grid-template-columns: 1fr; }
     .r-duo { grid-template-columns: 1fr; gap: 20px 0; }
-    .q-text { font-size: 1.15rem; min-height: 3.6em; }
-    .rating-row { gap: 6px; }
-    .rate { padding: 10px 2px; }
-    .rate-label { font-size: 0.75rem; }
     .spec-row { grid-template-columns: 92px 1fr 38px; gap: 8px; }
   }
 </style>
 
 <script>
-  import { STATEMENTS, RATING_LABELS, type Rating } from '../../data/enneagram-questions';
+  import { PAIRS, PAIR_PROMPT, type Pick } from '../../data/enneagram-questions';
   import { CENTERS, CN_NO, ENNEA_TYPES, type Center } from '../../data/enneagram-types';
   import { scoreEnn, wingsOf, type EnnAnswers, type EnnResult } from '../../scripts/enneagram-core';
   import { store, toast } from '../../scripts/ui';
 
   const KEY = 'opt-ennea-last';
-  const N = STATEMENTS.length;
+  const N = PAIRS.length;
   const CENTER_OF: Record<number, Center> = { 1: 'gut', 2: 'heart', 3: 'heart', 4: 'heart', 5: 'head', 6: 'head', 7: 'head', 8: 'gut', 9: 'gut' };
   const typeByNo = (no: number) => ENNEA_TYPES.find((t) => t.no === no)!;
 
@@ -234,8 +230,11 @@ import { CENTERS } from '../../data/enneagram-types';
   const resultView = document.getElementById('result-view')!;
   const qNo = document.getElementById('q-no')!;
   const qDim = document.getElementById('q-dim')!;
-  const qText = document.getElementById('q-text')!;
-  const rateBtns = Array.from(document.querySelectorAll<HTMLButtonElement>('.rate'));
+  const qPrompt = document.getElementById('q-prompt')!;
+  const optA = document.getElementById('opt-a') as HTMLButtonElement;
+  const optB = document.getElementById('opt-b') as HTMLButtonElement;
+  const optAText = document.getElementById('opt-a-text')!;
+  const optBText = document.getElementById('opt-b-text')!;
   const prevBtn = document.getElementById('prev') as HTMLButtonElement;
   const progressFill = document.getElementById('q-progress-fill')!;
   const dotsBox = document.getElementById('dots')!;
@@ -245,72 +244,75 @@ import { CENTERS } from '../../data/enneagram-types';
   let idx = 0;
 
   // 切题后屏蔽悬停残留：指针未挪窝时选项保持空白，动了鼠标才恢复 hover
-  const ratingRow = document.querySelector<HTMLElement>('.rating-row')!;
+  const optsBox = document.querySelector<HTMLElement>('.opts')!;
   let hoverGuarded = false;
   document.addEventListener('pointermove', () => {
     if (!hoverGuarded) return;
     hoverGuarded = false;
-    ratingRow.classList.remove('hover-guard');
+    optsBox.classList.remove('hover-guard');
   }, { passive: true });
   function armHoverGuard() {
     hoverGuarded = true;
-    ratingRow.classList.add('hover-guard');
+    optsBox.classList.add('hover-guard');
   }
 
   // ---- 答题视图 ----
-  function renderStatement() {
+  function renderPair() {
     armHoverGuard();
-    const s = STATEMENTS[idx];
-    qNo.textContent = `第 ${idx + 1} / ${N} 条`;
-    const c = CENTER_OF[s.no];
-    qDim.textContent = CENTERS[c].label.split(' · ')[0];
+    const p = PAIRS[idx];
+    qNo.textContent = `第 ${idx + 1} / ${N} 组`;
+    // 当前配对两型所属的中心（一或两个），不泄露型号
+    const cs = Array.from(new Set([CENTER_OF[p.aNo], CENTER_OF[p.bNo]]));
+    qDim.textContent = cs.map((c) => CENTERS[c].label.split(' · ')[0]).join(' · ');
     qDim.classList.remove('hidden');
-    qText.textContent = s.text;
-    rateBtns.forEach((el) => {
-      el.classList.remove('rate'); void el.offsetWidth; el.classList.add('rate'); // 重播动画
-    });
+    qPrompt.textContent = PAIR_PROMPT;
+    optAText.textContent = p.aText;
+    optBText.textContent = p.bText;
+    [optA, optB].forEach((el) => { el.classList.remove('opt'); void el.offsetWidth; el.classList.add('opt'); });
     prevBtn.disabled = idx === 0;
     progressFill.style.width = `${(answers.filter((a) => a !== null).length / N) * 100}%`;
-    guideRows.forEach((r) => r.classList.toggle('hot', r.dataset.center === c));
+    guideRows.forEach((r) => r.classList.toggle('hot', cs.includes(r.dataset.center as Center)));
     renderDots();
   }
 
   function renderDots() {
     dotsBox.innerHTML = '';
-    STATEMENTS.forEach((_, i) => {
+    PAIRS.forEach((_, i) => {
       const d = document.createElement('button');
       d.className = 'dot' + (answers[i] !== null ? ' done' : '') + (i === idx ? ' cur' : '');
-      d.title = `第 ${i + 1} 条`;
-      if (answers[i] !== null) d.addEventListener('click', () => { idx = i; renderStatement(); });
+      d.title = `第 ${i + 1} 组`;
+      if (answers[i] !== null) d.addEventListener('click', () => { idx = i; renderPair(); });
       else d.disabled = true;
       dotsBox.appendChild(d);
     });
   }
 
-  function rate(r: Rating) {
-    answers[idx] = r;
+  function pick(p: Pick) {
+    answers[idx] = p;
     if (idx === N - 1) finish();
-    else { idx++; renderStatement(); }
+    else { idx++; renderPair(); }
   }
 
   function prev() {
-    if (idx > 0) { idx--; renderStatement(); }
+    if (idx > 0) { idx--; renderPair(); }
   }
 
-  rateBtns.forEach((btn) => btn.addEventListener('click', () => rate(Number(btn.dataset.rate) as Rating)));
+  optA.addEventListener('click', () => pick('a'));
+  optB.addEventListener('click', () => pick('b'));
   prevBtn.addEventListener('click', prev);
 
   document.addEventListener('keydown', (e) => {
     if (resultView.offsetParent !== null) return;
-    const r = Number(e.key);
-    if (r >= 1 && r <= 5) rate(r as Rating);
+    const k = e.key.toLowerCase();
+    if (k === 'a' || k === '1') pick('a');
+    else if (k === 'b' || k === '2') pick('b');
     else if (e.key === 'ArrowLeft') prev();
   });
 
   // ---- 结果视图 ----
   const el = (id: string) => document.getElementById(id)!;
 
-  /** 九型全谱：按分数降序，主型/并列/翼标记 */
+  /** 九型全谱：按票数降序，主型/并列/翼标记；条长与百分比同基准（票率），仅留 2% 最小可视 */
   function spectrumHTML(res: EnnResult): string {
     const wingNo = res.wing?.type.no;
     const tieNos = new Set(res.tiedWith.map((t) => t.no));
@@ -322,7 +324,6 @@ import { CENTERS } from '../../data/enneagram-types';
         const isWing = !!res.wing && s.no === wingNo && !isMain && !isTie;
         const mark = isMain ? '主型' : isTie ? '并列' : isWing ? '翼' : '';
         const t = typeByNo(s.no);
-        // 条长与百分比同基准（归一化），仅留 2% 最小可视
         const w = Math.max(2, s.pct);
         return `
           <div class="spec-row ${isMain ? 'is-main' : ''} ${isTie ? 'is-tie' : ''}">
@@ -385,7 +386,7 @@ import { CENTERS } from '../../data/enneagram-types';
     idx = 0;
     resultView.classList.add('hidden');
     quizView.classList.remove('hidden');
-    renderStatement();
+    renderPair();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 
@@ -394,7 +395,7 @@ import { CENTERS } from '../../data/enneagram-types';
     idx = firstBlank >= 0 ? firstBlank : N - 1;
     resultView.classList.add('hidden');
     quizView.classList.remove('hidden');
-    renderStatement();
+    renderPair();
   });
 
   // ---- 载入上次结果 ----
@@ -409,5 +410,5 @@ import { CENTERS } from '../../data/enneagram-types';
     }
   }
 
-  if (resultView.classList.contains('hidden')) renderStatement();
+  if (resultView.classList.contains('hidden')) renderPair();
 </script>

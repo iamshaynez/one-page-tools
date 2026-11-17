@@ -16,7 +16,8 @@ export const OPPOSITE: Record<Pole, Pole> = { E: 'I', I: 'E', S: 'N', N: 'S', T:
 /** 各维度同分时的默认极（惯例：I/N/F/P） */
 export const TIE_DEFAULT: Record<Dim, Pole> = { EI: 'I', SN: 'N', TF: 'F', JP: 'P' };
 
-export type Clarity = '持平' | '略偏' | '分明' | '显著';
+/** 偏好程度四档，叫法对照官方报告：轻微 / 中等 / 明确 / 绝对（同分为持平） */
+export type Clarity = '持平' | '轻微' | '中等' | '明确' | '绝对';
 
 export interface DimScore {
   dim: Dim;
@@ -51,9 +52,10 @@ export function tally(answers: Answers): Record<Pole, number> {
 
 function clarityOf(ratio: number, tie: boolean): Clarity {
   if (tie) return '持平';
-  if (ratio >= 7 / 9) return '显著';
-  if (ratio >= 6 / 9) return '分明';
-  return '略偏';
+  if (ratio >= 0.85) return '绝对';
+  if (ratio >= 0.7) return '明确';
+  if (ratio >= 0.55) return '中等';
+  return '轻微';
 }
 
 /** 计票 → 四维得分（含同分裁决与清晰度） */
