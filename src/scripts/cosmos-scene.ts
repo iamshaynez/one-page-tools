@@ -1352,9 +1352,9 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     // 可见性微光：真实尺度的小卫星在远处只是一粒暗点，给它一盏灯
     const glint = new THREE.Sprite(new THREE.SpriteMaterial({
       map: glowTextureRGB('rgba(255,250,240,0.65)', 'rgba(255,240,220,0.16)'),
-      blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.32,
+      blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.4,
     }));
-    glint.scale.setScalar(Math.max(r * 9, 3));
+    glint.scale.setScalar(Math.max(r * 12, 4));
     scene.add(glint);
     moonNodes.push({ spec, mesh, pos: new THREE.Vector3(), r, glint });
   }
