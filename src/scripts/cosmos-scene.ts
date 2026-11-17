@@ -755,6 +755,10 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
         float g2 = fbm(p.yz * 15.0 - uTime * 0.04 + 4.7);
         float gran = 0.5 + 0.5 * (g1 * 0.62 + g2 * 0.38);
         gran = pow(gran, 1.55); // 拉开对比：暗沟更深，亮胞才留得住细节
+        // 太阳黑子：低频噪声阈值成对浮现，暗核 + 半影，缓慢演化
+        float sn = fbm(p.xy * 2.6 + vec2(31.0, 7.0) + uTime * 0.006);
+        float spotCore = smoothstep(0.63, 0.70, sn);
+        float spotPen = smoothstep(0.57, 0.63, sn);
         float ndv = abs(dot(normalize(vN), normalize(vV)));
         float rim = pow(1.0 - ndv, 2.2);
         vec3 deep = vec3(0.82, 0.26, 0.02);
@@ -764,6 +768,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
         col = mix(col, hot, pow(gran, 3.5));
         // 临边昏暗（真实太阳盘面边缘更暗），只留一抹橙色边焰
         col *= 0.6 + 0.4 * ndv;
+        col *= 1.0 - spotCore * 0.78 - spotPen * 0.28;
         col += vec3(1.0, 0.55, 0.16) * rim * 0.75;
         gl_FragColor = vec4(col * 1.22 * uSun, 1.0); // 留足 HDR 余量给辉光与光轴
       }
@@ -787,6 +792,37 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
   sunFlare.scale.set(SUN_SCENE_R * 9.5, SUN_SCENE_R * 9.5, 1);
   scene.add(sunFlare);
 
+  // 日珥：立在光球边缘的等离子拱桥，各自生长-爆发-回落
+  const promRigs: { mesh: THREE.Mesh; mat: THREE.ShaderMaterial; phase: number }[] = [];
+  {
+    const promGeo = new THREE.TorusGeometry(SUN_SCENE_R * 0.52, SUN_SCENE_R * 0.02, 8, 48, Math.PI * 1.15);
+    const promRng = rng(20261117);
+    for (let i = 0; i < 6; i++) {
+      const mat = new THREE.ShaderMaterial({
+        transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+        uniforms: { uLife: { value: 0 } },
+        vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+        fragmentShader: /* glsl */ `
+          uniform float uLife; varying vec2 vUv;
+          void main() {
+            float a = sin(vUv.x * 3.14159);
+            vec3 col = mix(vec3(1.0, 0.3, 0.07), vec3(1.0, 0.62, 0.22), vUv.y);
+            gl_FragColor = vec4(col * 1.7 * uLife, a * uLife * 0.85);
+          }
+        `,
+      });
+      const mesh = new THREE.Mesh(promGeo, mat);
+      // 立在表面随机点：环面平面须包含该点的径向法线（拱桥两端插回光球）
+      const n = new THREE.Vector3(promRng() - 0.5, promRng() - 0.5, promRng() - 0.5).normalize();
+      const ref = Math.abs(n.y) < 0.9 ? up : new THREE.Vector3(1, 0, 0);
+      const t1 = new THREE.Vector3().crossVectors(n, ref).normalize();
+      mesh.position.copy(n).multiplyScalar(SUN_SCENE_R * 0.985);
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), t1); // 环面法线转向切向
+      sunGroup.add(mesh);
+      promRigs.push({ mesh, mat, phase: promRng() });
+    }
+  }
+
   // ---- 行星 ----
   const bodies: BodyNode[] = [];
   const clickTargets: THREE.Mesh[] = [];
@@ -798,6 +834,53 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
   };
   const haloSprites: THREE.Sprite[] = [];       // 「美」面板 halo 滑杆的旋钮
   const atmoMats: THREE.ShaderMaterial[] = [];  // 「美」面板大气滑杆的旋钮
+  const gasMats: THREE.ShaderMaterial[] = [];   // 气巨动态着色器（时间/太阳滑杆的旋钮）
+
+  /** 气巨/金星云面：带纬度差速漂移的条带材质（光照复刻物理口径，观感与前版一致） */
+  function mkGasMat(map: THREE.Texture, flowAmp: number, flowSpeed = 0.016): THREE.ShaderMaterial {
+    const m = new THREE.ShaderMaterial({
+      uniforms: {
+        uMap: { value: map }, uTime: { value: 0 }, uSun: { value: 1 },
+        uFlowAmp: { value: flowAmp }, uFlowSpeed: { value: flowSpeed },
+      },
+      vertexShader: /* glsl */ `
+        varying vec2 vUv; varying vec3 vWN; varying vec3 vW;
+        void main() {
+          vUv = uv;
+          vec4 w = modelMatrix * vec4(position, 1.0);
+          vW = w.xyz;
+          vWN = normalize(mat3(modelMatrix) * normal);
+          gl_Position = projectionMatrix * viewMatrix * w;
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D uMap; uniform float uTime, uSun, uFlowAmp, uFlowSpeed;
+        varying vec2 vUv; varying vec3 vWN; varying vec3 vW;
+        void main() {
+          // 纬度差速漂移：相邻纬带反向错动（双层采样循环，流动无缝）
+          float lat = vUv.y;
+          float shear = sin(lat * 18.85 + 1.2) * 0.55 + sin(lat * 34.6 + 4.0) * 0.3;
+          vec2 flow = vec2(shear * uFlowAmp, 0.0);
+          float ph = fract(uTime * uFlowSpeed);
+          vec3 a = texture2D(uMap, vUv + flow * ph).rgb;
+          vec3 b = texture2D(uMap, vUv + flow * (ph - 1.0)).rgb;
+          vec3 alb = mix(a, b, ph);
+          // 光照：太阳在原点的点光（衰减/口径与场景 PointLight 一致）+ 微弱环境
+          vec3 sd = normalize(-vW);
+          float E = 190.0 * uSun / max(length(vW), 1.0);
+          float ndl = dot(normalize(vWN), sd);
+          float day = smoothstep(-0.18, 0.42, ndl); // 气巨的晨昏线很软
+          vec3 col = alb * (vec3(0.07, 0.085, 0.13) + vec3(1.0, 0.94, 0.84) * E * day) * 0.318;
+          // 临边薄雾：边缘散射出一层行星色
+          float rim = pow(1.0 - abs(dot(normalize(vWN), normalize(cameraPosition - vW))), 3.0);
+          col += alb * rim * 0.4;
+          gl_FragColor = vec4(col, 1.0);
+        }
+      `,
+    });
+    gasMats.push(m);
+    return m;
+  }
   const TEXROCK: Record<string, () => { map: THREE.Texture; bump: THREE.Texture }> = {
     mercury: () => rockyTextures(11, 0x8a8580, 0x55504b, { craters: 150 }),
     mars: () => rockyTextures(41, 0xb5613c, 0x7a3a24, { craters: 80, caps: 0.24, capColor: 0xf0ece6 }),
@@ -805,6 +888,8 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
   };
   const earthSet = earthTextures(31, hi ? 1 : 0.5);
   const moonSet = rockyTextures(141, 0x9a9a96, 0x6b6b66, { craters: 170 });
+  const earthCloudsTex = cloudsTexture(131); // 云层与地表云影共用一张图
+  const earthShadowShift = { value: new THREE.Vector2(0.03, 0.012) }; // 云影偏移（每帧按太阳方位更新）
 
   const SEG = hi ? 96 : 48;
 
@@ -822,7 +907,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
     const group = new THREE.Group();
     const axis = new THREE.Group();
     axis.rotation.z = spec.tiltDeg * Math.PI / 180;
-    let mat: THREE.MeshStandardMaterial;
+    let mat: THREE.Material;
     if (spec.key === 'earth') {
       mat = new THREE.MeshStandardMaterial({
         map: earthSet.map, bumpMap: earthSet.bump, bumpScale: 0.035,
@@ -831,35 +916,28 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
         emissiveMap: earthSet.lights, emissive: new THREE.Color(0xffc890), emissiveIntensity: 2.4,
         envMapIntensity: 0.16,
       });
+      // 云影：往标准材质里注入一次云图采样（偏移随太阳方位），云在地面投下暗斑
+      (mat as THREE.MeshStandardMaterial).onBeforeCompile = (shader) => {
+        shader.uniforms.uClouds = { value: earthCloudsTex };
+        shader.uniforms.uCloudShift = earthShadowShift;
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', '#include <common>\nuniform sampler2D uClouds;\nuniform vec2 uCloudShift;')
+          .replace('#include <map_fragment>', '#include <map_fragment>\n{\n  float cloudSh = texture2D(uClouds, vMapUv + uCloudShift).a;\n  diffuseColor.rgb *= 1.0 - cloudSh * 0.34;\n}');
+      };
     } else if (spec.key === 'mercury' || spec.key === 'mars' || spec.key === 'pluto') {
       mat = mkRockyMat(TEXROCK[spec.key]());
     } else if (spec.key === 'venus') {
-      mat = new THREE.MeshStandardMaterial({
-        map: bandsTexture(21, [0xd9b77e, 0xc9a05e, 0xe3c88f, 0xb98f52, 0xd9b77e], {}, 512),
-        roughness: 0.85, envMapIntensity: 0.14,
-      });
+      mat = mkGasMat(bandsTexture(21, [0xd9b77e, 0xc9a05e, 0xe3c88f, 0xb98f52, 0xd9b77e], {}, 512), 0.09, 0.011);
     } else if (spec.key === 'jupiter') {
-      mat = new THREE.MeshStandardMaterial({
-        map: bandsTexture(51, [0xe8d5b8, 0x7a5236, 0xf0e4cc, 0x8a5f3c, 0xe6d6b6, 0x6a4a34, 0xdcc8a6],
-          { spot: '0.62,0.62,0.15,0.09', spotColor: 0xc1442e }, 1024),
-        roughness: 0.8, envMapIntensity: 0.14,
-      });
+      mat = mkGasMat(bandsTexture(51, [0xe8d5b8, 0x7a5236, 0xf0e4cc, 0x8a5f3c, 0xe6d6b6, 0x6a4a34, 0xdcc8a6],
+        { spot: '0.62,0.62,0.15,0.09', spotColor: 0xc1442e }, 1024), 0.055, 0.02);
     } else if (spec.key === 'saturn') {
-      mat = new THREE.MeshStandardMaterial({
-        map: bandsTexture(61, [0xdcc69b, 0xba9c6c, 0xecdcb6, 0xc6a97c, 0xdcc69b], {}, 1024),
-        roughness: 0.82, envMapIntensity: 0.14,
-      });
+      mat = mkGasMat(bandsTexture(61, [0xdcc69b, 0xba9c6c, 0xecdcb6, 0xc6a97c, 0xdcc69b], {}, 1024), 0.035, 0.016);
     } else if (spec.key === 'uranus') {
-      mat = new THREE.MeshStandardMaterial({
-        map: bandsTexture(71, [0x9fd4d9, 0x8cc8cf, 0xace0e3, 0x93cdd3], {}, 512),
-        roughness: 0.75, envMapIntensity: 0.16,
-      });
+      mat = mkGasMat(bandsTexture(71, [0x9fd4d9, 0x8cc8cf, 0xace0e3, 0x93cdd3], {}, 512), 0.02, 0.01);
     } else {
-      mat = new THREE.MeshStandardMaterial({
-        map: bandsTexture(81, [0x3b66c4, 0x2d4fa8, 0x5478d2, 0x3558b8],
-          { spot: '0.32,0.6,0.1,0.06', spotColor: 0x1e3a80 }, 512),
-        roughness: 0.75, envMapIntensity: 0.16,
-      });
+      mat = mkGasMat(bandsTexture(81, [0x3b66c4, 0x2d4fa8, 0x5478d2, 0x3558b8],
+        { spot: '0.32,0.6,0.1,0.06', spotColor: 0x1e3a80 }, 512), 0.03, 0.013);
     }
     const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, SEG, SEG / 2), mat);
     axis.add(mesh);
@@ -893,7 +971,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
           uniform vec3 uColor; uniform vec3 uSunDir; uniform float uBoost;
           varying vec3 vWN; varying vec3 vWV;
           void main() {
-            float rim = pow(1.0 - abs(dot(normalize(vWN), normalize(vWV))), 1.7);
+            float rimRaw = 1.0 - abs(dot(normalize(vWN), normalize(vWV)));
             float sun = dot(normalize(vWN), normalize(uSunDir)) * 0.5 + 0.5;
             vec3 day = uColor * 2.7;      // HDR：向阳侧大气喂给辉光
             vec3 night = uColor * 0.2;
@@ -901,12 +979,14 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
             // 晨昏线：更宽更亮的橙红散射带
             float term = 1.0 - abs(sun - 0.4) / 0.3;
             col += vec3(1.0, 0.38, 0.12) * clamp(term, 0.0, 1.0) * clamp(term, 0.0, 1.0) * 1.35;
-            gl_FragColor = vec4(col * uBoost, rim * 0.85);
+            // 双层剖面：贴轮廓的亮线（一次散射）+ 向外晕开的宽晕（二次散射）
+            float profile = pow(rimRaw, 3.0) + pow(rimRaw, 1.25) * 0.22;
+            gl_FragColor = vec4(col * uBoost, profile * 0.85);
           }
         `,
       });
       atmoMats.push(atmoMat);
-      const atmo = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.06, SEG, SEG / 2), atmoMat);
+      const atmo = new THREE.Mesh(new THREE.SphereGeometry(radius * 1.085, SEG, SEG / 2), atmoMat);
       atmo.name = 'atmo';
       axis.add(atmo);
     }
@@ -931,7 +1011,7 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
       const clouds = new THREE.Mesh(
         new THREE.SphereGeometry(radius * 1.018, SEG, SEG / 2),
         new THREE.MeshStandardMaterial({
-          map: cloudsTexture(131), transparent: true, roughness: 1, depthWrite: false,
+          map: earthCloudsTex, transparent: true, roughness: 1, depthWrite: false,
           envMapIntensity: 0.4,
         }),
       );
@@ -1878,6 +1958,12 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
       b.mesh.rotation.y = rotationAngle(spec.rotationHours, spinDays) + (spinOffsets[b.key] ?? 0);
       const clouds = b.axis.getObjectByName('earthClouds');
       if (clouds) clouds.rotation.y = rotationAngle(28, spinDays);
+      if (b.key === 'earth') {
+        // 云影偏移：太阳方位投到地球本地经纬系（幅度放大以便可见）
+        tmpV2.set(-b.pos.x, -b.pos.y, -b.pos.z).normalize().applyAxisAngle(up, -b.mesh.rotation.y);
+        const m2 = Math.hypot(tmpV2.x, tmpV2.z);
+        if (m2 > 0.15) earthShadowShift.value.set((tmpV2.x / m2) * 0.045, (-tmpV2.z / m2) * 0.045);
+      }
       const atmoMat = (b.axis.getObjectByName('atmo') as THREE.Mesh | undefined)?.material as THREE.ShaderMaterial | undefined;
       if (atmoMat) {
         atmoMat.uniforms.uSunDir.value.copy(b.pos).multiplyScalar(-1).normalize();
@@ -1999,11 +2085,23 @@ export function createCosmos(canvas: HTMLCanvasElement, opts: CosmosOptions = {}
       dustMat.uniforms.uAlpha.value = 0.1 + Math.min(sp / 500, 1) * 0.35;
     }
 
-    // ---- 太阳动画（日盘/日冕/耀斑同吃 beauty.sun 滑杆） ----
+    // ---- 太阳动画（日盘/日冕/耀斑/日珥同吃 beauty.sun 滑杆） ----
     sunMat.uniforms.uTime.value = t;
     sunMat.uniforms.uSun.value = beauty.sun;
     corona.material.opacity = (0.72 + 0.08 * Math.sin(t * 0.7)) * beauty.sun;
     sunFlare.material.opacity = 0.2 * beauty.sun;
+    for (const p of promRigs) {
+      const s = (t * 0.016 + p.phase) % 1;
+      const life = THREE.MathUtils.smoothstep(s, 0.05, 0.25) * (1 - THREE.MathUtils.smoothstep(s, 0.75, 0.95));
+      const erupt = THREE.MathUtils.smoothstep(s, 0.55, 0.62) * (1 - THREE.MathUtils.smoothstep(s, 0.8, 0.9));
+      p.mat.uniforms.uLife.value = life * (1 + erupt * 1.6);
+      p.mesh.scale.setScalar(0.9 + life * 0.25 + erupt * 1.1);
+      p.mesh.visible = life > 0.01;
+    }
+    for (const gm of gasMats) {
+      gm.uniforms.uTime.value = t;
+      gm.uniforms.uSun.value = beauty.sun;
+    }
 
     // ---- 流星 / 彩蛋 ----
     updateMeteors(dt);
