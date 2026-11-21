@@ -188,8 +188,8 @@ function dayLook(day: number): DayLook {
     skyTop: new THREE.Color('#7fb2e8').lerp(new THREE.Color('#5f86c8'), k(0, 0.6, 1)).lerp(new THREE.Color('#2c3a6e'), Math.max(0, k(0, 0.25, 1))),
     skyMid: new THREE.Color('#cfe3f2').lerp(new THREE.Color('#ffd9a8'), k(0, 0.65, 1)).lerp(new THREE.Color('#5c3a4a'), Math.max(0, k(0, 0.35, 1))),
     skyBot: new THREE.Color('#eef3ea').lerp(new THREE.Color('#ffc98a'), k(0, 0.6, 1)).lerp(new THREE.Color('#42303c'), Math.max(0, k(0, 0.4, 1))),
-    hemiSky: new THREE.Color('#bcd4f0').lerp(new THREE.Color('#ffd0a0'), k(0, 0.7, 1)),
-    hemiInt: k(0.75, 0.6, 0.42),
+    hemiSky: new THREE.Color('#bcd4f0').lerp(new THREE.Color('#ffd0a0'), k(0, 0.7, 0.8)).lerp(new THREE.Color('#3a4a6e'), Math.max(0, k(0, 0.5, 1) * 1.4 - 0.4)),
+    hemiInt: k(0.75, 0.6, 0.26),
     fogCol: new THREE.Color('#dfe8e4').lerp(new THREE.Color('#f4d2a4'), k(0, 0.62, 1)).lerp(new THREE.Color('#463756'), Math.max(0, k(0, 0.4, 1))),
     fogD: k(0.0055, 0.0068, 0.0085),
     star: smoothstep(0.8, 1.0, day),
@@ -419,7 +419,7 @@ export function createForest(canvas: HTMLCanvasElement, opts: ForestEvents = {})
   addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
 
   canvas.addEventListener('pointerdown', (e) => {
-    canvas.setPointerCapture?.(e.pointerId);
+    try { canvas.setPointerCapture?.(e.pointerId); } catch { /* 重放/合成事件的指针已失效，忽略 */ }
     moved = 0;
     if (e.pointerType === 'touch') {
       const isLeft = e.clientX < innerWidth * 0.44;
@@ -1206,9 +1206,9 @@ export function createForest(canvas: HTMLCanvasElement, opts: ForestEvents = {})
           vec3 tip = vec3(0.55, 0.62, 0.28) * vCol;
           vec3 col = mix(base, tip, vY);
           float dap = texture2D(uDapple, vWp.xz * 0.055 + uDappleOff).r;
-          float lam = 0.5 + 0.5 * max(uSunDir.y, 0.0);
+          float lam = clamp(max(uSunDir.y, 0.0) * 1.6, 0.0, 1.0); // 无下限：日落即熄
           // 与 MeshStandard 同口径：太阳有强度、黄昏会暗下去
-          col *= uHemiCol * uHemiInt + uSunCol * uSunInt * lam * (0.5 + 0.5 * dap) * 2.0;
+          col *= uHemiCol * uHemiInt + uSunCol * uSunInt * lam * (0.5 + 0.5 * dap) * 3.2;
           float fogF = 1.0 - exp(-uFogDensity * uFogDensity * vDist * vDist);
           col = mix(col, uFogColor, clamp(fogF, 0.0, 1.0));
           gl_FragColor = vec4(col, 1.0);
