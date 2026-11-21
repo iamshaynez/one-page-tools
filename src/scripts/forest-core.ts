@@ -195,7 +195,7 @@ export const DISCOVERIES: DiscoverySpec[] = [
   },
   {
     key: 'glow', name: '幽蓝菌圃', line: '一圈会呼吸的蓝蘑菇。它们不发光，是夜在这里浓缩。',
-    pos: { x: 34, y: 0, z: 26 }, radius: 7,
+    pos: { x: 52, y: 0, z: 44 }, radius: 7,
   },
   {
     key: 'ancient', name: '古木', line: '三百年的枝干上长着一整座倒悬的花园。',

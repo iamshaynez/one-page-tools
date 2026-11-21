@@ -226,6 +226,7 @@ export function createForest(canvas: HTMLCanvasElement, opts: ForestEvents = {})
   // ---- 共享 uniforms ----
   const windTimeU = { value: 0 };
   const windStrengthU = { value: 1 };
+  let mistEnv = 1; // 水雾/喷雾/泡沫的时段亮度（applyDay 初始化时就会写，须提前声明）
   const dappleTex = dappleTexture();
   const dappleOffU = { value: new THREE.Vector2() };
 
@@ -751,7 +752,7 @@ export function createForest(canvas: HTMLCanvasElement, opts: ForestEvents = {})
     geo.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1));
     const mat = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-      uniforms: { uTime: { value: 0 }, uPx: { value: DPR * 240 } },
+      uniforms: { uTime: { value: 0 }, uPx: { value: DPR * 240 }, uEnv: { value: 1 } },
       vertexShader: /* glsl */ `
         uniform float uTime, uPx;
         attribute float aSeed;
@@ -770,11 +771,12 @@ export function createForest(canvas: HTMLCanvasElement, opts: ForestEvents = {})
         }
       `,
       fragmentShader: /* glsl */ `
+        uniform float uEnv;
         varying float vA;
         void main() {
           vec2 d = gl_PointCoord - 0.5;
           float m = smoothstep(0.5, 0.1, length(d));
-          gl_FragColor = vec4(vec3(0.9, 0.96, 1.0), vA * m * 0.5);
+          gl_FragColor = vec4(vec3(0.9, 0.96, 1.0), vA * m * 0.5 * uEnv);
         }
       `,
     });
@@ -789,15 +791,15 @@ export function createForest(canvas: HTMLCanvasElement, opts: ForestEvents = {})
     const geo = new THREE.RingGeometry(1.5, riverWidth(FALL_T) + 2.4, 48, 1);
     const mat = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-      uniforms: { uTime: { value: 0 }, uNoise: { value: noiseTex } },
+      uniforms: { uTime: { value: 0 }, uNoise: { value: noiseTex }, uEnv: { value: 1 } },
       vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
       fragmentShader: /* glsl */ `
-        uniform float uTime; uniform sampler2D uNoise;
+        uniform float uTime; uniform sampler2D uNoise; uniform float uEnv;
         varying vec2 vUv;
         void main() {
           float n = texture2D(uNoise, vec2(vUv.x * 4.0, vUv.y * 2.0 - uTime * 0.5)).r;
           float a = smoothstep(0.15, 0.55, n) * 0.4;
-          gl_FragColor = vec4(vec3(0.93, 0.97, 0.96), a);
+          gl_FragColor = vec4(vec3(0.93, 0.97, 0.96), a * uEnv);
         }
       `,
     });
@@ -1590,6 +1592,10 @@ export function createForest(canvas: HTMLCanvasElement, opts: ForestEvents = {})
     const duskK = smoothstep(0.7, 1, day);
     bloom.strength = (0.5 + 0.28 * smoothstep(0.6, 1, day)) * (1 - 0.5 * duskK) * beauty.bloom;
     bloom.threshold = 0.62 + 0.26 * duskK;
+    // 水雾/喷雾/泡沫：暮色隐入黑暗（固定亮白的 sprite 是暮色洗白的元凶）
+    mistEnv = 1 - 0.9 * smoothstep(0.6, 0.92, day);
+    spray.material.uniforms.uEnv.value = mistEnv;
+    foamRing.material.uniforms.uEnv.value = mistEnv;
   }
   applyDay(beauty.day);
 
@@ -1625,7 +1631,7 @@ export function createForest(canvas: HTMLCanvasElement, opts: ForestEvents = {})
     spray.material.uniforms.uTime.value = t;
     foamRing.material.uniforms.uTime.value = t;
     mistSprites.forEach((sp, i) => {
-      sp.material.opacity = 0.4 + 0.2 * Math.sin(t * 0.7 + i * 1.9);
+      sp.material.opacity = (0.4 + 0.2 * Math.sin(t * 0.7 + i * 1.9)) * mistEnv;
       sp.position.y += Math.sin(t * 0.5 + i) * 0.002;
     });
 
