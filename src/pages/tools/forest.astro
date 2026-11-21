@@ -4,7 +4,7 @@ import Base from '../../layouts/Base.astro';
 ---
 <Base
   title="深林 · 玩具展馆"
-  description="第一人称走进一座程序生成的森林：河与瀑布、三种树木、四万株摇曳的草、萤火与蝴蝶。光影随晨暮流转，发现五处秘境。WASD 或双摇杆漫步。"
+  description="第一人称走进童话绘本式森林：群落巨木、三级叶冠、厚苔地被、立体雏菊与大小菌群。河与瀑布、林窗光轴随漫步流转，藏五处秘境。WASD 或双摇杆。"
 >
   <script is:inline>
     document.documentElement.dataset.theme = 'dark';
@@ -134,10 +134,10 @@ import Base from '../../layouts/Base.astro';
     background: rgba(8, 10, 18, 0.78); border: 1px solid rgba(232, 236, 244, 0.16);
     border-radius: var(--radius-m); backdrop-filter: blur(14px);
     transform: scale(0.92); transform-origin: top right;
-    opacity: 0; pointer-events: none;
+    opacity: 0; pointer-events: none; visibility: hidden;
     transition: transform 0.18s var(--ease), opacity 0.18s var(--ease);
   }
-  .hud__menu.open { transform: scale(1); opacity: 1; pointer-events: auto; }
+  .hud__menu.open { transform: scale(1); opacity: 1; pointer-events: auto; visibility: visible; }
   .hud__btn {
     background: transparent; color: rgba(232, 236, 244, 0.85);
     border: 1px solid rgba(232, 236, 244, 0.2); border-radius: var(--radius-s);
@@ -241,26 +241,26 @@ import Base from '../../layouts/Base.astro';
   .fatal[hidden] { display: none; }
   .fatal p { margin: 0; font-family: var(--font-serif); }
 
-  #forest-stick {
+  .forest-stick {
     position: fixed; width: 96px; height: 96px; border-radius: 50%;
     border: 1.5px solid rgba(255, 210, 140, 0.38); background: rgba(10, 14, 26, 0.25);
     transform: translate(-50%, -50%); z-index: 12; pointer-events: none; display: none;
   }
-  #forest-stick .knob {
+  .forest-stick .knob {
     position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; border-radius: 50%;
     background: rgba(255, 224, 178, 0.16); border: 1.5px solid rgba(255, 216, 150, 0.5);
     transform: translate(-50%, -50%);
   }
-  #forest-stick.look { border-color: rgba(120, 210, 255, 0.42); }
-  #forest-stick.look .knob { background: rgba(178, 228, 255, 0.14); border-color: rgba(140, 214, 255, 0.55); }
+  .forest-stick.look { border-color: rgba(120, 210, 255, 0.42); }
+  .forest-stick.look .knob { background: rgba(178, 228, 255, 0.14); border-color: rgba(140, 214, 255, 0.55); }
 
-  body.cinema .hud, body.cinema .discovery, body.cinema .speed-toast, body.cinema #forest-stick { display: none !important; }
+  body.cinema .hud, body.cinema .discovery, body.cinema .speed-toast, body.cinema .forest-stick { display: none !important; }
 
   @media (max-width: 560px) {
     .hud__title h1 { letter-spacing: 0.2em; }
-    .hud__hint { font-size: 0.64rem; bottom: 74px; }
-    .hud__score { bottom: 30px; }
-    .hud__clock { bottom: 52px; }
+    .hud__hint { font-size: 0.64rem; bottom: 84px; width: calc(100vw - 32px); white-space: normal; text-align: center; line-height: 1.65; }
+    .hud__score { bottom: 50px; }
+    .hud__clock { bottom: 18px; }
     .hud__fold-btn { padding: 6px 12px; font-size: 0.76rem; }
     .hud__menu { width: 136px; }
     .beauty { width: 196px; }
@@ -410,10 +410,12 @@ import Base from '../../layouts/Base.astro';
   // ---- HUD 回调 ----
   function onTick(t: ForestTick) {
     lastTick = t;
-    const label = dayLabel(beautyState.day);
+    const label = dayLabel(t.day);
     if (hudDay.textContent !== label) hudDay.textContent = label;
-    hudNear.innerHTML = t.wading ? '<b>涉水中</b> · 水声潺潺' : (t.nearFalls > 0.55 ? '靠近 <b>瀑布</b> · 水雾扑面' : (t.atWater > 0.5 ? '听见 <b>河水</b>' : '林间'));
-    hudScore.innerHTML = t.found > 0 ? `秘境 <b>${t.found} / ${t.total}</b>` : `秘境 0 / ${t.total} · 藏在林深处`;
+    const near = t.wading ? '<b>涉水中</b> · 水声潺潺' : (t.nearFalls > 0.55 ? '靠近 <b>瀑布</b> · 水雾扑面' : (t.atWater > 0.5 ? '听见 <b>河水</b>' : '林间'));
+    const score = t.found > 0 ? `秘境 <b>${t.found} / ${t.total}</b>` : `秘境 0 / ${t.total} · 藏在林深处`;
+    if (hudNear.innerHTML !== near) hudNear.innerHTML = near;
+    if (hudScore.innerHTML !== score) hudScore.innerHTML = score;
     audio.setEnv(t.atWater, t.nearFalls, t.day);
   }
 
@@ -423,7 +425,7 @@ import Base from '../../layouts/Base.astro';
     : '<b>WASD</b> 行走 · <b>鼠标</b> 环顾 · <b>Shift</b> 奔跑 · <b>空格</b> 跳 · <b>H</b> 壁纸 · <b>P</b> 拍照 · 点击画面锁定鼠标';
 
   function webgl2OK(): boolean {
-    try { return !!canvas.getContext('webgl2'); } catch { return false; }
+    try { return !!document.createElement('canvas').getContext('webgl2'); } catch { return false; }
   }
 
   let handle!: ReturnType<typeof createForest>;
@@ -454,6 +456,11 @@ import Base from '../../layouts/Base.astro';
       } catch { /* 私隐 */ }
       const urlDay = new URLSearchParams(location.search).get('day');
       if (urlDay !== null && Number.isFinite(Number(urlDay))) beautyState.day = Number(urlDay);
+      const limits: Record<keyof ForestBeauty, [number, number]> = { day: [0, 1], bloom: [0, 1.6], wind: [0, 2.5], grass: [0, 1], firefly: [0, 1] };
+      for (const key of Object.keys(limits) as (keyof ForestBeauty)[]) {
+        const [min, max] = limits[key], value = Number(beautyState[key]);
+        beautyState[key] = Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : ({ day: 0.55, bloom: 1, wind: 1, grass: 1, firefly: 1 })[key];
+      }
       handle.setBeauty(beautyState);
       for (const [id, key, kind] of sliderMap) {
         const input = document.getElementById(id) as HTMLInputElement;
@@ -465,6 +472,12 @@ import Base from '../../layouts/Base.astro';
   } catch (err) {
     die(err instanceof Error ? `${err.message}` : String(err));
   }
+
+  addEventListener('pagehide', (event) => {
+    if (event.persisted) return;
+    handle?.dispose();
+    audio.dispose();
+  });
 
   addEventListener('error', (e) => {
     if (!fatal.hidden) return;

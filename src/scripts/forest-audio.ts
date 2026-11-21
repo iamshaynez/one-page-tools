@@ -13,6 +13,7 @@ export class ForestAudio {
   private on = false;
   private day = 0.55;
   private water = 0;
+  private lastEnv = { water: -1, falls: -1, day: -1 };
 
   toggle(): boolean {
     if (this.on) {
@@ -82,16 +83,18 @@ export class ForestAudio {
     cricket.start(); tremLfo.start();
 
     this.on = true;
+    this.lastEnv = { water: -1, falls: -1, day: -1 };
     this.scheduleBird();
   }
 
   private stop() {
     this.on = false;
     if (this.birdTimer) clearTimeout(this.birdTimer);
-    if (this.ctx) {
-      const t = this.ctx.currentTime;
+    const closing = this.ctx;
+    if (closing) {
+      const t = closing.currentTime;
       this.master?.gain.linearRampToValueAtTime(0, t + 0.5);
-      setTimeout(() => void this.ctx?.close().catch(() => {}), 700);
+      setTimeout(() => void closing.close().catch(() => {}), 700);
       this.ctx = null;
     }
   }
@@ -126,14 +129,21 @@ export class ForestAudio {
 
   /** 每帧：水域邻近度 0..1（河 + 瀑布加权）与时段 */
   setEnv(water: number, falls: number, day: number) {
-    if (!this.on || !this.ctx) return;
     this.day = day;
+    if (!this.on || !this.ctx) return;
+    const last = this.lastEnv;
+    if (Math.abs(last.water - water) < 0.015 && Math.abs(last.falls - falls) < 0.015 && Math.abs(last.day - day) < 0.01) return;
+    this.lastEnv = { water, falls, day };
     const t = this.ctx.currentTime;
     const target = Math.min(0.34, water * 0.1 + falls * 0.34);
     this.waterGain?.gain.setTargetAtTime(target, t, 0.4);
     this.cricketGain?.gain.setTargetAtTime(day > 0.78 ? 0.028 * (day - 0.78) / 0.22 : 0, t, 1.2);
     this.windGain?.gain.setTargetAtTime(0.13 + day * 0.05, t, 0.8);
-    void this.water;
+    this.water = water;
+  }
+
+  dispose() {
+    this.stop();
   }
 
   chime() {
