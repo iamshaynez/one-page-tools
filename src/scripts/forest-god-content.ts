@@ -2,20 +2,23 @@
 
 export const WORLD_W = 120;
 export const WORLD_H = 80;
-export const WORLD_VERSION = 1;
+export const WORLD_VERSION = 2;
 export const STEP_DAYS = 0.005;
 export const DAYS_PER_SEASON = 12;
 export const MAX_PLANTS = 380;
 export const MAX_ANIMALS = 120;
 export const MAX_EVENTS = 48;
+export const MAX_BONDS = 3;
+export const MAX_MEMORIES = 16;
+export const MAX_MEMORIALS = 24;
 
 export type PlantSpecies = 'grass' | 'flower' | 'berry' | 'oak' | 'pine' | 'fern' | 'mushroom';
 export type AnimalSpecies = 'rabbit' | 'deer' | 'fox' | 'wolf' | 'bee' | 'frog';
-export type WeatherKind = 'clear' | 'rain' | 'storm';
+export type WeatherKind = 'clear' | 'rain' | 'storm' | 'mist' | 'snow';
 export type Season = '春' | '夏' | '秋' | '冬';
-export type Behavior = 'wander' | 'rest' | 'seekFood' | 'drink' | 'flee' | 'hunt' | 'court' | 'follow';
-export type Power = 'inspect' | 'rain' | 'sun' | 'storm' | 'bless' | 'lightning' | PlantSpecies | AnimalSpecies;
-export type EventKind = 'birth' | 'death' | 'weather' | 'divine' | 'ecology' | 'fire';
+export type Behavior = 'wander' | 'rest' | 'seekFood' | 'drink' | 'flee' | 'hunt' | 'court' | 'follow' | 'alert' | 'groom' | 'play' | 'shelter';
+export type Power = 'inspect' | 'rain' | 'sun' | 'storm' | 'bless' | 'lightning' | 'mist' | 'snow' | 'aurora' | PlantSpecies | AnimalSpecies;
+export type EventKind = 'birth' | 'death' | 'weather' | 'divine' | 'ecology' | 'fire' | 'bond' | 'milestone';
 
 export interface PlantRule {
   name: string;
@@ -61,12 +64,12 @@ export interface AnimalRule {
 }
 
 export const ANIMAL_RULES: Record<AnimalSpecies, AnimalRule> = {
-  rabbit: { name: '野兔', latin: 'Lepus silva', diet: 'herbivore', foods: ['grass', 'flower', 'berry'], predators: ['fox', 'wolf'], lifespan: 14, matureAt: 1.8, speed: 9, hungerRate: 0.18, thirstRate: 0.12, sense: 9, attack: 0.08, cost: 8, color: '#d7c6aa', description: '繁殖迅速，靠警觉与奔跑活下去。' },
-  deer: { name: '梅花鹿', latin: 'Cervus maculatus', diet: 'herbivore', foods: ['grass', 'berry', 'fern'], predators: ['wolf'], lifespan: 30, matureAt: 4, speed: 7.2, hungerRate: 0.12, thirstRate: 0.14, sense: 10, attack: 0.16, cost: 14, color: '#b78359', description: '成群啃食嫩芽，也会避开狼群。' },
-  fox: { name: '赤狐', latin: 'Vulpes ignis', diet: 'carnivore', foods: ['rabbit'], predators: ['wolf'], lifespan: 24, matureAt: 3.2, speed: 8.2, hungerRate: 0.1, thirstRate: 0.1, sense: 13, attack: 0.5, cost: 14, color: '#c87546', nocturnal: true, description: '暮色里的独行者，控制着兔群数量。' },
-  wolf: { name: '灰狼', latin: 'Lupus chorus', diet: 'carnivore', foods: ['rabbit', 'deer', 'fox'], predators: [], lifespan: 30, matureAt: 4.5, speed: 8.5, hungerRate: 0.085, thirstRate: 0.1, sense: 15, attack: 0.7, cost: 18, color: '#858a89', nocturnal: true, description: '顶级捕食者，饥饿时也会与狐争斗。' },
-  bee: { name: '野蜂', latin: 'Apis aurea', diet: 'pollinator', foods: ['flower'], predators: ['frog'], lifespan: 3.5, matureAt: 0.35, speed: 12, hungerRate: 0.3, thirstRate: 0.04, sense: 12, attack: 0.05, cost: 5, color: '#e7bd50', description: '追逐花期；蜂群繁盛时，花海也会扩张。' },
-  frog: { name: '树蛙', latin: 'Rana pluvia', diet: 'insectivore', foods: ['bee'], predators: ['fox'], lifespan: 10, matureAt: 1.2, speed: 5.5, hungerRate: 0.16, thirstRate: 0.2, sense: 7, attack: 0.25, cost: 7, color: '#6f9b62', nocturnal: true, description: '依水而居，雨后和昆虫多的地方最活跃。' },
+  rabbit: { name: '野兔', latin: 'Lepus silva', diet: 'herbivore', foods: ['grass', 'flower', 'berry'], predators: ['fox', 'wolf'], lifespan: 14, matureAt: 1.8, speed: 27, hungerRate: 0.18, thirstRate: 0.12, sense: 9, attack: 0.08, cost: 8, color: '#d7c6aa', description: '繁殖迅速，靠警觉与奔跑活下去。' },
+  deer: { name: '梅花鹿', latin: 'Cervus maculatus', diet: 'herbivore', foods: ['grass', 'berry', 'fern'], predators: ['wolf'], lifespan: 30, matureAt: 4, speed: 23, hungerRate: 0.12, thirstRate: 0.14, sense: 10, attack: 0.16, cost: 14, color: '#b78359', description: '成群啃食嫩芽，也会避开狼群。' },
+  fox: { name: '赤狐', latin: 'Vulpes ignis', diet: 'carnivore', foods: ['rabbit'], predators: ['wolf'], lifespan: 24, matureAt: 3.2, speed: 26, hungerRate: 0.1, thirstRate: 0.1, sense: 13, attack: 0.5, cost: 14, color: '#c87546', nocturnal: true, description: '暮色里的独行者，控制着兔群数量。' },
+  wolf: { name: '灰狼', latin: 'Lupus chorus', diet: 'carnivore', foods: ['rabbit', 'deer', 'fox'], predators: [], lifespan: 30, matureAt: 4.5, speed: 27, hungerRate: 0.085, thirstRate: 0.1, sense: 15, attack: 0.7, cost: 18, color: '#858a89', nocturnal: true, description: '顶级捕食者，饥饿时也会与狐争斗。' },
+  bee: { name: '野蜂', latin: 'Apis aurea', diet: 'pollinator', foods: ['flower'], predators: ['frog'], lifespan: 3.5, matureAt: 0.35, speed: 36, hungerRate: 0.3, thirstRate: 0.04, sense: 12, attack: 0.05, cost: 5, color: '#e7bd50', description: '追逐花期；蜂群繁盛时，花海也会扩张。' },
+  frog: { name: '树蛙', latin: 'Rana pluvia', diet: 'insectivore', foods: ['bee'], predators: ['fox'], lifespan: 10, matureAt: 1.2, speed: 17, hungerRate: 0.16, thirstRate: 0.2, sense: 7, attack: 0.25, cost: 7, color: '#6f9b62', nocturnal: true, description: '依水而居，雨后和昆虫多的地方最活跃。' },
 };
 
 export const POWER_INFO: Record<Exclude<Power, PlantSpecies | AnimalSpecies>, { name: string; cost: number; hint: string }> = {
@@ -76,6 +79,9 @@ export const POWER_INFO: Record<Exclude<Power, PlantSpecies | AnimalSpecies>, { 
   storm: { name: '雷暴', cost: 30, hint: '暴雨与随机落雷，美丽而危险' },
   bless: { name: '赐福', cost: 25, hint: '疗愈一片土地及其中所有生命' },
   lightning: { name: '落雷', cost: 20, hint: '击中林地；火焰会真实蔓延' },
+  mist: { name: '晨雾', cost: 16, hint: '让雾气漫过林地，生命在朦胧中慢下来' },
+  snow: { name: '初雪', cost: 24, hint: '带来一场会覆盖枝叶与土地的雪' },
+  aurora: { name: '极光', cost: 32, hint: '召来一夜极光，神眷将记住这片天空' },
 };
 
 export const SEASONS: Season[] = ['春', '夏', '秋', '冬'];

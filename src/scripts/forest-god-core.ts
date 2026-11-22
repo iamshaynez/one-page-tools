@@ -1,10 +1,12 @@
 import {
-  ANIMAL_RULES, ANIMAL_ORDER, DAYS_PER_SEASON, MAX_ANIMALS, MAX_EVENTS, MAX_PLANTS,
+  ANIMAL_RULES, ANIMAL_ORDER, DAYS_PER_SEASON, MAX_ANIMALS, MAX_BONDS, MAX_EVENTS, MAX_MEMORIALS, MAX_MEMORIES, MAX_PLANTS,
   PLANT_RULES, PLANT_ORDER, POWER_INFO, SEASONS, STEP_DAYS, WORLD_H, WORLD_VERSION, WORLD_W, clamp,
 } from './forest-god-content';
 import type {
   AnimalSpecies, Behavior, EventKind, PlantSpecies, Power, Season, WeatherKind,
 } from './forest-god-content';
+import { OBJECTIVES, TRAITS, identityFor } from './forest-god-identity';
+import type { Bond, LifeMemory, MemoryKind, ObjectiveId, TraitId } from './forest-god-identity';
 
 /** 0=界外，1=草甸，2=林地，3=河岸，4=水，5=岩石 */
 export const BIOME = { VOID: 0, MEADOW: 1, FOREST: 2, BANK: 3, WATER: 4, ROCK: 5 } as const;
@@ -17,7 +19,19 @@ export interface Terrain {
   elevation: Float32Array;
 }
 
-export interface Plant {
+export interface IdentityState {
+  name: string;
+  traits: TraitId[];
+  bond: Bond | null;
+  memories: LifeMemory[];
+  generation: number;
+  parentIds: number[];
+  offspring: number[];
+  homeX: number;
+  homeY: number;
+}
+
+export interface Plant extends IdentityState {
   id: number;
   species: PlantSpecies;
   x: number;
@@ -32,7 +46,7 @@ export interface Plant {
   variant: number;
 }
 
-export interface Animal {
+export interface Animal extends IdentityState {
   id: number;
   species: AnimalSpecies;
   x: number;
@@ -65,6 +79,35 @@ export interface ForestEvent {
   text: string;
   x: number;
   y: number;
+  entityId?: number;
+}
+
+export interface Memorial {
+  id: number;
+  kind: 'plant' | 'animal';
+  species: PlantSpecies | AnimalSpecies;
+  name: string;
+  traits: TraitId[];
+  bond: Bond;
+  generation: number;
+  parentIds: number[];
+  offspring: number[];
+  memories: LifeMemory[];
+  age: number;
+  diedAt: number;
+  x: number;
+  y: number;
+  variant: number;
+}
+
+export interface WorldProgress {
+  completed: ObjectiveId[];
+  lifetimeBonds: number;
+  lifetimeBirths: number;
+  bondedBirths: number;
+  maxGeneration: number;
+  pollinations: number;
+  fireSeen: boolean;
 }
 
 export interface World {
@@ -77,17 +120,29 @@ export interface World {
   sunBoost: number;
   rainbow: number;
   divine: number;
+  aurora: number;
   nextMigration: number;
   terrain: Terrain;
   plants: Plant[];
   animals: Animal[];
   events: ForestEvent[];
+  memorials: Memorial[];
+  progress: WorldProgress;
 }
 
-export interface ActionResult { ok: boolean; message: string }
+export interface ActionResult {
+  ok: boolean;
+  message: string;
+  power?: Power;
+  x?: number;
+  y?: number;
+  entityIds?: number[];
+  affectedIds?: number[];
+}
 export interface Environment { day: number; daylight: number; season: Season; seasonIndex: number; year: number; temperature: number }
 
 const TAU = Math.PI * 2;
+const PLANT_CAPACITY: Record<PlantSpecies, number> = { grass: 115, flower: 52, berry: 28, oak: 40, pine: 36, fern: 42, mushroom: 42 };
 const tileIndex = (x: number, y: number) => y * WORLD_W + x;
 const distance = (a: { x: number; y: number }, b: { x: number; y: number }) => Math.hypot(a.x - b.x, a.y - b.y);
 
@@ -186,36 +241,74 @@ function generateTerrain(seed: number): Terrain {
   return terrain;
 }
 
-function logEvent(world: World, kind: EventKind, text: string, x: number, y: number): void {
-  world.events.unshift({ id: world.nextId++, at: world.time, kind, text, x, y });
+function remember(world: World, entity: Plant | Animal, kind: MemoryKind, text: string, relatedId?: number): void {
+  entity.memories.push({ at: world.time, kind, text, x: entity.x, y: entity.y, ...(relatedId === undefined ? {} : { relatedId }) });
+  if (entity.memories.length > MAX_MEMORIES) entity.memories.splice(0, entity.memories.length - MAX_MEMORIES);
+}
+
+function hasTrait(entity: Plant | Animal, trait: TraitId): boolean {
+  return entity.traits.includes(trait);
+}
+
+function logEvent(world: World, kind: EventKind, text: string, x: number, y: number, entityId?: number): void {
+  world.events.unshift({ id: world.nextId++, at: world.time, kind, text, x, y, ...(entityId === undefined ? {} : { entityId }) });
   if (world.events.length > MAX_EVENTS) world.events.length = MAX_EVENTS;
 }
 
-function spawnPlant(world: World, species: PlantSpecies, x: number, y: number, age = 0): Plant | null {
+function spawnPlant(world: World, species: PlantSpecies, x: number, y: number, age = 0, parent: Plant | null = null): Plant | null {
   if (world.plants.length >= MAX_PLANTS || !isLand(world, x, y)) return null;
+  const id = world.nextId++;
+  const identity = identityFor(world.seed, id, parent?.traits);
   const plant: Plant = {
-    id: world.nextId++, species, x, y, age,
+    id, species, x, y, age,
     growth: age <= 0 ? 0.04 : clamp(age / PLANT_RULES[species].matureAt, 0.15, 1),
     health: 0.82 + random(world) * 0.18, fruit: age > PLANT_RULES[species].matureAt ? random(world) * 0.8 : 0,
     pollinated: false, alive: true, deadFor: 0, variant: Math.floor(random(world) * 8),
+    name: identity.name, traits: identity.traits, bond: null, memories: [],
+    generation: parent ? parent.generation + 1 : 1, parentIds: parent ? [parent.id] : [], offspring: [], homeX: x, homeY: y,
   };
   world.plants.push(plant);
+  if (parent) {
+    if (!parent.offspring.includes(id)) parent.offspring.push(id);
+    remember(world, plant, 'birth', `从${parent.name}的种子中萌芽。`, parent.id);
+    remember(world, parent, 'offspring', `${plant.name}在附近萌芽。`, id);
+    world.progress.lifetimeBirths++;
+    if (parent.bond) world.progress.bondedBirths++;
+    world.progress.maxGeneration = Math.max(world.progress.maxGeneration, plant.generation);
+  }
   return plant;
 }
 
-function spawnAnimal(world: World, species: AnimalSpecies, x: number, y: number, age = 0, parentId: number | null = null): Animal | null {
+function spawnAnimal(world: World, species: AnimalSpecies, x: number, y: number, age = 0, parent: Animal | number | null = null, secondParent: Animal | null = null): Animal | null {
   if (world.animals.length >= MAX_ANIMALS || tileAt(world, x, y) < 0) return null;
   if (species !== 'frog' && species !== 'bee' && !isLand(world, x, y)) return null;
   if (species === 'frog' && !nearWater(world, x, y, 5)) return null;
+  const primary = typeof parent === 'number' ? world.animals.find(a => a.id === parent) ?? null : parent;
+  const parents = [...new Set([primary, secondParent].filter((p): p is Animal => !!p))];
+  const id = world.nextId++;
+  const identity = identityFor(world.seed, id, parents.flatMap(p => p.traits));
   const animal: Animal = {
-    id: world.nextId++, species, x, y, vx: 0, vy: 0, tx: x, ty: y, age,
+    id, species, x, y, vx: 0, vy: 0, tx: x, ty: y, age,
     health: 0.85 + random(world) * 0.15, hunger: random(world) * 0.3, thirst: random(world) * 0.25,
     energy: 0.65 + random(world) * 0.35, sex: random(world) < 0.5 ? 0 : 1,
-    behavior: 'wander', targetId: null, parentId, think: random(world) * 0.03,
+    behavior: 'wander', targetId: null, parentId: primary?.id ?? null, think: random(world) * 0.03,
     action: 0, repro: age > ANIMAL_RULES[species].matureAt ? random(world) * 2 : 0,
     alive: true, deadFor: 0, variant: Math.floor(random(world) * 8),
+    name: identity.name, traits: identity.traits, bond: null, memories: [],
+    generation: parents.length ? Math.max(...parents.map(p => p.generation)) + 1 : 1,
+    parentIds: parents.map(p => p.id), offspring: [], homeX: x, homeY: y,
   };
   world.animals.push(animal);
+  if (parents.length && age === 0) {
+    for (const p of parents) {
+      if (!p.offspring.includes(id)) p.offspring.push(id);
+      remember(world, p, 'offspring', `${animal.name}出生了，世界多了一段新的血脉。`, id);
+    }
+    remember(world, animal, 'birth', `在${parents.map(p => p.name).join('与')}的陪伴下来到森林。`, primary?.id);
+    world.progress.lifetimeBirths++;
+    if (parents.some(p => p.bond)) world.progress.bondedBirths++;
+    world.progress.maxGeneration = Math.max(world.progress.maxGeneration, animal.generation);
+  }
   return animal;
 }
 
@@ -243,8 +336,9 @@ export function nearWater(world: World, x: number, y: number, radius: number): b
 export function createWorld(seed = Math.floor(Math.random() * 0x7fffffff)): World {
   const world: World = {
     version: WORLD_VERSION, seed: seed >>> 0, rng: seed >>> 0, nextId: 1, time: 0.34,
-    weather: { kind: 'clear', remaining: 1.8 }, sunBoost: 0, rainbow: 0, divine: 100,
-    nextMigration: 4, terrain: generateTerrain(seed), plants: [], animals: [], events: [],
+    weather: { kind: 'clear', remaining: 1.8 }, sunBoost: 0, rainbow: 0, divine: 100, aurora: 0,
+    nextMigration: 4, terrain: generateTerrain(seed), plants: [], animals: [], events: [], memorials: [],
+    progress: { completed: [], lifetimeBonds: 0, lifetimeBirths: 0, bondedBirths: 0, maxGeneration: 1, pollinations: 0, fireSeen: false },
   };
   const initialPlants: [PlantSpecies, number][] = [
     ['grass', 64], ['flower', 24], ['berry', 14], ['oak', 20], ['pine', 17], ['fern', 18], ['mushroom', 8],
@@ -274,13 +368,26 @@ export function createWorld(seed = Math.floor(Math.random() * 0x7fffffff)): Worl
   return world;
 }
 
+function createMemorial(world: World, entity: Plant | Animal, kind: 'plant' | 'animal', reason: string): void {
+  if (!entity.bond || world.memorials.some(m => m.id === entity.id)) return;
+  remember(world, entity, 'death', `${reason}。它的一生被森林保留了下来。`);
+  world.memorials.unshift({
+    id: entity.id, kind, species: entity.species, name: entity.bond.name, traits: [...entity.traits],
+    bond: { ...entity.bond }, generation: entity.generation, parentIds: [...entity.parentIds],
+    offspring: [...entity.offspring], memories: entity.memories.map(m => ({ ...m })), age: entity.age,
+    diedAt: world.time, x: entity.x, y: entity.y, variant: entity.variant,
+  });
+  if (world.memorials.length > MAX_MEMORIALS) world.memorials.length = MAX_MEMORIALS;
+}
+
 function killPlant(world: World, plant: Plant, reason: string): void {
   if (!plant.alive) return;
   plant.alive = false;
   plant.health = 0;
   plant.deadFor = 0;
-  if (plant.species === 'oak' || plant.species === 'pine' || plant.species === 'berry') {
-    logEvent(world, 'death', `${PLANT_RULES[plant.species].name}${reason}，慢慢归还给土壤。`, plant.x, plant.y);
+  createMemorial(world, plant, 'plant', reason);
+  if (plant.species === 'oak' || plant.species === 'pine' || plant.species === 'berry' || plant.bond) {
+    logEvent(world, 'death', `${plant.bond?.name ?? PLANT_RULES[plant.species].name}${reason}，慢慢归还给土壤。`, plant.x, plant.y, plant.id);
   }
 }
 
@@ -290,7 +397,8 @@ function killAnimal(world: World, animal: Animal, reason: string): void {
   animal.health = 0;
   animal.vx = animal.vy = 0;
   animal.deadFor = 0;
-  logEvent(world, 'death', `${ANIMAL_RULES[animal.species].name}${reason}。`, animal.x, animal.y);
+  createMemorial(world, animal, 'animal', reason);
+  logEvent(world, 'death', `${animal.bond?.name ?? ANIMAL_RULES[animal.species].name}${reason}。`, animal.x, animal.y, animal.id);
 }
 
 function nearestWater(world: World, x: number, y: number, maxRadius = 22): { x: number; y: number } | null {
@@ -327,12 +435,24 @@ function nearestAnimal(world: World, animal: Animal, accepted: string[], include
   return best;
 }
 
-function chooseBehavior(world: World, animal: Animal): void {
+function hasPopulationRoom(world: World, species: AnimalSpecies): boolean {
+  const count = world.animals.filter(a => a.alive && a.species === species).length;
+  const caps: Record<AnimalSpecies, number> = { rabbit: 30, deer: 18, fox: 10, wolf: 8, bee: 28, frog: 16 };
+  if (count >= caps[species]) return false;
+  if (species === 'bee') {
+    const flowers = world.plants.filter(p => p.alive && p.species === 'flower' && p.growth > 0.5).length;
+    return count < Math.min(28, 6 + flowers);
+  }
+  return true;
+}
+
+function chooseBehavior(world: World, animal: Animal, env: Environment): void {
   const rule = ANIMAL_RULES[animal.species];
   const threat = rule.predators.length ? nearestAnimal(world, animal, rule.predators) : null;
   if (threat && distance(animal, threat) < rule.sense * 0.75) {
-    animal.behavior = 'flee'; animal.targetId = threat.id;
-    animal.think = 0.018 + random(world) * 0.02;
+    const close = distance(animal, threat) < rule.sense * (hasTrait(animal, 'swift') ? 0.65 : 0.48);
+    animal.behavior = close ? 'flee' : 'alert'; animal.targetId = threat.id;
+    animal.think = close ? 0.012 + random(world) * 0.015 : 0.018;
     return;
   }
   const tile = tileAt(world, animal.x, animal.y);
@@ -342,6 +462,19 @@ function chooseBehavior(world: World, animal: Animal): void {
     animal.ty = clamp(animal.y + (random(world) - 0.5) * 24, 2, WORLD_H - 2);
     animal.think = 0.04;
     return;
+  }
+  if ((world.weather.kind === 'storm' || world.weather.kind === 'snow') && animal.species !== 'bee' && animal.species !== 'frog' && animal.hunger < 0.7) {
+    let shelter: Plant | null = null, shelterD = 18 * 18;
+    for (const plant of world.plants) {
+      if (!plant.alive || (plant.species !== 'oak' && plant.species !== 'pine') || plant.growth < 0.65) continue;
+      const d = (plant.x - animal.x) ** 2 + (plant.y - animal.y) ** 2;
+      if (d < shelterD) { shelterD = d; shelter = plant; }
+    }
+    if (shelter) {
+      animal.behavior = 'shelter'; animal.targetId = shelter.id; animal.tx = shelter.x; animal.ty = shelter.y;
+      animal.think = 0.08 + random(world) * 0.05;
+      return;
+    }
   }
   if (animal.thirst > 0.48) {
     const water = nearestWater(world, animal.x, animal.y);
@@ -378,28 +511,52 @@ function chooseBehavior(world: World, animal: Animal): void {
     animal.behavior = 'follow'; animal.targetId = parent.id; animal.think = 0.06;
     return;
   }
-  if (animal.energy < 0.24 || (animal.energy < 0.65 && random(world) < 0.28)) {
-    animal.behavior = 'rest'; animal.targetId = null; animal.think = 0.08 + random(world) * 0.08;
+  if ((animal.species === 'deer' || animal.species === 'rabbit') && animal.age >= rule.matureAt && random(world) < (hasTrait(animal, 'gentle') ? 0.5 : 0.28)) {
+    const herd = world.animals.find(a => a.alive && a.id !== animal.id && a.species === animal.species && distance(a, animal) > 4 && distance(a, animal) < rule.sense * 1.5);
+    if (herd) {
+      animal.behavior = 'follow'; animal.targetId = herd.id; animal.think = 0.06;
+      return;
+    }
+  }
+  const sleepTime = rule.nocturnal ? env.daylight > 0.72 : env.daylight < 0.06;
+  if (animal.energy < 0.2 || (sleepTime && animal.energy < 0.82) || (animal.energy < 0.65 && random(world) < 0.16)) {
+    animal.behavior = 'rest'; animal.targetId = null; animal.think = 0.04 + random(world) * 0.06;
     return;
   }
-  if (animal.age >= rule.matureAt && animal.repro <= 0 && animal.hunger < 0.55 && animal.health > 0.5 && rule.diet !== 'pollinator') {
+  if (animal.age >= rule.matureAt && animal.repro <= 0 && animal.hunger < 0.55 && animal.health > 0.5 && rule.diet !== 'pollinator' && hasPopulationRoom(world, animal.species)) {
     const mate = world.animals.find(a => a.alive && a.id !== animal.id && a.species === animal.species && a.sex !== animal.sex && a.age >= rule.matureAt && a.repro <= 0 && distance(a, animal) < rule.sense);
     if (mate) {
       animal.behavior = 'court'; animal.targetId = mate.id; animal.think = 0.05;
       return;
     }
   }
-  const angle = random(world) * TAU, length = 3 + random(world) * 8;
+  const playful = animal.age < rule.matureAt || hasTrait(animal, 'curious') || (animal.species === 'frog' && world.weather.kind === 'rain');
+  if (playful && random(world) < 0.48) {
+    const angle = random(world) * TAU;
+    animal.behavior = 'play'; animal.targetId = null;
+    animal.tx = clamp(animal.x + Math.cos(angle) * 4, 2, WORLD_W - 2);
+    animal.ty = clamp(animal.y + Math.sin(angle) * 4, 2, WORLD_H - 2);
+    animal.think = 0.025 + random(world) * 0.035;
+    return;
+  }
+  if (random(world) < (hasTrait(animal, 'gentle') ? 0.38 : 0.2)) {
+    animal.behavior = 'groom'; animal.targetId = null; animal.think = 0.035 + random(world) * 0.04;
+    return;
+  }
+  const angle = random(world) * TAU, length = 4 + random(world) * 10;
+  const origin = hasTrait(animal, 'curious') ? animal : { x: animal.homeX, y: animal.homeY };
   animal.behavior = 'wander'; animal.targetId = null;
-  animal.tx = clamp(animal.x + Math.cos(angle) * length, 2, WORLD_W - 2);
-  animal.ty = clamp(animal.y + Math.sin(angle) * length, 2, WORLD_H - 2);
+  animal.tx = clamp(origin.x + Math.cos(angle) * length, 2, WORLD_W - 2);
+  animal.ty = clamp(origin.y + Math.sin(angle) * length, 2, WORLD_H - 2);
   animal.think = 0.045 + random(world) * 0.09;
 }
 
 function updatePlants(world: World, dt: number, env: Environment): void {
-  const births: { species: PlantSpecies; x: number; y: number }[] = [];
+  const births: { species: PlantSpecies; x: number; y: number; parent: Plant }[] = [];
   const fungi: { x: number; y: number }[] = [];
-  const raining = world.weather.kind !== 'clear';
+  const living: Record<PlantSpecies, number> = { grass: 0, flower: 0, berry: 0, oak: 0, pine: 0, fern: 0, mushroom: 0 };
+  for (const plant of world.plants) if (plant.alive) living[plant.species]++;
+  const raining = world.weather.kind === 'rain' || world.weather.kind === 'storm' || world.weather.kind === 'mist';
   for (const plant of world.plants) {
     if (!plant.alive) {
       plant.deadFor += dt;
@@ -421,19 +578,28 @@ function updatePlants(world: World, dt: number, env: Environment): void {
     const wetFit = clamp(1 - Math.abs(moisture - rule.moisture) * 1.65);
     const light = clamp(env.daylight + world.sunBoost * 0.35);
     const lightFit = clamp(1 - Math.abs(light - rule.light) * 0.65, 0.2, 1);
-    const quality = clamp(wetFit * 0.55 + nutrients * 0.25 + lightFit * 0.2) * env.temperature;
-    plant.health = clamp(plant.health + dt * (quality > 0.42 ? 0.045 : -(0.42 - quality) * 0.2));
+    const quality = clamp(wetFit * 0.55 + nutrients * 0.25 + lightFit * 0.2) * env.temperature
+      * (hasTrait(plant, 'fertile') ? 1.18 : 1) * (hasTrait(plant, 'deepRoot') ? 1.12 : 1);
+    plant.health = clamp(plant.health + dt * (quality > 0.42 ? 0.045 : -(0.42 - quality) * (hasTrait(plant, 'hardy') ? 0.12 : 0.2)));
     if (world.terrain.fire[i] > 0.05) plant.health -= dt * world.terrain.fire[i] * 2.5;
     if (plant.age > rule.lifespan) plant.health -= dt * 0.12;
     plant.growth = clamp(plant.growth + dt / rule.matureAt * quality, 0.02, 1);
-    if (plant.growth > 0.8 && quality > 0.35) plant.fruit = clamp(plant.fruit + dt * quality * 0.16);
-    if (plant.growth > 0.82 && plant.health > 0.48 && world.plants.length + births.length < MAX_PLANTS) {
+    if (plant.growth >= 0.82 && !plant.memories.some(m => m.kind === 'adult')) {
+      remember(world, plant, 'adult', plant.species === 'oak' || plant.species === 'pine' ? '树冠终于能够为别的生命遮风挡雨。' : '第一次真正繁茂地展开。');
+      if (plant.bond) logEvent(world, 'milestone', `${plant.bond.name}进入了最繁茂的年岁。`, plant.x, plant.y, plant.id);
+    }
+    if (plant.growth > 0.8 && quality > 0.35) plant.fruit = clamp(plant.fruit + dt * quality * (hasTrait(plant, 'sweet') ? 0.23 : 0.16));
+    if (plant.growth > 0.82 && plant.health > 0.48 && world.plants.length + births.length < MAX_PLANTS && living[plant.species] < PLANT_CAPACITY[plant.species]) {
       const pollination = plant.species === 'flower' ? (plant.pollinated ? 2.8 : 0.14) : 1;
       if (random(world) < dt * rule.spread * quality * pollination) {
+        let neighbors = 0;
+        for (const other of world.plants) if (other.alive && other.species === plant.species && Math.hypot(other.x - plant.x, other.y - plant.y) < 2.2) neighbors++;
+        if (neighbors >= 5) continue;
         const angle = random(world) * TAU, r = 1.2 + random(world) * rule.spreadRadius;
         const x = plant.x + Math.cos(angle) * r, y = plant.y + Math.sin(angle) * r;
         if (isLand(world, x, y)) {
-          births.push({ species: plant.species, x, y });
+          births.push({ species: plant.species, x, y, parent: plant });
+          living[plant.species]++;
           plant.pollinated = false;
           plant.fruit = clamp(plant.fruit - 0.15);
         }
@@ -442,7 +608,7 @@ function updatePlants(world: World, dt: number, env: Environment): void {
     if (plant.health <= 0) killPlant(world, plant, world.terrain.fire[i] > 0.05 ? '在火中倒下' : '走到了生命的尽头');
   }
   world.plants = world.plants.filter(p => p.deadFor > -1000);
-  for (const birth of births) spawnPlant(world, birth.species, birth.x, birth.y);
+  for (const birth of births) spawnPlant(world, birth.species, birth.x, birth.y, 0, birth.parent);
   if (raining || random(world) < 0.5) for (const spot of fungi) {
     const i = tileAt(world, spot.x, spot.y);
     if (i >= 0 && world.terrain.moisture[i] > 0.55) spawnPlant(world, 'mushroom', spot.x + random(world) - 0.5, spot.y + random(world) - 0.5);
@@ -456,24 +622,31 @@ function updateAnimal(world: World, animal: Animal, dt: number, env: Environment
     return;
   }
   animal.age += dt;
-  animal.hunger = clamp(animal.hunger + dt * rule.hungerRate);
-  animal.thirst = clamp(animal.thirst + dt * rule.thirstRate);
+  animal.hunger = clamp(animal.hunger + dt * rule.hungerRate * (hasTrait(animal, 'hardy') ? 0.86 : 1));
+  animal.thirst = clamp(animal.thirst + dt * rule.thirstRate * (hasTrait(animal, 'hardy') ? 0.86 : 1));
+  if (animal.age >= rule.matureAt && !animal.memories.some(m => m.kind === 'adult')) {
+    remember(world, animal, 'adult', '长大了，开始独自寻找食物、领地与伴侣。');
+    if (animal.bond) logEvent(world, 'milestone', `${animal.bond.name}成年了。`, animal.x, animal.y, animal.id);
+  }
   animal.repro = Math.max(0, animal.repro - dt);
   animal.think -= dt;
   animal.action = Math.max(0, animal.action - dt);
   if (animal.hunger > 0.88) animal.health -= dt * (animal.hunger - 0.82) * 0.5;
   if (animal.thirst > 0.88) animal.health -= dt * (animal.thirst - 0.82) * 0.65;
-  if (animal.age > rule.lifespan) animal.health -= dt * 0.14;
+  if (animal.age > rule.lifespan * (hasTrait(animal, 'hardy') ? 1.16 : 1)) animal.health -= dt * 0.14;
   const i = tileAt(world, animal.x, animal.y);
   if (i >= 0 && world.terrain.fire[i] > 0.05) {
     animal.health -= dt * world.terrain.fire[i] * 1.8;
     animal.think = 0;
   }
+  if (animal.health < 0.35 && !animal.memories.some(m => m.kind === 'injury')) {
+    remember(world, animal, 'injury', '经历了一次重伤，仍努力寻找活下去的办法。');
+  }
   if (animal.health <= 0) {
     killAnimal(world, animal, animal.hunger > 0.9 ? '死于饥饿' : animal.thirst > 0.9 ? '死于干渴' : '结束了它的一生');
     return;
   }
-  if (animal.think <= 0) chooseBehavior(world, animal);
+  if (animal.think <= 0) chooseBehavior(world, animal, env);
 
   let targetPlant: Plant | undefined;
   let targetAnimal: Animal | undefined;
@@ -499,12 +672,17 @@ function updateAnimal(world: World, animal: Animal, dt: number, env: Environment
       targetPlant.health = clamp(targetPlant.health - amount * 0.3);
       targetPlant.fruit = clamp(targetPlant.fruit - 0.3);
       if (animal.species === 'bee') {
-        if (!targetPlant.pollinated && random(world) < 0.12) logEvent(world, 'ecology', '一只野蜂完成了授粉，新的花种正在形成。', targetPlant.x, targetPlant.y);
+        if (!targetPlant.pollinated) {
+          world.progress.pollinations++;
+          remember(world, targetPlant, 'pollination', `${animal.name}把花粉带到了这里。`, animal.id);
+          remember(world, animal, 'pollination', `为${targetPlant.name}完成了一次授粉。`, targetPlant.id);
+          if (targetPlant.bond || animal.bond) logEvent(world, 'ecology', `${animal.name}为${targetPlant.name}完成了授粉。`, targetPlant.x, targetPlant.y, targetPlant.id);
+        }
         targetPlant.pollinated = true;
       }
       animal.hunger = clamp(animal.hunger - 0.5);
       animal.action = 0.045;
-      animal.behavior = 'rest'; animal.think = 0.04;
+      animal.behavior = 'seekFood'; animal.think = 0.04;
     } else if (targetAnimal && distance(animal, targetAnimal) < 1.25) {
       if (!targetAnimal.alive) {
         animal.hunger = clamp(animal.hunger - 0.65);
@@ -523,26 +701,28 @@ function updateAnimal(world: World, animal: Animal, dt: number, env: Environment
     }
   }
 
-  if (rule.diet === 'pollinator' && animal.age >= rule.matureAt && animal.repro <= 0 && animal.hunger < 0.35 && world.animals.length < MAX_ANIMALS) {
+  if (rule.diet === 'pollinator' && animal.age >= rule.matureAt && animal.repro <= 0 && animal.hunger < 0.35 && world.animals.length < MAX_ANIMALS && hasPopulationRoom(world, animal.species) && random(world) < dt * 1.4) {
     const child = spawnAnimal(world, animal.species, animal.x + random(world) - 0.5, animal.y + random(world) - 0.5, 0, animal.id);
     if (child) {
       animal.repro = 1.4;
-      if (random(world) < 0.2) logEvent(world, 'birth', '花海旁分出了一个新的蜂群。', animal.x, animal.y);
+      if (random(world) < 0.04) logEvent(world, 'birth', '花海旁分出了一个新的蜂群。', animal.x, animal.y);
     }
   } else if (animal.behavior === 'court' && targetAnimal?.alive && targetAnimal.species === animal.species && animal.action <= 0 && distance(animal, targetAnimal) < 1.5) {
     if (animal.id < targetAnimal.id && world.animals.length < MAX_ANIMALS) {
       const litter = animal.species === 'rabbit' && random(world) < 0.45 ? 2 : 1;
-      for (let n = 0; n < litter; n++) spawnAnimal(world, animal.species, animal.x + random(world), animal.y + random(world), 0, animal.id);
-      animal.repro = animal.species === 'rabbit' ? 2.2 : animal.species === 'deer' || animal.species === 'wolf' ? 6 : 4;
+      for (let n = 0; n < litter; n++) spawnAnimal(world, animal.species, animal.x + random(world), animal.y + random(world), 0, animal, targetAnimal);
+      animal.repro = (animal.species === 'rabbit' ? 2.2 : animal.species === 'deer' || animal.species === 'wolf' ? 6 : 4) * (hasTrait(animal, 'fertile') ? 0.8 : 1);
       targetAnimal.repro = animal.repro;
       logEvent(world, 'birth', litter > 1 ? `两只${rule.name}幼崽出生了。` : `一只${rule.name}幼崽出生了。`, animal.x, animal.y);
     }
     animal.action = 0.1; animal.behavior = 'rest';
   }
 
-  if (animal.behavior === 'rest') {
+  const settledShelter = animal.behavior === 'shelter' && !!targetPlant && distance(animal, targetPlant) < 2.4;
+  if (animal.behavior === 'rest' || animal.behavior === 'groom' || animal.behavior === 'alert' || settledShelter) {
+    if (settledShelter && targetPlant) { animal.homeX = targetPlant.x; animal.homeY = targetPlant.y; }
     animal.vx *= 0.5; animal.vy *= 0.5;
-    animal.energy = clamp(animal.energy + dt * 0.7);
+    animal.energy = clamp(animal.energy + dt * (animal.behavior === 'alert' ? 0.25 : 0.7));
     return;
   }
   const dx = animal.tx - animal.x, dy = animal.ty - animal.y;
@@ -552,9 +732,13 @@ function updateAnimal(world: World, animal: Animal, dt: number, env: Environment
     if (animal.behavior === 'wander' || animal.behavior === 'follow') { animal.behavior = 'rest'; animal.think = 0.03 + random(world) * 0.06; }
     return;
   }
-  let speed = rule.speed * (animal.age < rule.matureAt ? 0.65 : 1) * (0.55 + animal.health * 0.45);
+  let speed = rule.speed * (animal.age < rule.matureAt ? 0.65 : 1) * (0.55 + animal.health * 0.45) * (hasTrait(animal, 'swift') ? 1.18 : 1);
   if (animal.behavior === 'flee' || animal.behavior === 'hunt') speed *= 1.35;
+  if (animal.behavior === 'play') speed *= 1.15;
   if (env.seasonIndex === 3) speed *= 0.86;
+  if (world.weather.kind === 'mist') speed *= 0.86;
+  if (world.weather.kind === 'snow') speed *= 0.76;
+  if (animal.species === 'frog' && world.weather.kind === 'rain') speed *= 1.18;
   const nx = animal.x + dx / d * speed * dt, ny = animal.y + dy / d * speed * dt;
   if ((animal.species === 'frog' || animal.species === 'bee') || isLand(world, nx, ny)) {
     animal.vx = dx / d * speed; animal.vy = dy / d * speed;
@@ -584,27 +768,35 @@ export function strike(world: World, x: number, y: number, divine = false): void
   const i = tileAt(world, x, y);
   if (i < 0) return;
   if (world.terrain.biome[i] !== BIOME.WATER && world.terrain.biome[i] !== BIOME.VOID) world.terrain.fire[i] = 1;
+  world.progress.fireSeen = true;
   for (const plant of world.plants) if (plant.alive && Math.hypot(plant.x - x, plant.y - y) < 2.5) plant.health -= 0.5;
-  for (const animal of world.animals) if (animal.alive && Math.hypot(animal.x - x, animal.y - y) < 2) animal.health -= 0.65;
+  for (const animal of world.animals) if (animal.alive && Math.hypot(animal.x - x, animal.y - y) < 6) {
+    if (Math.hypot(animal.x - x, animal.y - y) < 2) animal.health -= 0.65;
+    animal.behavior = 'flee'; animal.targetId = null; animal.think = 0.03;
+    animal.tx = clamp(animal.x + (animal.x - x) * 4, 2, WORLD_W - 2);
+    animal.ty = clamp(animal.y + (animal.y - y) * 4, 2, WORLD_H - 2);
+    if (animal.bond) remember(world, animal, 'injury', '亲历落雷与火焰，拼命逃离了灼热之地。');
+  }
   if (divine) logEvent(world, 'divine', '一道神雷劈落。火焰开始寻找可燃之物。', x, y);
 }
 
 function updateTerrain(world: World, dt: number, env: Environment): void {
   const terrain = world.terrain;
   const previousFire = terrain.fire.slice();
-  const raining = world.weather.kind !== 'clear';
+  const raining = world.weather.kind === 'rain' || world.weather.kind === 'storm';
   const rain = world.weather.kind === 'storm' ? 1.5 : raining ? 1 : 0;
   for (let y = 0; y < WORLD_H; y++) for (let x = 0; x < WORLD_W; x++) {
     const i = tileIndex(x, y);
     if (terrain.biome[i] === BIOME.VOID) continue;
     if (terrain.biome[i] === BIOME.WATER) { terrain.moisture[i] = 1; terrain.fire[i] = 0; continue; }
-    const evaporation = (0.015 + env.daylight * 0.032 + world.sunBoost * 0.06) * (env.seasonIndex === 3 ? 0.55 : 1);
-    terrain.moisture[i] = clamp(terrain.moisture[i] + dt * (rain * 0.7 - evaporation));
+    const evaporation = (0.015 + env.daylight * 0.032 + world.sunBoost * 0.06) * (env.seasonIndex === 3 ? 0.55 : 1) * (world.weather.kind === 'mist' ? 0.3 : world.weather.kind === 'snow' ? 0.4 : 1);
+    const dew = world.weather.kind === 'mist' ? 0.09 : world.weather.kind === 'snow' ? 0.025 : 0;
+    terrain.moisture[i] = clamp(terrain.moisture[i] + dt * (rain * 0.7 + dew - evaporation));
     const old = previousFire[i];
     if (old > 0) {
-      terrain.fire[i] = clamp(old + dt * (0.16 - terrain.moisture[i] * 0.65) - dt * (raining ? 4.5 : 0.85));
+      terrain.fire[i] = clamp(old + dt * (0.16 - terrain.moisture[i] * 0.65) - dt * (raining ? 4.5 : world.weather.kind === 'snow' ? 1.6 : 0.85));
       terrain.nutrients[i] = clamp(terrain.nutrients[i] - dt * old * 0.025, 0.05, 1);
-      if (!raining && terrain.fire[i] > 0.25) {
+      if (!raining && world.weather.kind !== 'snow' && terrain.fire[i] > 0.25) {
         const neighbors = [i - 1, i + 1, i - WORLD_W, i + WORLD_W];
         for (const n of neighbors) {
           if (n < 0 || n >= terrain.fire.length || terrain.biome[n] === BIOME.WATER || terrain.biome[n] === BIOME.VOID) continue;
@@ -626,13 +818,17 @@ function updateWeather(world: World, dt: number): void {
   world.weather.remaining -= dt;
   world.sunBoost = Math.max(0, world.sunBoost - dt * 0.5);
   world.rainbow = Math.max(0, world.rainbow - dt * 0.4);
+  world.aurora = Math.max(0, world.aurora - dt * 0.28);
   if (world.weather.remaining > 0) return;
-  if (previous !== 'clear') world.rainbow = 1;
+  if (previous === 'rain' || previous === 'storm') world.rainbow = 1;
   const roll = random(world);
   const kind: WeatherKind = roll < 0.58 ? 'clear' : roll < 0.9 ? 'rain' : 'storm';
   world.weather = { kind, remaining: kind === 'clear' ? 1.2 + random(world) * 2.8 : kind === 'rain' ? 0.5 + random(world) * 0.8 : 0.25 + random(world) * 0.35 };
   const text = kind === 'clear' ? '云层散开，暖光重新落到叶尖。' : kind === 'rain' ? '一场自然雨抵达了森林。' : '远雷滚过山谷，风暴来了。';
   logEvent(world, 'weather', text, 60, 40);
+  if (kind === 'storm') for (const entity of [...world.plants, ...world.animals]) if (entity.alive && entity.bond) {
+    remember(world, entity, 'storm', '在一场自然雷暴中紧紧守住了自己的栖息地。');
+  }
 }
 
 function maybeMigration(world: World): void {
@@ -650,17 +846,99 @@ function maybeMigration(world: World): void {
   logEvent(world, 'ecology', `迁徙的${ANIMAL_RULES[species].name}穿过边界，选择在这里停留。`, point.x, point.y);
 }
 
+export function spiritRegenRate(world: World): number {
+  const stats = worldStats(world);
+  const bonds = [...world.plants, ...world.animals].filter(e => e.alive && e.bond);
+  const luminous = bonds.filter(e => hasTrait(e, 'luminous')).length;
+  return 4 + stats.health * 8 + Math.min(1, stats.species / 13) * 6 + Math.min(1, stats.plants / 120) * 2 + bonds.length * 0.8 + luminous * 0.4;
+}
+
+export function bondCapacity(world: World): number {
+  return Math.min(MAX_BONDS, 1 + (world.progress.completed.includes('firstBond') ? 1 : 0) + (world.progress.completed.includes('bondedBirth') ? 1 : 0));
+}
+
+export function isUnlocked(world: World, power: Power): boolean {
+  if (power === 'mist') return world.progress.completed.includes('pollination');
+  if (power === 'snow') return world.progress.completed.includes('threeGenerations');
+  if (power === 'aurora') return world.progress.completed.includes('diversity');
+  return true;
+}
+
+export function objectiveProgress(world: World, id: ObjectiveId): { current: number; target: number } {
+  if (id === 'firstBond') return { current: world.progress.lifetimeBonds, target: 1 };
+  if (id === 'pollination') return { current: world.progress.pollinations, target: 1 };
+  if (id === 'bondedBirth') return { current: world.progress.bondedBirths, target: 1 };
+  if (id === 'threeGenerations') return { current: world.progress.maxGeneration, target: 3 };
+  if (id === 'diversity') return { current: worldStats(world).species, target: 13 };
+  if (id === 'ancientTree') {
+    const oldest = Math.max(0, ...world.plants.filter(p => p.alive && p.bond && (p.species === 'oak' || p.species === 'pine')).map(p => p.age / (PLANT_RULES[p.species].matureAt * 1.15)));
+    return { current: Math.min(1, oldest), target: 1 };
+  }
+  return { current: world.progress.fireSeen && worldStats(world).fires === 0 && worldStats(world).health > 0.55 ? 1 : 0, target: 1 };
+}
+
+function evaluateObjectives(world: World): void {
+  const stats = worldStats(world);
+  const ancient = world.plants.some(p => p.alive && p.bond && (p.species === 'oak' || p.species === 'pine') && p.age >= PLANT_RULES[p.species].matureAt * 1.15 && p.growth > 0.85);
+  const conditions: Record<ObjectiveId, boolean> = {
+    firstBond: world.progress.lifetimeBonds >= 1,
+    pollination: world.progress.pollinations >= 1,
+    bondedBirth: world.progress.bondedBirths >= 1,
+    threeGenerations: world.progress.maxGeneration >= 3 && world.progress.bondedBirths > 0,
+    diversity: stats.species >= 13 && world.progress.lifetimeBonds >= 1 && world.progress.lifetimeBirths >= 3,
+    ancientTree: ancient,
+    fireRecovery: world.progress.fireSeen && stats.fires === 0 && stats.health > 0.55,
+  };
+  for (const objective of OBJECTIVES) {
+    if (!conditions[objective.id] || world.progress.completed.includes(objective.id)) continue;
+    world.progress.completed.push(objective.id);
+    logEvent(world, 'milestone', `心愿达成「${objective.name}」——${objective.reward}`, 60, 40);
+  }
+}
+
+export function bondEntity(world: World, id: number, requestedName?: string): ActionResult {
+  const entity = findEntity(world, id);
+  if (!entity || !entity.alive) return { ok: false, message: '只有仍在生长的生命才能与你结缘。' };
+  if (entity.bond) return { ok: true, message: `${entity.bond.name}已经是你的神眷。`, entityIds: [id], x: entity.x, y: entity.y };
+  const livingBonds = [...world.plants, ...world.animals].filter(e => e.alive && e.bond).length;
+  if (livingBonds >= bondCapacity(world)) return { ok: false, message: '当前神眷已满。让一段血脉延续，可建立更深的纽带。' };
+  const name = (requestedName?.trim() || entity.name).slice(0, 12);
+  entity.bond = { name, since: world.time };
+  entity.name = name;
+  world.progress.lifetimeBonds++;
+  remember(world, entity, 'bond', '被神明看见、命名，并成为这片森林的神眷。');
+  logEvent(world, 'bond', `${name}与你结缘。从今以后，它的故事有了见证者。`, entity.x, entity.y, entity.id);
+  evaluateObjectives(world);
+  return { ok: true, message: `${name}成为了你的神眷。它仍会自由生活，也会经历真实的衰老与死亡。`, entityIds: [id], x: entity.x, y: entity.y };
+}
+
+export function renameBond(world: World, id: number, requestedName: string): ActionResult {
+  const entity = findEntity(world, id);
+  const name = requestedName.trim().slice(0, 12);
+  if (!entity?.bond || !name) return { ok: false, message: '请先结缘，并写下一个名字。' };
+  const previous = entity.bond.name;
+  entity.bond.name = name; entity.name = name;
+  remember(world, entity, 'bond', `神明将名字从「${previous}」改作「${name}」。`);
+  return { ok: true, message: `从现在起，它叫${name}。`, entityIds: [id], x: entity.x, y: entity.y };
+}
+
+export function findMemorial(world: World, id: number | null): Memorial | null {
+  if (id === null) return null;
+  return world.memorials.find(m => m.id === id) ?? null;
+}
+
 /** 推进一个固定生态步长。直接修改 world，避免每帧复制大对象。 */
 export function stepWorld(world: World): void {
   const dt = STEP_DAYS;
   world.time += dt;
-  world.divine = clamp(world.divine + dt * 20, 0, 100);
+  world.divine = clamp(world.divine + dt * spiritRegenRate(world), 0, 100);
   updateWeather(world, dt);
   const env = environmentAt(world.time);
   updateTerrain(world, dt, env);
   updatePlants(world, dt, env);
   updateAnimals(world, dt, env);
   maybeMigration(world);
+  evaluateObjectives(world);
 }
 
 export function advanceWorld(world: World, steps: number): void {
@@ -675,25 +953,45 @@ function pay(world: World, cost: number): ActionResult | null {
 
 export function applyPower(world: World, power: Power, x = WORLD_W / 2, y = WORLD_H / 2): ActionResult {
   if (power === 'inspect') return { ok: false, message: '点选一个生命，静静读它的故事。' };
-  if (power === 'rain' || power === 'sun' || power === 'storm') {
+  if (power === 'rain' || power === 'sun' || power === 'storm' || power === 'mist' || power === 'snow') {
     const info = POWER_INFO[power];
+    if (!isUnlocked(world, power)) return { ok: false, message: `${info.name}仍沉睡在心愿中。先完成对应的生态心愿。`, power, x, y };
     const failure = pay(world, info.cost);
     if (failure) return failure;
     if (power === 'sun') {
       world.weather = { kind: 'clear', remaining: 1.5 }; world.sunBoost = 1; world.rainbow = 0;
       logEvent(world, 'divine', '你拨开云层，赐下一片晴光。', x, y);
-      return { ok: true, message: '晴光降临，植物生长加快，水分也会更快蒸发。' };
+      return { ok: true, message: '晴光降临，植物生长加快，水分也会更快蒸发。', power, x, y };
     }
-    world.weather = { kind: power, remaining: power === 'storm' ? 0.65 : 1.1 };
-    logEvent(world, 'divine', power === 'storm' ? '你召来雷暴。森林在雨与火之间屏息。' : '你召来一场温柔而持久的雨。', x, y);
-    return { ok: true, message: power === 'storm' ? '雷暴已抵达：强降雨中仍可能落下惊雷。' : '雨水正在渗入土壤。' };
+    world.weather = { kind: power, remaining: power === 'storm' ? 0.65 : power === 'snow' ? 1.3 : power === 'mist' ? 0.9 : 1.1 };
+    const messages = { rain: '你召来一场温柔而持久的雨。', storm: '你召来雷暴。森林在雨与火之间屏息。', mist: '你请晨雾漫过河谷，世界缓慢而安静。', snow: '你唤来初雪，枝叶将一点点积起白色。' };
+    const feedback = { rain: '雨水正在渗入土壤。', storm: '雷暴已抵达：强降雨中仍可能落下惊雷。', mist: '晨雾会降低蒸发，也会改变动物的行路。', snow: '雪会覆盖地表、减缓火焰，并让动物寻找庇护。' };
+    logEvent(world, 'divine', messages[power], x, y);
+    if (power === 'storm' || power === 'snow') for (const entity of [...world.plants, ...world.animals]) if (entity.alive && entity.bond) {
+      remember(world, entity, power === 'storm' ? 'storm' : 'snow', power === 'storm' ? '与你召来的雷暴相遇，并在风雨中坚持了下来。' : '看见了此生第一场由神明唤来的雪。');
+    }
+    return { ok: true, message: feedback[power], power, x, y };
+  }
+  if (power === 'aurora') {
+    if (!isUnlocked(world, power)) return { ok: false, message: '极光需要一片万物并育的森林。', power, x, y };
+    const failure = pay(world, POWER_INFO.aurora.cost);
+    if (failure) return failure;
+    world.aurora = 1;
+    for (const entity of [...world.plants, ...world.animals]) if (entity.alive && entity.bond) remember(world, entity, 'aurora', '与神明一起看过一片流动的极光。');
+    logEvent(world, 'divine', '你掀起夜空，极光如河般流过森林。', x, y);
+    return { ok: true, message: '极光将持续一段时间；神眷会记住这片天空。', power, x, y };
   }
   if (power === 'bless') {
     const failure = pay(world, POWER_INFO.bless.cost);
     if (failure) return failure;
-    for (const plant of world.plants) if (plant.alive && Math.hypot(plant.x - x, plant.y - y) < 9) plant.health = clamp(plant.health + 0.55);
+    const affected: number[] = [];
+    for (const plant of world.plants) if (plant.alive && Math.hypot(plant.x - x, plant.y - y) < 9) {
+      plant.health = clamp(plant.health + 0.55); affected.push(plant.id);
+      if (plant.bond) remember(world, plant, 'bless', '被金色孢子覆盖，伤痕与枯萎得到了抚慰。');
+    }
     for (const animal of world.animals) if (animal.alive && Math.hypot(animal.x - x, animal.y - y) < 9) {
-      animal.health = clamp(animal.health + 0.55); animal.hunger *= 0.25; animal.thirst *= 0.25;
+      animal.health = clamp(animal.health + 0.55); animal.hunger *= 0.25; animal.thirst *= 0.25; affected.push(animal.id);
+      if (animal.bond) remember(world, animal, 'bless', '在神明的赐福中恢复了健康与气力。');
     }
     for (let oy = -9; oy <= 9; oy++) for (let ox = -9; ox <= 9; ox++) {
       if (ox * ox + oy * oy > 81) continue;
@@ -705,14 +1003,14 @@ export function applyPower(world: World, power: Power, x = WORLD_W / 2, y = WORL
       }
     }
     logEvent(world, 'divine', '金色孢子落下，这一片土地获得了赐福。', x, y);
-    return { ok: true, message: '附近的创伤被抚平，土壤也恢复了生机。' };
+    return { ok: true, message: '附近的创伤被抚平，土壤也恢复了生机。', power, x, y, affectedIds: affected };
   }
   if (power === 'lightning') {
     if (!isLand(world, x, y)) return { ok: false, message: '落雷需要一片真实的林地。' };
     const failure = pay(world, POWER_INFO.lightning.cost);
     if (failure) return failure;
     strike(world, x, y, true);
-    return { ok: true, message: '雷霆落下。雨水、湿度和可燃物将决定火的去向。' };
+    return { ok: true, message: '雷霆落下。雨水、湿度和可燃物将决定火的去向。', power, x, y, affectedIds: world.animals.filter(a => Math.hypot(a.x - x, a.y - y) < 6).map(a => a.id) };
   }
   if (PLANT_ORDER.includes(power as PlantSpecies)) {
     const species = power as PlantSpecies, rule = PLANT_RULES[species];
@@ -721,8 +1019,9 @@ export function applyPower(world: World, power: Power, x = WORLD_W / 2, y = WORL
     if (failure) return failure;
     const plant = spawnPlant(world, species, x, y);
     if (!plant) { world.divine += rule.cost; return { ok: false, message: '这里的植物已经太密集了。' }; }
-    logEvent(world, 'divine', `你种下一粒${rule.name}的种子。`, x, y);
-    return { ok: true, message: `${rule.name}已种下。湿度、光照与邻居会决定它的命运。` };
+    logEvent(world, 'divine', `你种下一粒${rule.name}的种子，${plant.name}开始生长。`, x, y, plant.id);
+    evaluateObjectives(world);
+    return { ok: true, message: `${rule.name}「${plant.name}」已种下。湿度、光照与邻居会决定它的命运。`, power, x, y, entityIds: [plant.id] };
   }
   if (ANIMAL_ORDER.includes(power as AnimalSpecies)) {
     const species = power as AnimalSpecies, rule = ANIMAL_RULES[species];
@@ -731,9 +1030,15 @@ export function applyPower(world: World, power: Power, x = WORLD_W / 2, y = WORL
     const failure = pay(world, rule.cost);
     if (failure) return failure;
     const count = species === 'bee' ? 3 : 1;
-    for (let n = 0; n < count; n++) spawnAnimal(world, species, point.x + random(world), point.y + random(world), rule.matureAt * 0.75);
-    logEvent(world, 'divine', `你将${count > 1 ? '一小群' : '一只'}${rule.name}带入森林。`, point.x, point.y);
-    return { ok: true, message: `${rule.name}已经到来。它会自己寻找食物、伴侣与归处。` };
+    const created: Animal[] = [];
+    for (let n = 0; n < count; n++) {
+      const animal = spawnAnimal(world, species, point.x + random(world), point.y + random(world), rule.matureAt * 0.75);
+      if (animal) created.push(animal);
+    }
+    if (!created.length) { world.divine += rule.cost; return { ok: false, message: '这里的生命已经太密集，无法再迎来新的居民。', power, x, y }; }
+    logEvent(world, 'divine', `你将${created.length > 1 ? '一小群' : '一只'}${rule.name}带入森林。`, point.x, point.y, created[0].id);
+    evaluateObjectives(world);
+    return { ok: true, message: `${rule.name}「${created[0].name}」已经到来。它会自己寻找食物、伴侣与归处。`, power, x: point.x, y: point.y, entityIds: created.map(a => a.id) };
   }
   return { ok: false, message: '未知神力。' };
 }
@@ -777,14 +1082,46 @@ export function serializeWorld(world: World): string {
   return JSON.stringify(saved);
 }
 
+function migrateIdentity<T extends Plant | Animal>(entity: T, seed: number): T {
+  const identity = identityFor(seed, entity.id);
+  const traits = Array.isArray(entity.traits) ? entity.traits.filter((t): t is TraitId => typeof t === 'string' && t in TRAITS).slice(0, 2) : [];
+  const parentIds = Array.isArray(entity.parentIds) ? entity.parentIds.filter(Number.isFinite) : 'parentId' in entity && Number.isFinite(entity.parentId) ? [entity.parentId as number] : [];
+  entity.name = typeof entity.name === 'string' && entity.name ? entity.name : identity.name;
+  entity.traits = traits.length === 2 ? traits : identity.traits;
+  entity.bond = entity.bond && typeof entity.bond.name === 'string' ? entity.bond : null;
+  entity.memories = Array.isArray(entity.memories) ? entity.memories.filter(m => m && Number.isFinite(m.at) && typeof m.text === 'string').slice(-MAX_MEMORIES) : [];
+  entity.generation = Number.isFinite(entity.generation) ? Math.max(1, entity.generation) : 1;
+  entity.parentIds = parentIds;
+  entity.offspring = Array.isArray(entity.offspring) ? entity.offspring.filter(Number.isFinite) : [];
+  entity.homeX = Number.isFinite(entity.homeX) ? entity.homeX : entity.x;
+  entity.homeY = Number.isFinite(entity.homeY) ? entity.homeY : entity.y;
+  return entity;
+}
+
 export function deserializeWorld(text: string): World {
   const data = JSON.parse(text) as SavedWorld;
   const size = WORLD_W * WORLD_H;
-  if (data.version !== WORLD_VERSION || !Number.isFinite(data.seed) || !data.terrain || data.terrain.biome.length !== size || !Array.isArray(data.plants) || !Array.isArray(data.animals)) throw new Error('无效或不兼容的森林存档');
+  if ((data.version !== 1 && data.version !== WORLD_VERSION) || !Number.isFinite(data.seed) || !data.terrain || data.terrain.biome.length !== size || !Array.isArray(data.plants) || !Array.isArray(data.animals)) throw new Error('无效或不兼容的森林存档');
   for (const key of ['moisture', 'nutrients', 'fire', 'elevation'] as const) if (data.terrain[key].length !== size) throw new Error('森林地形存档不完整');
+  const progress = data.progress;
+  const completed = Array.isArray(progress?.completed) ? progress.completed.filter(id => OBJECTIVES.some(o => o.id === id)) : [];
   return {
     ...data,
+    version: WORLD_VERSION,
     rng: data.rng >>> 0,
+    aurora: Number.isFinite(data.aurora) ? data.aurora : 0,
+    memorials: Array.isArray(data.memorials) ? data.memorials.filter(m => m && Number.isFinite(m.id) && m.bond).slice(0, MAX_MEMORIALS) : [],
+    progress: {
+      completed,
+      lifetimeBonds: progress?.lifetimeBonds ?? 0,
+      lifetimeBirths: progress?.lifetimeBirths ?? 0,
+      bondedBirths: progress?.bondedBirths ?? 0,
+      maxGeneration: progress?.maxGeneration ?? 1,
+      pollinations: progress?.pollinations ?? 0,
+      fireSeen: progress?.fireSeen ?? false,
+    },
+    plants: data.plants.map(p => migrateIdentity(p, data.seed)),
+    animals: data.animals.map(a => migrateIdentity(a, data.seed)),
     terrain: {
       biome: new Uint8Array(data.terrain.biome), moisture: new Float32Array(data.terrain.moisture),
       nutrients: new Float32Array(data.terrain.nutrients), fire: new Float32Array(data.terrain.fire), elevation: new Float32Array(data.terrain.elevation),

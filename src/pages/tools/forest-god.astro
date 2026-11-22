@@ -35,7 +35,7 @@ import Base from '../../layouts/Base.astro';
     </header>
 
     <section class="fg-vitals" aria-label="森林状态">
-      <div class="fg-spirit-row"><span>灵力</span><b id="spirit">100</b></div>
+      <div class="fg-spirit-row"><span>灵力 <small id="spirit-regen">+0.0/日</small></span><b id="spirit">100</b></div>
       <div class="fg-spirit-track"><i id="spirit-fill"></i></div>
       <div class="fg-counts">
         <span><i class="fg-dot plant"></i><b id="plant-count">0</b> 草木</span>
@@ -47,8 +47,19 @@ import Base from '../../layouts/Base.astro';
 
     <aside class="fg-chronicle" id="chronicle" aria-label="森林纪事">
       <div class="fg-panel-title"><span>森林纪事</span><small>CHRONICLE</small><button id="close-chronicle" class="fg-mobile-only" aria-label="关闭纪事">×</button></div>
-      <div id="event-list" class="fg-events"></div>
-      <p class="fg-chronicle-foot">每条小事，都曾真实发生。</p>
+      <div class="fg-chronicle-tabs" role="tablist" aria-label="森林手卷">
+        <button id="tab-events" class="active" data-chronicle-tab="events" role="tab" aria-selected="true" aria-controls="panel-events">纪事</button>
+        <button id="tab-bonds" data-chronicle-tab="bonds" role="tab" aria-selected="false" aria-controls="panel-bonds" tabindex="-1">神眷</button>
+        <button id="tab-objectives" data-chronicle-tab="objectives" role="tab" aria-selected="false" aria-controls="panel-objectives" tabindex="-1">心愿</button>
+        <button id="tab-memorials" data-chronicle-tab="memorials" role="tab" aria-selected="false" aria-controls="panel-memorials" tabindex="-1">纪念</button>
+      </div>
+      <div class="fg-chronicle-panels">
+        <div id="panel-events" class="fg-chronicle-panel" role="tabpanel" aria-labelledby="tab-events"><div id="event-list" class="fg-events fg-chronicle-list"></div></div>
+        <div id="panel-bonds" class="fg-chronicle-panel" role="tabpanel" aria-labelledby="tab-bonds" hidden><div id="bond-list" class="fg-chronicle-list"></div></div>
+        <div id="panel-objectives" class="fg-chronicle-panel" role="tabpanel" aria-labelledby="tab-objectives" hidden><div id="objective-list" class="fg-chronicle-list"></div></div>
+        <div id="panel-memorials" class="fg-chronicle-panel" role="tabpanel" aria-labelledby="tab-memorials" hidden><div id="memorial-list" class="fg-chronicle-list"></div></div>
+      </div>
+      <p class="fg-chronicle-foot" id="chronicle-foot">每条小事，都曾真实发生。</p>
     </aside>
 
     <aside class="fg-inspector" id="inspector" aria-label="万物档案">
@@ -59,17 +70,25 @@ import Base from '../../layouts/Base.astro';
         <small>拖动环游 · 滚轮缩放 · 点击纪事定位</small>
       </div>
       <div id="entity-inspector" hidden>
-        <div class="fg-entity-heading"><span id="entity-glyph">兔</span><div><h2 id="entity-name">野兔</h2><p id="entity-latin">Lepus silva</p></div></div>
+        <div class="fg-entity-heading"><span id="entity-glyph">兔</span><div><h2 id="entity-name">野兔</h2><p id="entity-latin">Lepus silva</p></div><span id="entity-bond-badge" class="fg-bond-badge" hidden>神眷</span></div>
         <p class="fg-entity-story" id="entity-story"></p>
         <div class="fg-life-row"><span id="entity-stage">成年</span><span id="entity-age">0 日</span><span id="entity-sex"></span></div>
-        <div class="fg-meter"><label>健康 <b id="health-value"></b></label><div><i id="entity-health"></i></div></div>
-        <div id="animal-needs">
-          <div class="fg-meter"><label>饱食 <b id="food-value"></b></label><div><i id="entity-food"></i></div></div>
-          <div class="fg-meter"><label>水分 <b id="water-value"></b></label><div><i id="entity-water"></i></div></div>
-          <div class="fg-meter"><label>精力 <b id="energy-value"></b></label><div><i id="entity-energy"></i></div></div>
+        <p class="fg-archive-note" id="entity-archive-note" hidden></p>
+        <div id="entity-live-vitals">
+          <div class="fg-meter"><label>健康 <b id="health-value"></b></label><div><i id="entity-health"></i></div></div>
+          <div id="animal-needs">
+            <div class="fg-meter"><label>饱食 <b id="food-value"></b></label><div><i id="entity-food"></i></div></div>
+            <div class="fg-meter"><label>水分 <b id="water-value"></b></label><div><i id="entity-water"></i></div></div>
+            <div class="fg-meter"><label>精力 <b id="energy-value"></b></label><div><i id="entity-energy"></i></div></div>
+          </div>
+          <div class="fg-behavior"><span>此刻</span><b id="entity-behavior">游荡</b></div>
         </div>
-        <div class="fg-behavior"><span>此刻</span><b id="entity-behavior">游荡</b></div>
-        <button id="btn-follow" class="fg-follow">移步观察 →</button>
+        <section class="fg-detail-section"><h3>天性</h3><div id="entity-traits" class="fg-traits"></div></section>
+        <section class="fg-detail-section"><h3>血脉</h3><div class="fg-generation"><span>世代</span><b id="entity-generation"></b></div><div class="fg-relations"><span>父母</span><div id="entity-parents"></div></div><div class="fg-relations"><span>后代</span><div id="entity-offspring"></div></div></section>
+        <section class="fg-detail-section"><h3>记忆 <small>最近的片段</small></h3><ol id="entity-memories" class="fg-memories"></ol></section>
+        <p class="fg-bond-capacity" id="bond-capacity"></p>
+        <div class="fg-entity-actions"><button id="btn-bond" class="fg-bond-action">结缘</button><button id="btn-rename" class="fg-rename-action" hidden>重命名</button></div>
+        <button id="btn-follow" class="fg-follow" aria-pressed="false">跟随观察</button>
       </div>
     </aside>
 
@@ -98,6 +117,9 @@ import Base from '../../layouts/Base.astro';
             <button class="fg-tool" data-power="rain" title="唤雨 · 18 灵力 · 2"><i>雨</i><span>唤雨</span></button>
             <button class="fg-tool" data-power="sun" title="晴光 · 12 灵力 · 3"><i>阳</i><span>晴光</span></button>
             <button class="fg-tool" data-power="storm" title="雷暴 · 30 灵力 · 4"><i>暴</i><span>雷暴</span></button>
+            <button class="fg-tool" data-power="mist" title="晨雾 · 16 灵力 · 7"><i>雾</i><span>晨雾</span><small class="fg-tool-state">16</small></button>
+            <button class="fg-tool" data-power="snow" title="初雪 · 24 灵力 · 8"><i>雪</i><span>初雪</span><small class="fg-tool-state">24</small></button>
+            <button class="fg-tool" data-power="aurora" title="极光 · 32 灵力 · 9"><i>极</i><span>极光</span><small class="fg-tool-state">32</small></button>
             <button class="fg-tool" data-power="lightning" title="落雷 · 20 灵力 · 6"><i>雷</i><span>落雷</span></button>
           </div>
         </div>
@@ -141,12 +163,14 @@ import Base from '../../layouts/Base.astro';
         <h2 id="help-title">别只给予生命。<br />也给它自己的命运。</h2>
         <p class="fg-help-lead">每个世界由一枚种子生成。花草争夺水土，蜂为花授粉，鹿兔啃食嫩芽，狐狼追猎；遗骸化为养分，菌落又让死亡成为另一次开始。</p>
         <div class="fg-help-grid">
-          <div><b>01 · 观察</b><p>拖动平移，滚轮或双指缩放。观察手点选生命；点击纪事可直接前往现场。</p></div>
-          <div><b>02 · 干预</b><p>天象立即生效。选择草木、众生、赐福或落雷后，再点击林地投放。灵力随时间恢复。</p></div>
-          <div><b>03 · 等待</b><p>1× 适合凝视，12× 适合跨越世代。没有失败结局：荒芜之后，总能重新开始。</p></div>
-          <div><b>04 · 后果</b><p>晴光促进生长也加速蒸发；暴雨灭火却可能伴随落雷。捕食者太多，猎物便会消失。</p></div>
+          <div><b>01 · 观察</b><p>拖动平移，滚轮或双指缩放。观察手点选生命；纪事、神眷与纪念条目都能前往现场，档案里的血脉也可继续追溯。</p></div>
+          <div><b>02 · 神眷</b><p>在万物档案中结缘并为生命命名。神眷会留下记忆、延续血脉；逝去后可从「纪念」重读它的一生。完成心愿可增加结缘上限。</p></div>
+          <div><b>03 · 心愿与天象</b><p>「心愿」记录生态目标。授粉解锁晨雾，神眷血脉延续三代解锁初雪；结缘后让十三类物种共存并迎来三次新生，可解锁极光。未解锁的神力会说明原因。</p></div>
+          <div><b>04 · 天气</b><p>雨滋润土壤并灭火，晴光促进生长也加速蒸发，雷暴可能落雷。晨雾减少蒸发，初雪抑制火焰并促使动物避寒，极光会被神眷铭记。</p></div>
+          <div><b>05 · 生态灵力</b><p>灵力随世界日恢复。森林越健康、物种越丰富、草木越繁盛，恢复越快；神眷与拥有「辉光」天性的神眷也会提供额外灵力。</p></div>
+          <div><b>06 · 等待与后果</b><p>1× 适合凝视，12× 适合跨越世代。捕食者太多猎物便会消失；荒芜没有失败结局，草木与迁徙仍能带来另一次开始。</p></div>
         </div>
-        <div class="fg-help-keys"><kbd>1</kbd>观察 <kbd>2</kbd>雨 <kbd>3</kbd>晴 <kbd>4</kbd>雷暴 <kbd>5</kbd>赐福 <kbd>6</kbd>落雷 <kbd>Space</kbd>暂停 <kbd>0</kbd>归位</div>
+        <div class="fg-help-keys"><kbd>1</kbd>观察 <kbd>2</kbd>雨 <kbd>3</kbd>晴 <kbd>4</kbd>雷暴 <kbd>5</kbd>赐福 <kbd>6</kbd>落雷 <kbd>7</kbd>晨雾 <kbd>8</kbd>初雪 <kbd>9</kbd>极光 <kbd>Space</kbd>暂停 <kbd>0</kbd>归位</div>
         <div class="fg-help-actions"><button id="btn-new-world" class="fg-danger">另创一个世界</button><button id="close-help-bottom">继续凝视这片森林 →</button></div>
         <small class="fg-save-note">世界会自动保存在此浏览器中。另创世界将覆盖当前存档。</small>
       </section>
@@ -184,12 +208,15 @@ import Base from '../../layouts/Base.astro';
   .fg-weather-dot { width:7px; height:7px; background:#e4c876; box-shadow:0 0 0 3px rgba(228,200,118,.1); }
   .fg-weather-dot.rain { background:#8bb7bd; box-shadow:0 0 0 3px rgba(139,183,189,.12); }
   .fg-weather-dot.storm { background:#d89684; animation:fg-pulse .7s steps(2) infinite; }
+  .fg-weather-dot.mist { background:#b8c8bd; box-shadow:0 0 0 3px rgba(184,200,189,.12); }
+  .fg-weather-dot.snow { background:#e5eee9; box-shadow:0 0 0 3px rgba(229,238,233,.14); }
   .fg-actions { display:flex; gap:6px; pointer-events:auto; }
   .fg-icon { width:34px; height:34px; border:1px solid var(--fg-line); background:rgba(22,29,26,.72); font:12px var(--font-mono); cursor:pointer; backdrop-filter:blur(10px); }
   .fg-icon:hover, .fg-icon[aria-pressed="true"] { border-color:#b7b98f; color:var(--fg-gold); background:rgba(43,53,42,.88); }
   .fg-vitals { position:absolute; z-index:8; left:20px; top:92px; width:218px; padding:13px 14px; background:rgba(22,29,26,.75); border:1px solid var(--fg-line); backdrop-filter:blur(10px); }
   .fg-spirit-row { display:flex; justify-content:space-between; font-size:10px; letter-spacing:.16em; color:var(--fg-muted); }
   .fg-spirit-row b { color:var(--fg-gold); font:12px var(--font-mono); }
+  .fg-spirit-row small { color:#8f9f83; font:7px var(--font-mono); letter-spacing:0; margin-left:4px; }
   .fg-spirit-track { height:3px; background:#3d473e; margin:7px 0 12px; }
   .fg-spirit-track i { display:block; height:100%; width:100%; background:#d8bd76; transition:width .3s; }
   .fg-counts { display:flex; gap:10px; font-size:9px; color:var(--fg-muted); }
@@ -201,13 +228,13 @@ import Base from '../../layouts/Base.astro';
   .fg-balance>div { flex:1; height:2px; background:#41473f; }
   .fg-balance i { display:block; height:100%; background:#9cad77; }
   .fg-chronicle, .fg-inspector { position:absolute; z-index:8; background:rgba(22,29,26,.82); border:1px solid var(--fg-line); backdrop-filter:blur(12px); box-shadow:0 10px 32px rgba(10,17,13,.14); }
-  .fg-chronicle { left:20px; bottom:126px; width:255px; padding:13px 14px 9px; }
-  .fg-inspector { right:20px; top:91px; width:238px; padding:13px 14px 14px; }
+  .fg-chronicle { left:20px; bottom:126px; width:255px; padding:13px 14px 9px; display:flex; flex-direction:column; max-height:clamp(190px,calc(100dvh - 320px),430px); }
+  .fg-inspector { right:20px; top:91px; width:238px; padding:13px 14px 14px; display:flex; flex-direction:column; max-height:max(230px,calc(100dvh - 235px)); }
   .fg-panel-title { display:flex; align-items:baseline; gap:8px; border-bottom:1px solid var(--fg-line); padding-bottom:8px; margin-bottom:7px; }
   .fg-panel-title>span { font:600 12px var(--font-serif); letter-spacing:.16em; }
   .fg-panel-title small { color:#858f82; font:7px var(--font-mono); letter-spacing:.14em; }
   .fg-panel-title button { margin-left:auto; border:0; background:none; cursor:pointer; color:#aab09f; font-size:18px; line-height:14px; }
-  .fg-events { display:flex; flex-direction:column; max-height:184px; overflow:auto; scrollbar-width:thin; scrollbar-color:#596155 transparent; }
+  .fg-events { display:flex; flex-direction:column; max-height:none; overflow:visible; scrollbar-width:thin; scrollbar-color:#596155 transparent; }
   .fg-event { display:grid; grid-template-columns:5px 1fr; gap:8px; text-align:left; border:0; border-bottom:1px solid rgba(222,225,199,.07); background:none; padding:7px 0; cursor:pointer; }
   .fg-event:hover .fg-event-text { color:var(--fg-gold); }
   .fg-event>i { width:3px; height:3px; margin-top:5px; background:#889d75; }
@@ -236,6 +263,70 @@ import Base from '../../layouts/Base.astro';
   .fg-behavior span { color:#869187; } .fg-behavior b { color:#e1cb90; font-weight:500; }
   .fg-follow { width:100%; border:1px solid var(--fg-line); background:rgba(118,135,96,.09); padding:6px; margin-top:9px; font-size:9px; cursor:pointer; }
   .fg-follow:hover { border-color:#919b77; }
+  .fg-panel-title, .fg-chronicle-tabs, .fg-chronicle-foot { flex:none; }
+  .fg-chronicle-tabs { display:grid; grid-template-columns:repeat(4,1fr); gap:2px; margin:0 0 7px; padding:2px; background:rgba(111,128,100,.08); border:1px solid rgba(222,225,199,.08); }
+  .fg-chronicle-tabs button { min-width:0; border:0; border-bottom:1px solid transparent; background:transparent; color:#818d80; padding:5px 1px 4px; font-size:9px; letter-spacing:.08em; cursor:pointer; }
+  .fg-chronicle-tabs button:hover { color:#d4d6bd; background:rgba(157,171,128,.07); }
+  .fg-chronicle-tabs button.active { color:#ead7a0; border-bottom-color:#c8b577; background:rgba(197,187,137,.09); }
+  .fg-chronicle-panels { flex:1; min-height:34px; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:#596155 transparent; }
+  .fg-chronicle-panel { min-height:34px; }
+  .fg-chronicle-list { display:flex; flex-direction:column; }
+  .fg-empty-list { margin:0; padding:18px 5px; text-align:center; color:#7f8b7d; font:10px/1.8 var(--font-serif); }
+  .fg-bond-entry, .fg-memorial-entry { display:grid; grid-template-columns:28px minmax(0,1fr) 10px; align-items:center; gap:8px; width:100%; padding:8px 2px; text-align:left; border:0; border-bottom:1px solid rgba(222,225,199,.07); background:transparent; cursor:pointer; }
+  .fg-bond-entry:hover, .fg-memorial-entry:hover { background:rgba(157,171,128,.06); }
+  .fg-entry-glyph { display:grid; place-items:center; width:27px; height:27px; color:#dbc789; background:#354537; border:1px solid #59674f; font:13px var(--font-serif); }
+  .fg-memorial-entry .fg-entry-glyph { color:#b4b6a5; background:#303832; border-color:#515a50; }
+  .fg-entry-main { min-width:0; }
+  .fg-entry-main b { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#d9d7c0; font:500 10px var(--font-serif); letter-spacing:.05em; }
+  .fg-entry-main span, .fg-entry-main time { display:block; margin-top:2px; color:#7f8b7e; font:7px/1.5 var(--font-mono); }
+  .fg-entry-arrow { color:#778570; font:12px var(--font-mono); }
+  .fg-objective { padding:8px 1px 9px; border-bottom:1px solid rgba(222,225,199,.07); }
+  .fg-objective-head { display:flex; justify-content:space-between; align-items:baseline; gap:8px; }
+  .fg-objective-head b { color:#c9cdb7; font:500 10px var(--font-serif); }
+  .fg-objective-head span { flex:none; color:#8e9a89; font:7px var(--font-mono); }
+  .fg-objective.complete .fg-objective-head b, .fg-objective.complete .fg-objective-head span { color:#dbc581; }
+  .fg-objective p { margin:4px 0; color:#8f9a8d; font-size:8px; line-height:1.55; }
+  .fg-objective small { display:block; margin-top:4px; color:#a69d78; font-size:7px; line-height:1.5; }
+  .fg-objective-track { height:2px; margin-top:6px; background:#3b463d; }
+  .fg-objective-track i { display:block; height:100%; background:#9eae7f; transition:width .25s; }
+  .fg-objective.complete .fg-objective-track i { background:#d2bb76; }
+  #entity-inspector { min-height:0; overflow:auto; overscroll-behavior:contain; scrollbar-width:thin; scrollbar-color:#596155 transparent; }
+  .fg-entity-heading>div { min-width:0; }
+  .fg-entity-heading h2 { overflow-wrap:anywhere; }
+  .fg-bond-badge { flex:none; margin-left:auto; align-self:flex-start; padding:2px 4px; border:1px solid rgba(218,193,124,.32); color:#dbc581; font-size:7px; letter-spacing:.1em; }
+  .fg-archive-note { margin:8px 0; padding:7px 8px; border-left:2px solid #7d806b; background:rgba(163,163,132,.06); color:#aaa994; font-size:8px; line-height:1.65; }
+  .fg-detail-section { margin-top:11px; padding-top:9px; border-top:1px solid var(--fg-line); }
+  .fg-detail-section h3 { display:flex; justify-content:space-between; margin:0 0 6px; color:#8b9788; font:500 8px var(--font-sans); letter-spacing:.14em; }
+  .fg-detail-section h3 small { color:#667367; font:7px var(--font-mono); letter-spacing:0; }
+  .fg-traits { display:grid; grid-template-columns:1fr 1fr; gap:5px; }
+  .fg-trait { min-width:0; padding:5px 6px; border:1px solid rgba(180,190,155,.14); background:rgba(132,151,112,.05); }
+  .fg-trait b { display:block; color:#c8cbaa; font:500 9px var(--font-serif); }
+  .fg-trait small { display:block; margin-top:3px; color:#778575; font-size:7px; line-height:1.45; }
+  .fg-generation { display:flex; justify-content:space-between; color:#899588; font-size:8px; }
+  .fg-generation b { color:#c8ceb8; font:8px var(--font-mono); }
+  .fg-relations { display:grid; grid-template-columns:28px 1fr; gap:6px; margin-top:6px; color:#778477; font-size:8px; line-height:1.6; }
+  .fg-relations>div { display:flex; flex-wrap:wrap; gap:3px 5px; min-width:0; }
+  .fg-relations button { border:0; border-bottom:1px dotted #65745f; background:none; padding:0; color:#b9c2a9; font-size:8px; cursor:pointer; overflow-wrap:anywhere; text-align:left; }
+  .fg-relations button:hover { color:var(--fg-gold); }
+  .fg-relations span { color:#879384; }
+  .fg-memories { display:flex; flex-direction:column; gap:6px; margin:0; padding:0; list-style:none; }
+  .fg-memory { position:relative; padding-left:9px; color:#a5af9e; font-size:8px; line-height:1.55; }
+  .fg-memory::before { content:""; position:absolute; left:0; top:5px; width:3px; height:3px; background:#7f916e; }
+  .fg-memory time { display:block; color:#6f7d70; font:7px var(--font-mono); }
+  .fg-memory-empty { color:#758276; font-size:8px; line-height:1.6; }
+  .fg-bond-capacity { margin:11px 0 6px; color:#899582; font-size:8px; line-height:1.5; }
+  .fg-entity-actions { display:flex; gap:5px; }
+  .fg-entity-actions button { flex:1; border:1px solid #667359; padding:7px 5px; font-size:9px; cursor:pointer; }
+  .fg-bond-action { color:#e4d39c; background:rgba(155,151,94,.12); }
+  .fg-rename-action { color:#bfc9b2; background:rgba(118,135,96,.07); }
+  .fg-entity-actions button:hover { border-color:#b0b785; background:rgba(155,165,109,.14); }
+  .fg-follow[aria-pressed="true"] { color:#e4cd8d; border-color:#9b9569; background:rgba(171,155,91,.12); }
+  .fg-tool { position:relative; }
+  .fg-tool-state { position:absolute; top:1px; right:2px; color:#778471; font:6px var(--font-mono); }
+  .fg-tool.locked { opacity:.58; }
+  .fg-tool.locked:hover { opacity:.9; }
+  .fg-tool.locked .fg-tool-state { color:#c4aa76; }
+  .fg-tool.active .fg-tool-state { color:#435342; }
   .fg-fire-warning { position:absolute; z-index:9; top:82px; left:50%; transform:translateX(-50%); background:rgba(74,36,32,.86); border:1px solid rgba(224,139,104,.45); padding:6px 12px; color:#f0c5a3; font-size:10px; pointer-events:none; }
   .fg-fire-warning span { display:inline-block; margin-right:6px; color:#efaa7f; }
   .fg-view-controls { position:absolute; right:20px; bottom:128px; z-index:8; display:flex; }
@@ -290,6 +381,7 @@ import Base from '../../layouts/Base.astro';
   .fg-fatal h2 { color:#e6dcc4; } .fg-fatal p { color:#9caa9b; } .fg-fatal a { color:#e1c680; }
   .fg-mobile-only { display:none; }
   @keyframes fg-pulse { 50% { opacity:.4; } }
+  @keyframes fg-drawer-in { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
 
   @media (max-width:1100px) {
     .fg-tool { width:37px; }
@@ -311,9 +403,10 @@ import Base from '../../layouts/Base.astro';
     .fg-balance { display:none; }
     .fg-inspector { top:102px; right:10px; width:210px; max-height:calc(100dvh - 230px); overflow:auto; padding:10px 12px; }
     .fg-inspector:not(.has-entity) { display:none; }
-    .fg-chronicle { display:none; left:10px; right:10px; bottom:130px; width:auto; max-height:52dvh; }
-    .fg-chronicle.open { display:block; }
-    .fg-events { max-height:35dvh; }
+    .fg-chronicle { display:none; left:10px; right:10px; bottom:130px; width:auto; max-height:52dvh; box-shadow:0 18px 55px rgba(5,12,8,.48); }
+    .fg-chronicle.open { display:flex; animation:fg-drawer-in .18s ease-out; }
+    .fg-chronicle-panels { max-height:none; }
+    .fg-events { max-height:none; }
     .fg-view-controls { right:10px; bottom:133px; }
     .fg-fire-warning { top:94px; font-size:8px; white-space:nowrap; }
     .fg-bottom { padding-top:20px; align-items:stretch; }
@@ -327,69 +420,265 @@ import Base from '../../layouts/Base.astro';
     .fg-help h2 { font-size:22px; } .fg-help-grid { grid-template-columns:1fr; gap:12px; }
     .fg-help-actions { flex-direction:column-reverse; } .fg-help-actions button { width:100%; }
   }
-  @media (prefers-reduced-motion:reduce) { .fg-weather-dot.storm, .fg-loading-tree { animation:none; } }
+  @media (prefers-reduced-motion:reduce) { .fg-weather-dot.storm, .fg-loading-tree { animation:none; } .fg-chronicle.open { animation:none; } }
 </style>
 
 <script>
   import { ANIMAL_RULES, PLANT_RULES, POWER_INFO } from '../../scripts/forest-god-content';
-  import type { Power } from '../../scripts/forest-god-content';
-  import { applyPower, createWorld, deserializeWorld, environmentAt, findEntity, serializeWorld, stepWorld, worldStats } from '../../scripts/forest-god-core';
-  import type { Animal, Plant } from '../../scripts/forest-god-core';
+  import type { AnimalSpecies, PlantSpecies, Power } from '../../scripts/forest-god-content';
+  import {
+    applyPower, bondCapacity, bondEntity, createWorld, deserializeWorld, environmentAt, findEntity, findMemorial,
+    isUnlocked, objectiveProgress, renameBond, serializeWorld, spiritRegenRate, stepWorld, worldStats,
+  } from '../../scripts/forest-god-core';
+  import type { Animal, ForestEvent, Memorial, Plant, World } from '../../scripts/forest-god-core';
+  import { OBJECTIVES, TRAITS } from '../../scripts/forest-god-identity';
+  import type { LifeMemory, TraitId } from '../../scripts/forest-god-identity';
   import { createForestScene } from '../../scripts/forest-god-scene';
   import { createForestAudio } from '../../scripts/forest-god-audio';
-  import { confirmDialog, download, toast } from '../../scripts/ui';
+  import { confirmDialog, download, promptDialog, toast } from '../../scripts/ui';
 
   const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
   const canvas = $('world') as HTMLCanvasElement;
   const SAVE_KEY = 'forest-god-world-v1';
+  const GLOBAL_POWERS: ReadonlySet<Power> = new Set(['rain', 'sun', 'storm', 'mist', 'snow', 'aurora']);
+  const LOCKABLE_POWERS = ['mist', 'snow', 'aurora'] as const;
+  const pageListeners = new AbortController();
+  const previewParams = new URLSearchParams(location.search);
+  const freshPreview = previewParams.has('test') && previewParams.has('fresh');
   let saved: string | null = null;
   try { saved = localStorage.getItem(SAVE_KEY); } catch { /* 隐私模式 */ }
   let world = createWorld();
-  if (saved) {
+  let preserveRejectedSave = freshPreview;
+  let loadWarning: string | null = null;
+  if (saved && !freshPreview) {
     try { world = deserializeWorld(saved); }
-    catch { try { localStorage.removeItem(SAVE_KEY); } catch { /* ignore */ } }
+    catch {
+      // 旧存档可能仍有价值：不删除，也不让临时新世界自动覆盖它。
+      preserveRejectedSave = true;
+      loadWarning = '旧版森林存档未能读取，原始数据已保留。本次先进入临时森林；只有另创世界后才会重新保存。';
+    }
   }
   let selectedId: number | null = null;
+  let followingId: number | null = null;
   let currentPower: Power = 'inspect';
   let speed = 1;
   let paused = false;
-  let lastSave = 0;
+  let lastSave = performance.now();
   let soundOn = false;
+  let disposed = false;
+  let saveDirty = false;
+  let saveDelayTimer: number | null = null;
+  let idleSaveHandle: number | null = null;
+  let idleSaveNative = false;
+  let veilFrame = 0;
+  let veilTimer: number | null = null;
+  let introTimer: number | null = null;
   const audio = createForestAudio();
 
   function saveWorld() {
-    try { localStorage.setItem(SAVE_KEY, serializeWorld(world)); } catch { /* 存储配额或隐私模式 */ }
+    if (preserveRejectedSave || disposed) return;
+    try {
+      localStorage.setItem(SAVE_KEY, serializeWorld(world));
+      saveDirty = false;
+      lastSave = performance.now();
+    } catch { /* 存储配额或隐私模式；保留 dirty 状态以便稍后重试 */ }
   }
 
-  const behaviorNames = { wander:'游荡', rest:'休息', seekFood:'觅食', drink:'饮水', flee:'逃窜', hunt:'追猎', court:'求偶', follow:'跟随长辈' };
-  const weatherNames = { clear:'晴朗', rain:'降雨', storm:'雷暴' };
-  const powerHints: Partial<Record<Power, string>> = Object.fromEntries([
+  function cancelPendingSave() {
+    if (saveDelayTimer !== null) { clearTimeout(saveDelayTimer); saveDelayTimer = null; }
+    if (idleSaveHandle === null) return;
+    if (idleSaveNative) window.cancelIdleCallback(idleSaveHandle);
+    else clearTimeout(idleSaveHandle);
+    idleSaveHandle = null;
+  }
+
+  function scheduleIdleSave() {
+    if (preserveRejectedSave || disposed || idleSaveHandle !== null) return;
+    if (typeof window.requestIdleCallback === 'function') {
+      idleSaveNative = true;
+      idleSaveHandle = window.requestIdleCallback(() => { idleSaveHandle = null; saveWorld(); }, { timeout: 1400 });
+    } else {
+      idleSaveNative = false;
+      idleSaveHandle = window.setTimeout(() => { idleSaveHandle = null; saveWorld(); }, 40);
+    }
+  }
+
+  function queueSave(delay = 0) {
+    if (preserveRejectedSave || disposed) return;
+    saveDirty = true;
+    if (saveDelayTimer !== null || idleSaveHandle !== null) return;
+    if (delay > 0) {
+      saveDelayTimer = window.setTimeout(() => { saveDelayTimer = null; scheduleIdleSave(); }, delay);
+    } else scheduleIdleSave();
+  }
+
+  function flushSave() {
+    cancelPendingSave();
+    if (!preserveRejectedSave) saveWorld();
+  }
+
+  const behaviorNames: Record<Animal['behavior'], string> = {
+    wander:'游荡', rest:'休息', seekFood:'觅食', drink:'饮水', flee:'逃窜', hunt:'追猎', court:'求偶', follow:'跟随长辈',
+    alert:'警觉', groom:'梳理', play:'嬉戏', shelter:'躲避风雨',
+  };
+  const weatherNames: Record<World['weather']['kind'], string> = { clear:'晴朗', rain:'降雨', storm:'雷暴', mist:'晨雾', snow:'初雪' };
+  const powerHints = Object.fromEntries([
     ...Object.entries(PLANT_RULES).map(([key, rule]) => [key, `点击林地播种${rule.name} · ${rule.cost} 灵力`]),
     ...Object.entries(ANIMAL_RULES).map(([key, rule]) => [key, `点击适宜栖息地引入${rule.name} · ${rule.cost} 灵力`]),
-    ['bless', POWER_INFO.bless.hint], ['lightning', POWER_INFO.lightning.hint], ['inspect', POWER_INFO.inspect.hint],
-  ]) as Partial<Record<Power, string>>;
+    ...Object.entries(POWER_INFO).map(([key, info]) => [key, info.hint]),
+  ]) as Record<Power, string>;
 
-  function updateEvents() {
+  function formatDayTime(at: number): string {
+    const day = ((at % 1) + 1) % 1;
+    return `第 ${Math.floor(at) + 1} 日 · ${String(Math.floor(day * 24)).padStart(2, '0')} 时`;
+  }
+
+  function livingBonds(): (Plant | Animal)[] {
+    return [...world.plants, ...world.animals].filter(entity => entity.alive && entity.bond);
+  }
+
+  function emptyList(list: HTMLElement, message: string) {
+    const empty = document.createElement('p');
+    empty.className = 'fg-empty-list';
+    empty.textContent = message;
+    list.replaceChildren(empty);
+  }
+
+  function renderEvents() {
     const list = $('event-list');
-    list.replaceChildren();
-    for (const event of world.events.slice(0, 6)) {
+    const events = world.events.slice(0, 10);
+    if (!events.length) { emptyList(list, '风还没有写下第一行字。'); return; }
+    const fragment = document.createDocumentFragment();
+    for (const event of events) {
       const button = document.createElement('button');
       button.className = `fg-event ${event.kind}`;
+      button.dataset.eventId = String(event.id);
+      button.title = event.entityId !== undefined ? '前往现场并打开生命档案' : '前往事件发生的地方';
       const dot = document.createElement('i');
       const body = document.createElement('span');
       body.className = 'fg-event-text';
       body.textContent = event.text;
       const time = document.createElement('time');
-      time.textContent = `第 ${Math.floor(event.at) + 1} 日 · ${String(Math.floor((event.at % 1) * 24)).padStart(2, '0')} 时`;
+      time.textContent = formatDayTime(event.at);
       body.appendChild(time);
       button.append(dot, body);
-      button.addEventListener('click', () => {
-        scene.focus(event.x, event.y, 1.7);
-        $('chronicle').classList.remove('open');
-        $('intro').classList.add('gone');
-      });
-      list.appendChild(button);
+      fragment.appendChild(button);
     }
+    list.replaceChildren(fragment);
+  }
+
+  function makeEntityEntry(entity: Plant | Animal | Memorial, memorial: boolean): HTMLButtonElement {
+    const plant = 'kind' in entity ? entity.kind === 'plant' : 'growth' in entity;
+    const rule = plant ? PLANT_RULES[entity.species as PlantSpecies] : ANIMAL_RULES[entity.species as AnimalSpecies];
+    const button = document.createElement('button');
+    button.className = memorial ? 'fg-memorial-entry' : 'fg-bond-entry';
+    button.dataset.entityId = String(entity.id);
+    button.title = memorial ? '打开纪念档案并前往长眠之地' : '选择这位神眷并前往它身边';
+    const glyph = document.createElement('span');
+    glyph.className = 'fg-entry-glyph';
+    glyph.textContent = rule.name.slice(-1);
+    const body = document.createElement('span');
+    body.className = 'fg-entry-main';
+    const name = document.createElement('b');
+    name.textContent = entity.name;
+    const details = document.createElement('span');
+    details.textContent = `${rule.name} · 第 ${entity.generation} 代 · ${entity.traits.map(trait => TRAITS[trait]?.name ?? trait).join(' / ')}`;
+    const time = document.createElement('time');
+    time.textContent = memorial
+      ? `长眠于${formatDayTime((entity as Memorial).diedAt)}`
+      : `结缘于第 ${Math.floor(entity.bond?.since ?? 0) + 1} 日 · ${entity.age.toFixed(1)} 日`;
+    body.append(name, details, time);
+    const arrow = document.createElement('span');
+    arrow.className = 'fg-entry-arrow';
+    arrow.textContent = '→';
+    button.append(glyph, body, arrow);
+    return button;
+  }
+
+  function renderBonds() {
+    const list = $('bond-list');
+    const bonds = livingBonds();
+    if (!bonds.length) { emptyList(list, '还没有神眷。点选生命，在档案中与它结缘。'); return; }
+    const fragment = document.createDocumentFragment();
+    for (const entity of bonds) fragment.appendChild(makeEntityEntry(entity, false));
+    list.replaceChildren(fragment);
+  }
+
+  function renderObjectives() {
+    const list = $('objective-list');
+    const fragment = document.createDocumentFragment();
+    for (const objective of OBJECTIVES) {
+      const progress = objectiveProgress(world, objective.id);
+      const complete = world.progress.completed.includes(objective.id);
+      const ratio = complete ? 1 : Math.max(0, Math.min(1, progress.current / progress.target));
+      const article = document.createElement('article');
+      article.className = `fg-objective${complete ? ' complete' : ''}`;
+      const head = document.createElement('div');
+      head.className = 'fg-objective-head';
+      const name = document.createElement('b');
+      name.textContent = objective.name;
+      const status = document.createElement('span');
+      status.textContent = complete ? '已达成' : objective.id === 'ancientTree'
+        ? `${Math.round(progress.current * 100)}%`
+        : `${Math.min(progress.current, progress.target)} / ${progress.target}`;
+      head.append(name, status);
+      const description = document.createElement('p');
+      description.textContent = objective.description;
+      const track = document.createElement('div');
+      track.className = 'fg-objective-track';
+      const fill = document.createElement('i');
+      fill.style.width = `${Math.round(ratio * 100)}%`;
+      track.appendChild(fill);
+      const reward = document.createElement('small');
+      reward.textContent = `心愿回响：${objective.reward}`;
+      article.append(head, description, track, reward);
+      fragment.appendChild(article);
+    }
+    list.replaceChildren(fragment);
+  }
+
+  function renderMemorials() {
+    const list = $('memorial-list');
+    if (!world.memorials.length) { emptyList(list, '纪念林尚无碑叶。逝去的神眷会在这里留下完整档案。'); return; }
+    const fragment = document.createDocumentFragment();
+    for (const memorial of world.memorials) fragment.appendChild(makeEntityEntry(memorial, true));
+    list.replaceChildren(fragment);
+  }
+
+  type ChronicleTab = 'events' | 'bonds' | 'objectives' | 'memorials';
+  let chronicleTab: ChronicleTab = 'events';
+  const chronicleSignatures: Record<ChronicleTab, string> = { events:'', bonds:'', objectives:'', memorials:'' };
+  const chronicleFootnotes: Record<ChronicleTab, string> = {
+    events:'每条小事，都曾真实发生。', bonds:'被命名的生命，仍拥有自由的命运。',
+    objectives:'心愿不是命令，而是与森林共同完成的约定。', memorials:'死亡不是遗忘；名字与记忆会留在这里。',
+  };
+
+  function updateChronicle(force = false) {
+    let signature = '';
+    if (chronicleTab === 'events') signature = world.events.slice(0, 10).map(event => event.id).join(',');
+    else if (chronicleTab === 'bonds') signature = livingBonds().map(entity => `${entity.id}:${entity.name}:${entity.bond?.since}:${entity.generation}`).join('|');
+    else if (chronicleTab === 'objectives') signature = `${world.progress.completed.join(',')}|${OBJECTIVES.map(objective => objectiveProgress(world, objective.id).current).join(',')}`;
+    else signature = world.memorials.map(memorial => `${memorial.id}:${memorial.name}:${memorial.diedAt}`).join('|');
+    $('chronicle-foot').textContent = chronicleFootnotes[chronicleTab];
+    if (!force && chronicleSignatures[chronicleTab] === signature) return;
+    chronicleSignatures[chronicleTab] = signature;
+    if (chronicleTab === 'events') renderEvents();
+    else if (chronicleTab === 'bonds') renderBonds();
+    else if (chronicleTab === 'objectives') renderObjectives();
+    else renderMemorials();
+  }
+
+  function setChronicleTab(tab: ChronicleTab) {
+    chronicleTab = tab;
+    document.querySelectorAll<HTMLButtonElement>('[data-chronicle-tab]').forEach(button => {
+      const active = button.dataset.chronicleTab === tab;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-selected', String(active));
+      button.tabIndex = active ? 0 : -1;
+      const panel = $(button.getAttribute('aria-controls') ?? '');
+      if (panel) panel.hidden = !active;
+    });
+    updateChronicle(true);
   }
 
   function setMeter(id: string, value: number) {
@@ -397,63 +686,238 @@ import Base from '../../layouts/Base.astro';
     element.style.width = `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
   }
 
+  function renderTraits(traits: readonly TraitId[]) {
+    const container = $('entity-traits');
+    const fragment = document.createDocumentFragment();
+    for (const trait of traits) {
+      const definition = TRAITS[trait];
+      if (!definition) continue;
+      const item = document.createElement('span');
+      item.className = 'fg-trait';
+      item.title = definition.description;
+      const name = document.createElement('b');
+      name.textContent = definition.name;
+      const description = document.createElement('small');
+      description.textContent = definition.description;
+      item.append(name, description);
+      fragment.appendChild(item);
+    }
+    container.replaceChildren(fragment);
+  }
+
+  function renderRelations(id: string, ids: readonly number[], emptyText: string) {
+    const container = $(id);
+    if (!ids.length) {
+      const empty = document.createElement('span');
+      empty.textContent = emptyText;
+      container.replaceChildren(empty);
+      return;
+    }
+    const fragment = document.createDocumentFragment();
+    for (const relatedId of ids.slice(0, 8)) {
+      const entity = findEntity(world, relatedId);
+      const memorial = entity ? null : findMemorial(world, relatedId);
+      if (entity || memorial) {
+        const button = document.createElement('button');
+        button.dataset.relatedId = String(relatedId);
+        button.textContent = `${(entity ?? memorial)!.name} · #${relatedId}`;
+        button.title = '打开这位亲人的档案';
+        fragment.appendChild(button);
+      } else {
+        const label = document.createElement('span');
+        label.textContent = `#${relatedId}`;
+        fragment.appendChild(label);
+      }
+    }
+    if (ids.length > 8) {
+      const more = document.createElement('span');
+      more.textContent = `等 ${ids.length} 位`;
+      fragment.appendChild(more);
+    }
+    container.replaceChildren(fragment);
+  }
+
+  function renderMemories(memories: readonly LifeMemory[]) {
+    const container = $('entity-memories');
+    if (!memories.length) {
+      const empty = document.createElement('li');
+      empty.className = 'fg-memory-empty';
+      empty.textContent = '记忆尚在日积月累。';
+      container.replaceChildren(empty);
+      return;
+    }
+    const fragment = document.createDocumentFragment();
+    for (const memory of memories.slice(-6).reverse()) {
+      const item = document.createElement('li');
+      item.className = 'fg-memory';
+      const time = document.createElement('time');
+      time.textContent = formatDayTime(memory.at);
+      const text = document.createElement('span');
+      text.textContent = memory.text;
+      item.append(time, text);
+      fragment.appendChild(item);
+    }
+    container.replaceChildren(fragment);
+  }
+
+  let inspectorSignature = '';
+
+  function updateFollowButton() {
+    const active = followingId !== null && followingId === selectedId;
+    $('btn-follow').textContent = active ? '停止跟随' : '跟随观察';
+    $('btn-follow').setAttribute('aria-pressed', String(active));
+    $('btn-follow').title = active ? '停止让视角持续跟随这个生命' : '让视角持续跟随这个生命；拖动画面可取消';
+  }
+
   function updateInspector() {
     const entity = findEntity(world, selectedId);
-    $('empty-inspector').hidden = !!entity;
-    $('entity-inspector').hidden = !entity;
-    $('inspector').classList.toggle('has-entity', !!entity);
-    if (!entity) return;
-    const plant = 'growth' in entity;
-    const rule = plant ? PLANT_RULES[(entity as Plant).species] : ANIMAL_RULES[(entity as Animal).species];
-    $('entity-glyph').textContent = rule.name.slice(-1);
-    $('entity-name').textContent = entity.alive ? rule.name : `${rule.name}的遗骸`;
-    $('entity-latin').textContent = rule.latin;
-    $('entity-story').textContent = rule.description;
-    $('entity-age').textContent = `${entity.age.toFixed(1)} 日`;
-    $('entity-sex').textContent = plant ? '' : (entity as Animal).sex ? '雌性' : '雄性';
-    if (!entity.alive) $('entity-stage').textContent = '正在归土';
-    else if (plant) {
-      const growth = (entity as Plant).growth;
-      $('entity-stage').textContent = growth < 0.2 ? '萌芽' : growth < 0.6 ? '生长' : growth < 0.85 ? '成熟' : '繁茂';
-    } else $('entity-stage').textContent = entity.age < rule.matureAt ? '幼年' : entity.age > rule.lifespan * 0.8 ? '暮年' : '成年';
-    setMeter('entity-health', entity.health);
-    $('health-value').textContent = `${Math.round(entity.health * 100)}%`;
-    $('animal-needs').hidden = plant;
-    if (!plant) {
-      const animal = entity as Animal;
-      setMeter('entity-food', 1 - animal.hunger); setMeter('entity-water', 1 - animal.thirst); setMeter('entity-energy', animal.energy);
-      $('food-value').textContent = `${Math.round((1 - animal.hunger) * 100)}%`;
-      $('water-value').textContent = `${Math.round((1 - animal.thirst) * 100)}%`;
-      $('energy-value').textContent = `${Math.round(animal.energy * 100)}%`;
-      $('entity-behavior').textContent = entity.alive ? behaviorNames[animal.behavior] : '生命已止息';
-    } else $('entity-behavior').textContent = entity.alive ? ((entity as Plant).pollinated ? '已经授粉' : '静静生长') : '养分正在回归';
+    const memorial = entity ? null : findMemorial(world, selectedId);
+    const life = entity ?? memorial;
+    $('empty-inspector').hidden = !!life;
+    $('entity-inspector').hidden = !life;
+    $('inspector').classList.toggle('has-entity', !!life);
+    if (!life) { inspectorSignature = ''; followingId = null; return; }
+    const plant = memorial ? memorial.kind === 'plant' : 'growth' in (entity as Plant | Animal);
+    const rule = plant ? PLANT_RULES[life.species as PlantSpecies] : ANIMAL_RULES[life.species as AnimalSpecies];
+    const signature = [
+      life.id, life.name, life.species, entity?.alive ?? 'archive', life.traits.join(','), life.generation,
+      life.parentIds.join(','), life.offspring.join(','), entity?.bond?.name ?? '', entity?.bond?.since ?? '',
+      ...life.memories.slice(-6).map(memory => `${memory.at}:${memory.kind}:${memory.text}:${memory.relatedId ?? ''}`),
+      memorial?.diedAt ?? '',
+    ].join('|');
+    if (signature !== inspectorSignature) {
+      inspectorSignature = signature;
+      $('entity-glyph').textContent = rule.name.slice(-1);
+      $('entity-name').textContent = life.name;
+      $('entity-latin').textContent = `${rule.name} · ${rule.latin}`;
+      $('entity-story').textContent = memorial ? `神眷的一生已归入纪念林。${rule.description}` : rule.description;
+      $('entity-generation').textContent = `第 ${life.generation} 代`;
+      $('entity-archive-note').hidden = !memorial;
+      if (memorial) $('entity-archive-note').textContent = `逝世于${formatDayTime(memorial.diedAt)}，享年 ${memorial.age.toFixed(1)} 日。这里保存着它离世时的名字、天性、血脉与记忆。`;
+      renderTraits(life.traits);
+      renderRelations('entity-parents', life.parentIds, life.generation <= 1 ? '初代生命' : '没有留下记录');
+      renderRelations('entity-offspring', life.offspring, '尚无后代记录');
+      renderMemories(life.memories);
+    }
+    $('entity-bond-badge').hidden = !(entity?.bond || memorial);
+    $('entity-live-vitals').hidden = !!memorial;
+    $('entity-stage').textContent = memorial ? '纪念档案' : !entity?.alive ? '正在归土' : plant
+      ? (entity as Plant).growth < 0.2 ? '萌芽' : (entity as Plant).growth < 0.6 ? '生长' : (entity as Plant).growth < 0.85 ? '成熟' : '繁茂'
+      : entity.age < rule.matureAt ? '幼年' : entity.age > rule.lifespan * 0.8 ? '暮年' : '成年';
+    $('entity-age').textContent = memorial ? `${memorial.age.toFixed(1)} 日 · 享年` : `${life.age.toFixed(1)} 日`;
+    $('entity-sex').hidden = plant || !entity;
+    $('entity-sex').textContent = entity && !plant ? ((entity as Animal).sex ? '雌性' : '雄性') : '';
+    if (entity) {
+      setMeter('entity-health', entity.health);
+      $('health-value').textContent = `${Math.round(entity.health * 100)}%`;
+      $('animal-needs').hidden = plant;
+      if (!plant) {
+        const animal = entity as Animal;
+        setMeter('entity-food', 1 - animal.hunger); setMeter('entity-water', 1 - animal.thirst); setMeter('entity-energy', animal.energy);
+        $('food-value').textContent = `${Math.round((1 - animal.hunger) * 100)}%`;
+        $('water-value').textContent = `${Math.round((1 - animal.thirst) * 100)}%`;
+        $('energy-value').textContent = `${Math.round(animal.energy * 100)}%`;
+        $('entity-behavior').textContent = entity.alive ? behaviorNames[animal.behavior] : '生命已止息';
+      } else $('entity-behavior').textContent = entity.alive ? ((entity as Plant).pollinated ? '已经授粉' : '静静生长') : '养分正在回归';
+    }
+    const alive = entity?.alive ?? false;
+    $('btn-bond').hidden = !alive || !!entity?.bond;
+    $('btn-rename').hidden = !alive || !entity?.bond;
+    $('btn-follow').hidden = !alive;
+    $('bond-capacity').hidden = !entity;
+    if (entity) {
+      const count = livingBonds().length;
+      const capacity = bondCapacity(world);
+      $('bond-capacity').textContent = entity.bond
+        ? `神眷 ${count} / ${capacity} · 结缘于第 ${Math.floor(entity.bond.since) + 1} 日`
+        : `神眷 ${count} / ${capacity} · 完成「血脉新生」等心愿可扩充`;
+      $('btn-bond').title = count >= capacity ? '神眷已满；点击查看如何扩充' : '为它命名并缔结神眷';
+    }
+    updateFollowButton();
+  }
+
+  function selectEntity(id: number | null, focus = false) {
+    const entity = findEntity(world, id);
+    const memorial = entity ? null : findMemorial(world, id);
+    if (id !== null && !entity && !memorial) return;
+    if (followingId !== null && followingId !== id) scene.follow(null);
+    selectedId = id;
+    scene.select(id);
+    if (id === null) scene.follow(null);
+    if (focus && (entity || memorial)) {
+      const location = entity ?? memorial!;
+      scene.focus(location.x, location.y, 1.7);
+      $('chronicle').classList.remove('open');
+    }
+    if (id !== null) $('intro').classList.add('gone');
+    updateInspector();
+  }
+
+  function updatePowerButtons() {
+    for (const power of LOCKABLE_POWERS) {
+      const button = document.querySelector<HTMLButtonElement>(`[data-power="${power}"]`);
+      if (!button) continue;
+      const info = POWER_INFO[power];
+      const locked = !isUnlocked(world, power);
+      const objective = OBJECTIVES.find(item => item.unlock === power);
+      const key = { mist:'7', snow:'8', aurora:'9' }[power];
+      button.classList.toggle('locked', locked);
+      button.dataset.locked = String(locked);
+      button.setAttribute('aria-disabled', String(locked));
+      button.title = `${info.name} · ${info.cost} 灵力 · ${key} · ${locked ? `未解锁：${objective?.description ?? '完成对应生态心愿'}` : info.hint}`;
+      const state = button.querySelector<HTMLElement>('.fg-tool-state');
+      if (state) state.textContent = locked ? '锁' : String(info.cost);
+    }
   }
 
   function updateHud(now = performance.now()) {
     const env = environmentAt(world.time);
     const stats = worldStats(world);
     const hour = Math.floor(env.day * 24), minute = Math.floor((env.day * 24 - hour) * 60);
-    $('epoch').textContent = `第${['一','二','三','四','五'][Math.min(4, env.year - 1)] ?? env.year}年 · ${env.season}`;
+    const year = ['一','二','三','四','五'][env.year - 1] ?? String(env.year);
+    $('epoch').textContent = `第${year}年 · ${env.season}`;
     $('clock').textContent = `第 ${Math.floor(world.time % 48) + 1} 日 · ${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')} · ${weatherNames[world.weather.kind]}`;
     $('weather-dot').className = `fg-weather-dot ${world.weather.kind}`;
     $('spirit').textContent = String(Math.floor(world.divine));
+    $('spirit-regen').textContent = `+${spiritRegenRate(world).toFixed(1)}/日`;
     setMeter('spirit-fill', world.divine / 100); setMeter('health-fill', stats.health);
     $('plant-count').textContent = String(stats.plants); $('animal-count').textContent = String(stats.animals); $('species-count').textContent = String(stats.species);
     $('fire-warning').hidden = stats.fires === 0; $('fire-count').textContent = stats.fires ? `${stats.fires} 处` : '';
-    updateEvents(); updateInspector(); audio.update(world);
-    if (now - lastSave > 7000) { lastSave = now; saveWorld(); }
+    updateChronicle(); updateInspector(); updatePowerButtons(); audio.update(world);
+    if (now - lastSave > 7000) { lastSave = now; queueSave(); }
   }
 
   function announce(message: string, ok = true) {
     $('announce').textContent = message;
-    toast(message, ok ? 2300 : 1800);
+    toast(message, ok ? 2300 : 2600);
+  }
+
+  function lockedPowerMessage(power: Power): string {
+    const objective = OBJECTIVES.find(item => item.unlock === power);
+    const name = POWER_INFO[power as keyof typeof POWER_INFO]?.name ?? '这项神力';
+    return objective ? `${name}尚未解锁：${objective.description} 达成「${objective.name}」后，${objective.reward}。` : `${name}尚未解锁。`;
+  }
+
+  function castPower(power: Power, x?: number, y?: number) {
+    const pointerCast = x !== undefined && y !== undefined;
+    const result = applyPower(world, power, x, y);
+    if (!result.ok && !isUnlocked(world, power)) result.message = lockedPowerMessage(power);
+    // 指针施法由 scene 宣告结果并播放效果，避免双 toast、双特效。
+    if (!pointerCast) announce(result.message, result.ok);
+    if (result.ok) {
+      audio.chime('divine');
+      queueSave();
+      if (!pointerCast) scene.playCast(result);
+      updateHud();
+    }
+    return result;
   }
 
   function selectPower(power: Power) {
     currentPower = power;
     scene.setPower(power);
     document.querySelectorAll<HTMLButtonElement>('[data-power]').forEach(button => {
-      const active = button.dataset.power === power && !['rain','sun','storm'].includes(power);
+      const active = button.dataset.power === power && !GLOBAL_POWERS.has(power);
       button.classList.toggle('active', active);
       button.setAttribute('aria-pressed', String(active));
     });
@@ -461,115 +925,232 @@ import Base from '../../layouts/Base.astro';
     $('intro').classList.add('gone');
   }
 
+  function handleForestEvent(event: ForestEvent) {
+    if (event.kind === 'birth') audio.chime('birth');
+    else if (event.kind === 'death') audio.chime('death');
+    else if (event.kind === 'bond') audio.chime('bond');
+    else if (event.kind === 'milestone') audio.chime('milestone');
+    if ((event.kind === 'weather' && /风暴|雷暴/.test(event.text)) || (event.kind === 'divine' && /雷暴|神雷/.test(event.text))) audio.chime('thunder');
+  }
+
+  function showFatal(error: unknown) {
+    paused = true;
+    $('veil').hidden = true;
+    $('fatal').hidden = false;
+    $('fatal-message').textContent = error instanceof Error ? error.message : '浏览器无法继续绘制这片森林。';
+    audio.setHidden(true);
+  }
+
   let scene: ReturnType<typeof createForestScene>;
   try {
     scene = createForestScene(canvas, world, {
-    onTick: updateHud,
-    onSelect(id) { selectedId = id; scene.select(id); updateInspector(); if (id !== null) $('intro').classList.add('gone'); },
-    onPower(x, y) {
-      const result = applyPower(world, currentPower, x, y);
-      if (result.ok) { audio.chime('divine'); saveWorld(); updateHud(); }
-      return result;
-    },
-    onMessage: announce,
-    onEvent(event) { if (event.kind === 'birth') audio.chime('birth'); else if (event.kind === 'death') audio.chime('death'); },
+      onTick: updateHud,
+      onSelect(id) { selectEntity(id); },
+      onPower(x, y) { return castPower(currentPower, x, y); },
+      onMessage: announce,
+      onEvent: handleForestEvent,
+      onFollow(id) { followingId = id; updateFollowButton(); },
+      onError(error) { setPaused(true); showFatal(error); },
     });
   } catch (error) {
-    $('veil').hidden = true;
-    $('fatal').hidden = false;
-    $('fatal-message').textContent = error instanceof Error ? error.message : '浏览器无法创建画布。';
+    showFatal(error);
     throw error;
   }
 
   document.querySelectorAll<HTMLButtonElement>('[data-power]').forEach(button => {
     button.addEventListener('click', () => {
       const power = button.dataset.power as Power;
-      if (power === 'rain' || power === 'sun' || power === 'storm') {
-        const result = applyPower(world, power);
-        announce(result.message, result.ok);
-        if (result.ok) { audio.chime('divine'); saveWorld(); updateHud(); }
-      } else selectPower(power);
-    });
+      if (GLOBAL_POWERS.has(power)) castPower(power);
+      else selectPower(power);
+    }, { signal: pageListeners.signal });
   });
+
+  $('chronicle').addEventListener('click', event => {
+    if (!(event.target instanceof Element)) return;
+    const tab = event.target.closest<HTMLButtonElement>('[data-chronicle-tab]');
+    if (tab) { setChronicleTab(tab.dataset.chronicleTab as ChronicleTab); return; }
+    const entityEntry = event.target.closest<HTMLButtonElement>('[data-entity-id]');
+    if (entityEntry) { selectEntity(Number(entityEntry.dataset.entityId), true); return; }
+    const eventEntry = event.target.closest<HTMLButtonElement>('[data-event-id]');
+    if (!eventEntry) return;
+    const forestEvent = world.events.find(item => item.id === Number(eventEntry.dataset.eventId));
+    if (!forestEvent) return;
+    if (forestEvent.entityId !== undefined && (findEntity(world, forestEvent.entityId) || findMemorial(world, forestEvent.entityId))) {
+      selectEntity(forestEvent.entityId, true);
+    } else {
+      scene.focus(forestEvent.x, forestEvent.y, 1.7);
+      $('chronicle').classList.remove('open');
+      $('intro').classList.add('gone');
+    }
+  }, { signal: pageListeners.signal });
+
+  document.querySelector('.fg-chronicle-tabs')?.addEventListener('keydown', event => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const tabs = Array.from(document.querySelectorAll<HTMLButtonElement>('[data-chronicle-tab]'));
+    const current = tabs.findIndex(tab => tab.dataset.chronicleTab === chronicleTab);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1
+      : (current + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length;
+    event.preventDefault();
+    setChronicleTab(tabs[next].dataset.chronicleTab as ChronicleTab);
+    tabs[next].focus();
+  }, { signal: pageListeners.signal });
+
+  $('entity-inspector').addEventListener('click', event => {
+    if (!(event.target instanceof Element)) return;
+    const relation = event.target.closest<HTMLButtonElement>('[data-related-id]');
+    if (relation) selectEntity(Number(relation.dataset.relatedId), true);
+  }, { signal: pageListeners.signal });
+
+  $('btn-bond').addEventListener('click', async () => {
+    const entity = findEntity(world, selectedId);
+    if (!entity?.alive || entity.bond) return;
+    if (livingBonds().length >= bondCapacity(world)) {
+      announce('当前神眷已满。完成「初见神眷」与「血脉新生」心愿，可维系更多纽带。', false);
+      return;
+    }
+    const id = entity.id;
+    const requestedName = await promptDialog(`与${entity.name}结缘`, '为它写下名字（最多 12 字）', entity.name);
+    if (requestedName === null || disposed) return;
+    const result = bondEntity(world, id, requestedName);
+    announce(result.message, result.ok);
+    if (result.ok) {
+      scene.celebrateBond(id);
+      queueSave();
+      updateHud();
+    }
+  }, { signal: pageListeners.signal });
+
+  $('btn-rename').addEventListener('click', async () => {
+    const entity = findEntity(world, selectedId);
+    if (!entity?.alive || !entity.bond) return;
+    const id = entity.id;
+    const requestedName = await promptDialog(`为${entity.bond.name}改名`, '新的名字（最多 12 字）', entity.bond.name);
+    if (requestedName === null || disposed) return;
+    const result = renameBond(world, id, requestedName);
+    announce(result.message, result.ok);
+    if (result.ok) { audio.chime('click'); queueSave(); updateHud(); }
+  }, { signal: pageListeners.signal });
 
   function setPaused(next: boolean) {
-    paused = next; scene.setPaused(paused);
+    paused = next;
+    scene.setPaused(paused);
     $('btn-pause').setAttribute('aria-pressed', String(paused));
-    $('btn-pause').innerHTML = paused ? '▶ <span>继续</span>' : 'Ⅱ <span>暂停</span>';
+    $('btn-pause').title = paused ? '继续时间（空格键）' : '暂停时间（空格键）';
+    const label = document.createElement('span');
+    label.textContent = paused ? '继续' : '暂停';
+    $('btn-pause').replaceChildren(document.createTextNode(paused ? '▶ ' : 'Ⅱ '), label);
   }
-  $('btn-pause').addEventListener('click', () => setPaused(!paused));
+  $('btn-pause').addEventListener('click', () => setPaused(!paused), { signal: pageListeners.signal });
   document.querySelectorAll<HTMLButtonElement>('[data-speed]').forEach(button => button.addEventListener('click', () => {
     speed = Number(button.dataset.speed); scene.setSpeed(speed); setPaused(false);
-    document.querySelectorAll('[data-speed]').forEach(b => b.classList.toggle('active', b === button));
-  }));
-  $('zoom-in').addEventListener('click', () => scene.zoomBy(1.25));
-  $('zoom-out').addEventListener('click', () => scene.zoomBy(0.8));
-  $('zoom-reset').addEventListener('click', () => scene.resetView());
-  $('dismiss-intro').addEventListener('click', () => $('intro').classList.add('gone'));
-  $('close-inspector').addEventListener('click', () => { selectedId = null; scene.select(null); updateInspector(); });
+    document.querySelectorAll('[data-speed]').forEach(other => other.classList.toggle('active', other === button));
+  }, { signal: pageListeners.signal }));
+  $('zoom-in').addEventListener('click', () => scene.zoomBy(1.25), { signal: pageListeners.signal });
+  $('zoom-out').addEventListener('click', () => scene.zoomBy(0.8), { signal: pageListeners.signal });
+  $('zoom-reset').addEventListener('click', () => scene.resetView(), { signal: pageListeners.signal });
+  $('dismiss-intro').addEventListener('click', () => $('intro').classList.add('gone'), { signal: pageListeners.signal });
+  $('close-inspector').addEventListener('click', () => selectEntity(null), { signal: pageListeners.signal });
   $('btn-follow').addEventListener('click', () => {
-    const entity = findEntity(world, selectedId); if (entity) scene.focus(entity.x, entity.y, 2);
-  });
-  $('btn-chronicle').addEventListener('click', () => $('chronicle').classList.toggle('open'));
-  $('close-chronicle').addEventListener('click', () => $('chronicle').classList.remove('open'));
+    const entity = findEntity(world, selectedId);
+    if (!entity?.alive) return;
+    if (followingId === entity.id) scene.follow(null);
+    else { scene.select(entity.id); scene.follow(entity.id); }
+    updateFollowButton();
+  }, { signal: pageListeners.signal });
+  $('btn-chronicle').addEventListener('click', () => {
+    $('chronicle').classList.toggle('open');
+    if ($('chronicle').classList.contains('open')) updateChronicle(true);
+  }, { signal: pageListeners.signal });
+  $('close-chronicle').addEventListener('click', () => $('chronicle').classList.remove('open'), { signal: pageListeners.signal });
 
   function showHelp(show: boolean) { $('help').hidden = !show; if (show) $('close-help').focus(); }
-  $('btn-help').addEventListener('click', () => showHelp(true));
-  $('close-help').addEventListener('click', () => showHelp(false));
-  $('close-help-bottom').addEventListener('click', () => showHelp(false));
-  $('help').addEventListener('click', event => { if (event.target === $('help')) showHelp(false); });
+  $('btn-help').addEventListener('click', () => showHelp(true), { signal: pageListeners.signal });
+  $('close-help').addEventListener('click', () => showHelp(false), { signal: pageListeners.signal });
+  $('close-help-bottom').addEventListener('click', () => showHelp(false), { signal: pageListeners.signal });
+  $('help').addEventListener('click', event => { if (event.target === $('help')) showHelp(false); }, { signal: pageListeners.signal });
   $('btn-new-world').addEventListener('click', async () => {
     const confirmed = await confirmDialog('让另一枚世界种子发芽？', '当前森林会被覆盖。它的历史将只留在你保存过的留影里。', '另创世界');
-    if (!confirmed) return;
+    if (!confirmed || disposed) return;
+    preserveRejectedSave = false;
+    loadWarning = null;
     world = createWorld((Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0);
-    selectedId = null; scene.setWorld(world); saveWorld(); showHelp(false); selectPower('inspect'); updateHud();
+    selectedId = null; followingId = null; inspectorSignature = '';
+    for (const tab of Object.keys(chronicleSignatures) as ChronicleTab[]) chronicleSignatures[tab] = '';
+    scene.setWorld(world);
+    queueSave();
+    showHelp(false); selectPower('inspect'); updateHud();
     announce('新的风、新的河流、新的生命。另一部自然史开始了。');
-  });
+  }, { signal: pageListeners.signal });
   $('btn-sound').addEventListener('click', async () => {
     soundOn = await audio.toggle();
+    if (disposed) return;
     $('btn-sound').setAttribute('aria-pressed', String(soundOn));
     $('btn-sound').title = soundOn ? '关闭环境声' : '开启环境音';
     announce(soundOn ? '风、雨与鸟鸣已被唤醒。' : '森林重归无声。');
-  });
+  }, { signal: pageListeners.signal });
   $('btn-photo').addEventListener('click', async () => {
     const blob = await scene.snapshot();
+    if (disposed) return;
     if (blob) { download(`森林之神-第${Math.floor(world.time) + 1}日.png`, blob, 'image/png'); announce('这一刻的森林，已经收进留影。'); }
     else announce('浏览器未能保存这张留影。', false);
-  });
+  }, { signal: pageListeners.signal });
   $('btn-full').addEventListener('click', async () => {
     try {
       if (document.fullscreenElement) await document.exitFullscreen();
       else await document.documentElement.requestFullscreen();
     } catch { announce('这个浏览器暂不支持全屏。', false); }
-  });
+  }, { signal: pageListeners.signal });
 
   document.addEventListener('keydown', event => {
     const target = event.target as HTMLElement | null;
-    if (target && ['INPUT','TEXTAREA','SELECT'].includes(target.tagName)) return;
+    if (target && (['INPUT','TEXTAREA','SELECT'].includes(target.tagName) || target.isContentEditable)) return;
     if (event.key === 'Escape') { showHelp(false); $('chronicle').classList.remove('open'); selectPower('inspect'); return; }
     if (!$('help').hidden) return;
     if (event.code === 'Space') { event.preventDefault(); setPaused(!paused); return; }
-    const powers: Record<string, Power> = { '1':'inspect', '2':'rain', '3':'sun', '4':'storm', '5':'bless', '6':'lightning' };
+    const powers: Record<string, Power> = { '1':'inspect', '2':'rain', '3':'sun', '4':'storm', '5':'bless', '6':'lightning', '7':'mist', '8':'snow', '9':'aurora' };
     const power = powers[event.key];
     if (power) {
-      if (power === 'rain' || power === 'sun' || power === 'storm') {
-        const result = applyPower(world, power); announce(result.message, result.ok); if (result.ok) updateHud();
-      } else selectPower(power);
+      event.preventDefault();
+      if (GLOBAL_POWERS.has(power)) castPower(power);
+      else selectPower(power);
     }
     if (event.key === '0') scene.resetView();
     if (event.key === '+' || event.key === '=') scene.zoomBy(1.2);
     if (event.key === '-') scene.zoomBy(0.8);
-  });
+  }, { signal: pageListeners.signal });
 
-  window.addEventListener('pagehide', saveWorld);
-  document.addEventListener('visibilitychange', () => { if (document.hidden) saveWorld(); });
-  document.addEventListener('astro:before-swap', () => { saveWorld(); scene.dispose(); audio.dispose(); }, { once:true });
+  window.addEventListener('pagehide', flushSave, { signal: pageListeners.signal });
+  document.addEventListener('visibilitychange', () => {
+    audio.setHidden(document.hidden);
+    if (document.hidden) flushSave();
+  }, { signal: pageListeners.signal });
+  document.addEventListener('astro:before-swap', () => {
+    if (disposed) return;
+    flushSave();
+    disposed = true;
+    pageListeners.abort();
+    scene.dispose();
+    audio.dispose();
+    cancelAnimationFrame(veilFrame);
+    if (veilTimer !== null) clearTimeout(veilTimer);
+    if (introTimer !== null) clearTimeout(introTimer);
+  }, { once:true, signal:pageListeners.signal });
+
+  audio.setHidden(document.hidden);
   updateHud();
-  requestAnimationFrame(() => $('veil').classList.add('lit'));
-  setTimeout(() => $('veil').remove(), 1100);
-  setTimeout(() => $('intro').classList.add('gone'), 10000);
-  // 仅测试模式暴露只读诊断与固定推进接口，不影响正常沙盒。
+  if (loadWarning) { $('announce').textContent = loadWarning; toast(loadWarning, 6500); }
+  veilFrame = requestAnimationFrame(() => $('veil').classList.add('lit'));
+  veilTimer = window.setTimeout(() => { $('veil').remove(); veilTimer = null; }, 1100);
+  introTimer = window.setTimeout(() => { $('intro').classList.add('gone'); introTimer = null; }, 10000);
+  // 仅测试模式暴露真实诊断与固定推进接口，不影响正常沙盒。
   if (new URLSearchParams(location.search).has('test')) {
-    Object.assign(window, { __forestGod: { world: () => world, step: (n = 1) => { for (let i=0;i<n;i++) stepWorld(world); updateHud(); }, render: () => scene.renderOnce(), stats: () => worldStats(world), selectPower } });
+    Object.assign(window, { __forestGod: {
+      world: () => world,
+      step: (n = 1) => { for (let i=0;i<n;i++) stepWorld(world); updateHud(); },
+      render: () => scene.renderOnce(),
+      stats: () => worldStats(world),
+      selectPower,
+      diagnostics: () => scene.diagnostics(),
+    } });
   }
 </script>

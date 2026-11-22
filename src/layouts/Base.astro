@@ -45,7 +45,7 @@ const canonical = new URL(Astro.url.pathname, Astro.site).href;
     <div class="toast-box" id="toast-box"></div>
     <script>
       // PWA 注册（仅生产环境，开发时避免缓存干扰）
-      if ('serviceWorker' in navigator && location.hostname !== 'localhost') {
+      if ('serviceWorker' in navigator && import.meta.env.PROD) {
         addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
       }
     </script>
