@@ -43,7 +43,6 @@ export const TOOLS: Tool[] = [
   { key: 'seal', name: '印章生成器', desc: '朱文白文，一方小印。输入名字，得一枚 SVG 闲章。', icon: '印', category: 'create', since: '2026-11' },
   { key: 'endtime', name: '时间的尽头', desc: '一座巨钟坍缩成黑洞：引力透镜、时间膨胀双时钟、潮汐撕裂、霍金辐射、彭罗斯弹弓，按住倒流至 t=0 见证宇宙重生。', icon: '終', category: 'create', since: '2026-11', featured: true },
   { key: 'cosmos', name: '宇宙漫游', desc: '从地球出发驾驶视角漫游太阳系：九大天体按真实 J2000 轨道根数运行，土星环、小行星带、流星雨与五个漂浮彩蛋。', icon: '宇', category: 'play', since: '2026-11', featured: true },
-  { key: 'forest', name: '深林', desc: '第一人称走进童话绘本式高密度森林：群落巨木、三级叶冠、厚苔地被、立体花菌、河与瀑布，林窗光影随漫步流转，藏五处秘境。', icon: '森', category: 'play', since: '2026-11', featured: true },
   { key: 'party', name: '聚会抽奖分组', desc: '随机分组、幸运轮盘抽奖、名单记忆，聚会不冷场。', icon: '聚', category: 'create', since: '2026-11' },
   { key: 'pomodoro', name: '玄墨番茄钟', desc: '专注二十五分钟，歇五分钟。今日番茄数本地累计。', icon: '茄', category: 'create', since: '2026-11' },
 
