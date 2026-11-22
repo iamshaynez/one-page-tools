@@ -1,6 +1,6 @@
 import { ANIMAL_RULES } from './forest-god-content';
 import type { WeatherKind } from './forest-god-content';
-import type { Animal, Memorial, Plant } from './forest-god-core';
+import type { Animal, Memorial, Plant, WorldStructure } from './forest-god-core';
 
 export interface SpriteEnvironment {
   time: number;
@@ -1124,6 +1124,109 @@ function drawFrog(p: Pen, animal: Animal, pose: Pose, env: SpriteEnvironment): v
   if (pose.courting) courtMark(p, -11 + hop);
 }
 
+function drawBeaver(p: Pen, animal: Animal, pose: Pose): void {
+  const dark = (animal.variant & 1) === 0 ? '#493942' : '#423c43';
+  const fur = (animal.variant & 1) === 0 ? '#916b4d' : '#80634e';
+  const light = pose.juvenile ? '#c49a6b' : '#b3885e';
+  const tail = (animal.variant & 1) === 0 ? '#705043' : '#66504a';
+  const settled = pose.resting || pose.sheltering;
+  const felling = pose.behavior === 'fell';
+  const building = pose.behavior === 'build';
+  const digging = pose.behavior === 'dig';
+  const working = felling || building || digging;
+  const low = pose.drinking || pose.feeding || pose.grooming || digging || felling;
+  const body = (settled || pose.hunting || digging ? -4 : pose.fleeing ? -5 : -6)
+    + pose.bob + pose.breath + pose.hop;
+  const bodyX = pose.juvenile ? -6 : -7;
+  const bodyW = pose.juvenile ? 12 : 14;
+  const tailX = pose.juvenile ? -13 : -15;
+  const tailW = pose.juvenile ? 7 : 9;
+  // The broad, cross-hatched paddle is a silhouette, not a thin canine tail.
+  const tailY = settled ? (pose.sheltering ? -2 : -3)
+    : pose.alert ? body - 5
+      : pose.playing ? body - 2 + pose.twitch
+        : working ? -3 : body + 1 + (pose.hunting ? 1 : 0);
+  px(p, dark, tailX, tailY, tailW, settled ? 3 : 4);
+  px(p, tail, tailX + 1, tailY - (settled ? 0 : 1), tailW - 2, settled ? 2 : 3);
+  px(p, C.barkLight, tailX + 1, tailY + (settled ? 0 : 1), 2, 1);
+  px(p, dark, tailX + 3, tailY, 1, 1);
+  px(p, dark, tailX + 5, tailY + 1, 1, 1);
+  if (!settled) {
+    const rear = bodyX + 2 - pose.gait;
+    const front = bodyX + bodyW - 4 + pose.gait;
+    px(p, dark, rear, -2, 3, 2);
+    px(p, dark, front, -2, 3, 2);
+    px(p, fur, bodyX + 4 + pose.gait, -1, 2, 1);
+    px(p, fur, bodyX + bodyW - 2 - pose.gait, -1, 2, 1);
+    if (pose.fleeing) {
+      px(p, dark, bodyX - 2, -1, 5, 1);
+      px(p, dark, bodyX + bodyW - 1, -1, 5, 1);
+    }
+  } else {
+    px(p, dark, bodyX + 1, -1, bodyW - 1, 1);
+    px(p, light, bodyX + bodyW - 4, -1, 3, 1);
+  }
+  px(p, dark, bodyX, body, bodyW, 4);
+  px(p, fur, bodyX + 1, body - 1, bodyW - 2, 4);
+  px(p, light, bodyX + 3, body - 1, bodyW - 6, 1);
+  px(p, C.cream, bodyX + bodyW - 4, body + 2, 3, 1);
+
+  const hx = low || pose.hunting ? (pose.juvenile ? 4 : 5) : (pose.juvenile ? 3 : 4);
+  const hy = low ? -3 : settled ? body - (pose.sheltering ? 1 : 2)
+    : body - 4 - (pose.alert || pose.courting ? 1 : 0);
+  if (animal.wood > 0) {
+    // A carried branch sits in the mouth and forepaws, with a pale cut end.
+    const ly = Math.max(body - 1, Math.min(-2, hy + 3));
+    px(p, C.violet, hx + 1, ly, 9, 2);
+    px(p, C.bark, hx + 2, ly, 7, 1);
+    px(p, C.barkLight, hx + 3, ly - 1, 3, 1);
+    px(p, C.warm, hx + 9, ly, 1, 2);
+    px(p, C.cream, hx + 9, ly, 1, 1);
+  }
+
+  const earLift = pose.alert && !low ? 1 : 0;
+  px(p, dark, hx - 1, hy, 6, 4);
+  px(p, fur, hx, hy - 1, 5, 4);
+  px(p, dark, hx, hy - 2 - earLift, 2, 2 + earLift);
+  px(p, fur, hx + 3, hy - 2 + (settled ? 0 : pose.twitch), 2, 2 - (settled ? 0 : pose.twitch));
+  px(p, light, hx + 3, hy - 2 + (settled ? 0 : pose.twitch), 1, 1);
+  px(p, light, hx + 3, hy + 1, 3, 2);
+  px(p, C.eye, hx + 5, hy + 1, 1, 1);
+  // Paired incisors stay visible even when the animal is not gnawing.
+  px(p, C.cream, hx + 4, hy + 2, 1, 2);
+  px(p, C.warm, hx + 5, hy + 2, 1, 2);
+  eye(p, hx + 2, hy, settled || pose.blink);
+
+  if (pose.grooming) {
+    px(p, light, hx + 1, -1, 4, 1);
+    px(p, C.warm, hx + 3, -2, 2, 1);
+  }
+  if (pose.playing && !settled) {
+    px(p, light, hx + pose.gait, -2, 3, 1);
+    px(p, C.water, tailX - 1, tailY - 2, 1, 2);
+    px(p, C.mint, tailX - 2, tailY - 3, 1, 1);
+  }
+  if (pose.feeding) px(p, C.mint, hx + 6, hy + 3, 3, 1);
+  if (building) {
+    px(p, light, hx, -2, 4, 1);
+    px(p, C.barkLight, hx + 6, -3 + (pose.frame & 1), 1, 1);
+    px(p, C.gold, hx + 8, -5 + (pose.frame & 1), 1, 1);
+  }
+  if (felling) {
+    px(p, C.barkLight, hx + 7, -1, 2, 1);
+    px(p, C.warm, hx + 7, -4 + (pose.frame & 1), 1, 2);
+    px(p, C.cream, hx + 9, -2 - (pose.frame & 1), 1, 1);
+  }
+  if (digging) {
+    px(p, light, hx + 1 + Math.sign(pose.gait), -1, 4, 1);
+    px(p, C.bark, hx + 6, -1, 3, 1);
+    px(p, C.deadLight, hx + 8, -3 + (pose.frame & 1), 2, 1);
+    px(p, C.barkLight, hx + 10, -1 - (pose.frame & 1), 1, 1);
+  }
+  if (pose.drinking) drinkRipple(p, hx + 7);
+  if (pose.courting) courtMark(p, -16 + pose.hop);
+}
+
 function drawDeadAnimal(p: Pen, animal: Animal): void {
   const decay = clamp01(Math.max(0, animal.deadFor) / 2.2);
   const dark = decay > 0.55 ? C.violet : '#514451';
@@ -1170,6 +1273,18 @@ function drawDeadAnimal(p: Pen, animal: Animal): void {
       px(p, dark, -8, -1, 5, 1);
       px(p, dark, 5, -1, 5, 1);
       break;
+    case 'beaver':
+      px(p, dark, -7, flat ? -2 : -4, 13, flat ? 2 : 4);
+      px(p, mid, 3, -4, 6, 3);
+      // Even a collapsed corpse keeps the unmistakable paddle tail.
+      px(p, dark, -15, -2, 9, 2);
+      px(p, mid, -13, -3, 5, 1);
+      px(p, C.deadLight, 7, -2, 3, 1);
+      if (!flat) {
+        px(p, C.cream, 8, -3, 1, 1);
+        px(p, dark, -11, -2, 1, 1);
+      }
+      break;
   }
   if (decay > 0.82) px(p, C.violet, -2, 0, 5, 1);
 }
@@ -1182,6 +1297,7 @@ function animalMarkTop(animal: Animal, pose: Pose): number {
     case 'wolf': return -18 + pose.hop;
     case 'bee': return -12 + pose.bob + pose.hop;
     case 'frog': return -13 + pose.hop;
+    case 'beaver': return (pose.alert ? -18 : pose.resting || pose.sheltering ? -12 : -15) + pose.hop;
   }
 }
 
@@ -1255,8 +1371,177 @@ export function drawAnimal(
       case 'wolf': drawWolf(p, animal, pose); break;
       case 'bee': drawBee(p, animal, pose); break;
       case 'frog': drawFrog(p, animal, pose, env); break;
+      case 'beaver': drawBeaver(p, animal, pose); break;
     }
     drawAnimalIdentity(p, animal, pose, env);
+  } finally {
+    ctx.restore();
+  }
+}
+
+const DAM_LOGS: readonly (readonly [number, number, number, number])[] = [
+  [-13, -2, 26, 3],
+  [-9, -5, 3, 5], [7, -5, 3, 5],
+  [-11, -5, 23, 3],
+  [-5, -8, 3, 5], [4, -8, 3, 5],
+  [-12, -8, 24, 3],
+];
+
+function drawDamLog(
+  p: Pen,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  damaged: boolean,
+): void {
+  const mid = damaged ? C.deadLight : C.bark;
+  const light = damaged ? C.dead : C.barkLight;
+  px(p, C.violet, x, y, w, h);
+  if (h > w) {
+    // Upright cross-ties pass over one course and under the next.
+    px(p, mid, x + 1, y + 1, w - 1, h - 1);
+    px(p, light, x + 1, y + 1, 1, h - 2);
+    px(p, C.warm, x + 1, y, w - 1, 1);
+    if (damaged) px(p, C.ink, x, y + Math.floor(h / 2), w, 1);
+  } else {
+    px(p, mid, x + 1, y, w - 2, h - 1);
+    px(p, light, x + 2, y, w - 4, 1);
+    px(p, C.warm, x, y + 1, 1, h - 1);
+    px(p, C.warm, x + w - 1, y + 1, 1, h - 1);
+    if (damaged) {
+      px(p, C.ink, x + Math.floor(w * 0.55), y, 1, 2);
+      px(p, C.deadLight, x + Math.floor(w * 0.55) + 1, y + 1, 2, 1);
+    }
+  }
+}
+
+function drawBurrow(p: Pen, structure: WorldStructure, env: SpriteEnvironment): void {
+  const progress = clamp01(structure.progress);
+  const integrity = clamp01(structure.integrity);
+  const rain = rainFor(env);
+  const rimHalf = 5 + Math.round(progress * 4);
+  const rimW = rimHalf * 2;
+  const soilDark = rain > 0.45 ? C.violet : '#514348';
+  const soil = rain > 0.45 ? C.bark : '#80634c';
+  px(p, soilDark, -rimHalf - 1, -2, rimW + 2, 3);
+  px(p, soil, -rimHalf, -3, rimW, 3);
+  if (progress > 0.2) px(p, soil, -rimHalf + 2, -4, rimW - 4, 2);
+  if (progress > 0.65) px(p, soil, -rimHalf + 4, -5, rimW - 8, 1);
+  px(p, C.deadLight, -rimHalf + 2, -3, 3, 1);
+  px(p, C.barkLight, rimHalf - 4, -2, 3, 1);
+  px(p, soilDark, -rimHalf - 2, 0, 3, 1);
+  px(p, soilDark, rimHalf - 1, 0, 3, 1);
+
+  // A shallow scrape grows into an arched, unmistakably dark entrance.
+  const holeW = 2 + Math.round(progress * 6);
+  const holeH = 1 + Math.round(progress * 3);
+  const holeX = -Math.floor(holeW / 2);
+  px(p, C.ink, holeX, -holeH, holeW, holeH);
+  if (progress > 0.55) px(p, C.ink, holeX + 1, -holeH - 1, holeW - 2, 1);
+  px(p, C.deadLight, holeX - 2, -2, 2, 1);
+  px(p, C.barkLight, holeX + holeW, -2, 2, 1);
+  if (integrity < 0.75) {
+    px(p, soilDark, -rimHalf + 3, -4, 1, 2);
+    px(p, C.dead, rimHalf - 3, -2, 2, 1);
+  }
+  if (integrity < 0.35) {
+    px(p, C.ink, holeX + holeW - 2, -holeH, 2, 2);
+    px(p, soil, holeX + holeW + 1, 0, 3, 1);
+  }
+  if (progress < 1) {
+    px(p, C.deadLight, -rimHalf - 2, -1, 2, 1);
+    px(p, C.barkLight, rimHalf + 1, -1, 2, 1);
+  }
+  if (rain > 0.12) {
+    px(p, C.water, holeX + 1, 0, Math.max(1, holeW - 2), 1);
+    px(p, C.water, -rimHalf + 3, -5, 1, 2);
+    if (rain > 0.65) px(p, C.cream, rimHalf - 4, -3, 1, 1);
+  }
+  const snow = snowFor(env);
+  if (snow > 0.12) {
+    const capY = progress > 0.65 ? -6 : progress > 0.2 ? -5 : -4;
+    const capW = snowWidth(rimW - 6, snow);
+    px(p, C.snowShade, -rimHalf + 3, capY + 1, capW, 1);
+    px(p, C.snow, -rimHalf + 3, capY, capW, 1);
+    if (snow > 0.6) {
+      px(p, C.snowShade, -rimHalf - 1, 0, snowWidth(5, snow), 1);
+      px(p, C.snow, rimHalf - 3, 0, snowWidth(4, snow), 1);
+    }
+  }
+}
+
+function drawDam(p: Pen, structure: WorldStructure, env: SpriteEnvironment): void {
+  const progress = clamp01(structure.progress);
+  const integrity = clamp01(structure.integrity);
+  const rain = rainFor(env);
+  const snow = snowFor(env);
+  px(p, C.violet, -15, -1, 30, 2);
+  px(p, C.water, -16, 0, 9, 1);
+  px(p, C.water, 8, 0, 8, 1);
+  // The two driven stakes make a new building site readable before log one.
+  px(p, C.violet, -15, -5, 2, 6);
+  px(p, C.bark, -14, -5, 1, 5);
+  px(p, C.violet, 13, -5, 2, 6);
+  px(p, C.barkLight, 13, -5, 1, 4);
+
+  const built = Math.ceil(progress * DAM_LOGS.length);
+  const damageCount = Math.ceil((1 - integrity) * 4);
+  for (let i = 0; i < built; i++) {
+    if (integrity < 0.18 && i === DAM_LOGS.length - 1) continue;
+    const log = DAM_LOGS[i];
+    drawDamLog(p, log[0], log[1], log[2], log[3], i < damageCount);
+  }
+  if (built === DAM_LOGS.length && integrity < 0.35) {
+    if (integrity >= 0.18) {
+      // A dark, wet breach reads differently from the regular log end grain.
+      px(p, C.ink, -2, -8, 4, 2);
+      px(p, C.water, -1, -7, 2, 1);
+    }
+    px(p, C.violet, 10, 0, 7, 1);
+    px(p, C.deadLight, 11, -1, 5, 1);
+  }
+  if (progress < 1 && !env.paused && !env.reducedMotion) {
+    const frame = mod4(Math.floor(env.time * 6) + structure.id);
+    px(p, C.barkLight, 15 + (frame & 1), -3 - (frame >> 1), 1, 1);
+    px(p, C.warm, 17 - (frame & 1), -1 - (frame >> 1), 1, 1);
+  }
+  if (rain > 0.1) {
+    px(p, C.water, -14, 1, 6, 1);
+    px(p, C.cream, 9, 1, 4, 1);
+    if (built > 0) {
+      const top = DAM_LOGS[built - 1];
+      px(p, C.water, top[0] + 2, top[1] - 1, 1, 2);
+      if (rain > 0.7) px(p, C.cream, top[0] + 4, top[1] - 2, 1, 1);
+    }
+  }
+  if (snow > 0.12) {
+    for (let i = 0; i < built; i++) {
+      const log = DAM_LOGS[i];
+      if (log[3] > log[2] || (integrity < 0.18 && i === DAM_LOGS.length - 1)) continue;
+      const capW = snowWidth(log[2] - 4, snow);
+      px(p, C.snowShade, log[0] + 2, log[1], capW, 1);
+      px(p, C.snow, log[0] + 2, log[1] - 1, capW, 1);
+    }
+  }
+}
+
+export function drawStructure(
+  ctx: CanvasRenderingContext2D,
+  structure: WorldStructure,
+  x: number,
+  y: number,
+  z: number,
+  env: SpriteEnvironment,
+): void {
+  ctx.save();
+  try {
+    ctx.imageSmoothingEnabled = false;
+    const p = at(ctx, x, y, z, 1, (structure.id & 1) === 1);
+    switch (structure.kind) {
+      case 'burrow': drawBurrow(p, structure, env); break;
+      case 'dam': drawDam(p, structure, env); break;
+    }
   } finally {
     ctx.restore();
   }

@@ -1,8 +1,8 @@
 import { ANIMAL_RULES, PLANT_RULES, WORLD_H, WORLD_W, clamp } from './forest-god-content';
 import type { Power } from './forest-god-content';
-import { BIOME, environmentAt, findEntity, hash2, isLand, stepWorld, tileAt } from './forest-god-core';
+import { BIOME, environmentAt, findEntity, hash2, isLand, isWater, stepWorld, tileAt } from './forest-god-core';
 import type { ActionResult, Animal, ForestEvent, Plant, World } from './forest-god-core';
-import { drawAnimal, drawMemorial, drawPlant, plantPixelHeight } from './forest-god-sprites';
+import { drawAnimal, drawMemorial, drawPlant, drawStructure, plantPixelHeight } from './forest-god-sprites';
 import type { SpriteEnvironment } from './forest-god-sprites';
 import { createWeatherVisual, interpolatePosition, lerp, updateWeatherVisual } from './forest-god-motion';
 
@@ -134,7 +134,9 @@ export function createForestScene(canvas: HTMLCanvasElement, initialWorld: World
     const baseIndex = biome === BIOME.FOREST ? 1 : biome === BIOME.BANK ? 2 : biome === BIOME.ROCK ? 4 : 0;
     const base = GROUND[season][baseIndex];
     const ground = wet > 0.68 && biome !== BIOME.BANK && biome !== BIOME.ROCK ? season === 3 ? '#929f91' : '#5f7d5c' : base;
-    return mixColor(ground, '#d7ded4', weatherVisual.snow * 0.84);
+    const snowed = mixColor(ground, '#d7ded4', weatherVisual.snow * 0.84);
+    const trail = clamp(world.terrain.trail[y * WORLD_W + x] / 170);
+    return mixColor(snowed, '#b7a37b', trail * 0.76);
   }
 
   function rebuildTerrain(): void {
@@ -252,8 +254,10 @@ export function createForestScene(canvas: HTMLCanvasElement, initialWorld: World
     const minX = Math.max(0, Math.floor(camera.x - width / z / 2) - 2), maxX = Math.min(WORLD_W - 1, Math.ceil(camera.x + width / z / 2) + 2);
     const minY = Math.max(0, Math.floor(camera.y - height / z / 2) - 2), maxY = Math.min(WORLD_H - 1, Math.ceil(camera.y + height / z / 2) + 2);
     for (let y = minY; y <= maxY; y++) for (let x = minX; x <= maxX; x++) {
-      const biome = world.terrain.biome[y * WORLD_W + x];
-      if (biome !== BIOME.WATER) {
+      const index = y * WORLD_W + x;
+      const biome = world.terrain.biome[index];
+      const flooded = biome !== BIOME.WATER && world.terrain.water[index] > 0.28;
+      if (biome !== BIOME.WATER && !flooded) {
         if (biome === BIOME.BANK && weatherVisual.rain > 0.25 && world.terrain.moisture[y * WORLD_W + x] > 0.65) {
           const nearRiver = [world.terrain.biome[y * WORLD_W + x - 1], world.terrain.biome[y * WORLD_W + x + 1], world.terrain.biome[(y - 1) * WORLD_W + x], world.terrain.biome[(y + 1) * WORLD_W + x]].includes(BIOME.WATER);
           if (nearRiver) {
@@ -264,8 +268,13 @@ export function createForestScene(canvas: HTMLCanvasElement, initialWorld: World
         ctx.globalAlpha = 1;
         continue;
       }
+      if (flooded || world.terrain.water[index] > 0.8) {
+        ctx.fillStyle = flooded ? '#6e9e9c' : '#517f89';
+        ctx.globalAlpha = flooded ? clamp(world.terrain.water[index] * 0.72) : 0.28;
+        ctx.fillRect(sx(x), sy(y), Math.max(2, Math.ceil(z)), Math.max(2, Math.ceil(z)));
+      }
       const h = hash2(world.seed + 811, x, y);
-      if ((frame + Math.floor(h * 10)) % 5 > 1) continue;
+      if ((frame + Math.floor(h * 10)) % 5 > 1) { ctx.globalAlpha = 1; continue; }
       const px = sx(x + h), py = sy(y + 0.25 + h * 0.5);
       ctx.fillStyle = '#b4d0c1';
       ctx.globalAlpha = 0.55;
@@ -283,13 +292,21 @@ export function createForestScene(canvas: HTMLCanvasElement, initialWorld: World
       const wx = (n * 17 + visualTime * (0.3 + n * 0.01)) % WORLD_W;
       const riverY = 40 + Math.sin(wx * 0.085 + world.seed * 0.001) * 6 + Math.sin(wx * 0.027) * 4;
       const wy = riverY + Math.sin(visualTime + n) * 0.7;
-      if (tileAt(world, wx, wy) >= 0 && world.terrain.biome[tileAt(world, wx, wy)] === BIOME.WATER) {
+      if (tileAt(world, wx, wy) >= 0 && isWater(world, wx, wy)) {
         const px = sx(wx), py = sy(wy);
         ctx.fillRect(px, py, Math.max(2, Math.floor(z * 0.55)), 1);
         ctx.fillRect(px - 1, py - 1, 1, 3);
       }
     }
     ctx.globalAlpha = 1;
+  }
+
+  function drawStructures(): void {
+    for (const structure of world.structures) {
+      const x = sx(structure.x), y = sy(structure.y);
+      if (x < -30 || y < -30 || x > width + 30 || y > height + 30) continue;
+      drawStructure(ctx, structure, x, y, scale(), spriteEnv());
+    }
   }
 
   function drawCloudShadows(): void {
@@ -331,6 +348,10 @@ export function createForestScene(canvas: HTMLCanvasElement, initialWorld: World
     } else if (behavior === 'play') {
       ctx.fillStyle = '#d7e6a2';
       ctx.fillRect(px - 2, py - 3, 1, 1); ctx.fillRect(px + 2, py - 5, 1, 1); ctx.fillRect(px + 4, py - 2, 1, 1);
+    } else if (behavior === 'dig' || behavior === 'fell' || behavior === 'build') {
+      ctx.fillStyle = '#dec181';
+      ctx.fillRect(px - 2, py - 4, 4, 2); ctx.fillRect(px + 1, py - 2, 1, 3);
+      ctx.fillRect(px - 3, py, 1, 1);
     } else if (behavior === 'court') {
       ctx.fillStyle = '#e9a0a8';
       ctx.fillRect(px - 1, py - 4, 1, 2); ctx.fillRect(px + 1, py - 4, 1, 2); ctx.fillRect(px, py - 3, 1, 2);
@@ -358,10 +379,11 @@ export function createForestScene(canvas: HTMLCanvasElement, initialWorld: World
       } else if ('behavior' in entity && entity.species !== 'bee') drawShadow(x, y + 1, Math.max(1, z * 0.45));
     }
     for (const animal of world.animals) {
-      if ((!animal.bond && animal.id !== selectedId) || animal.targetId === null || !['hunt', 'flee', 'seekFood', 'court', 'alert'].includes(animal.behavior)) continue;
-      const target = findEntity(world, animal.targetId);
+      const relevant = ['hunt', 'flee', 'seekFood', 'court', 'alert', 'fell', 'build', 'dig'].includes(animal.behavior);
+      if ((!animal.bond && animal.id !== selectedId) || !relevant || (animal.targetId === null && animal.structureId === null)) continue;
+      const target = animal.targetId !== null ? findEntity(world, animal.targetId) : world.structures.find(s => s.id === animal.structureId);
       if (!target) continue;
-      const from = renderPosition(animal), to = renderPosition(target);
+      const from = renderPosition(animal), to = 'kind' in target ? target : renderPosition(target);
       ctx.fillStyle = animal.behavior === 'hunt' ? '#d77b70' : animal.behavior === 'court' ? '#e5a3ad' : '#e4ce88';
       ctx.globalAlpha = 0.55;
       for (let n = 1; n < 12; n += 2) {
@@ -620,6 +642,7 @@ export function createForestScene(canvas: HTMLCanvasElement, initialWorld: World
     ctx.drawImage(terrainCanvas, sx(0), sy(0), Math.round(WORLD_W * z), Math.round(WORLD_H * z));
     drawWater();
     drawGroundWeather();
+    drawStructures();
     drawCloudShadows();
     drawEntities();
     drawFire();

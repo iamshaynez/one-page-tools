@@ -144,6 +144,7 @@ import Base from '../../layouts/Base.astro';
             <button class="fg-tool" data-power="wolf" title="灰狼 · 18 灵力"><i>狼</i><span>灰狼</span></button>
             <button class="fg-tool" data-power="bee" title="野蜂 · 5 灵力"><i>蜂</i><span>野蜂</span></button>
             <button class="fg-tool" data-power="frog" title="树蛙 · 7 灵力"><i>蛙</i><span>树蛙</span></button>
+            <button class="fg-tool" data-power="beaver" title="河狸 · 16 灵力"><i>狸</i><span>河狸</span></button>
           </div>
         </div>
         <div class="fg-tool-group">
@@ -165,10 +166,11 @@ import Base from '../../layouts/Base.astro';
         <div class="fg-help-grid">
           <div><b>01 · 观察</b><p>拖动平移，滚轮或双指缩放。观察手点选生命；纪事、神眷与纪念条目都能前往现场，档案里的血脉也可继续追溯。</p></div>
           <div><b>02 · 神眷</b><p>在万物档案中结缘并为生命命名。神眷会留下记忆、延续血脉；逝去后可从「纪念」重读它的一生。完成心愿可增加结缘上限。</p></div>
-          <div><b>03 · 心愿与天象</b><p>「心愿」记录生态目标。授粉解锁晨雾，神眷血脉延续三代解锁初雪；结缘后让十三类物种共存并迎来三次新生，可解锁极光。未解锁的神力会说明原因。</p></div>
+          <div><b>03 · 心愿与天象</b><p>「心愿」记录生态目标。授粉解锁晨雾，神眷血脉延续三代解锁初雪；结缘后让十四类物种共存并迎来三次新生，可解锁极光。未解锁的神力会说明原因。</p></div>
           <div><b>04 · 天气</b><p>雨滋润土壤并灭火，晴光促进生长也加速蒸发，雷暴可能落雷。晨雾减少蒸发，初雪抑制火焰并促使动物避寒，极光会被神眷铭记。</p></div>
           <div><b>05 · 生态灵力</b><p>灵力随世界日恢复。森林越健康、物种越丰富、草木越繁盛，恢复越快；神眷与拥有「辉光」天性的神眷也会提供额外灵力。</p></div>
           <div><b>06 · 等待与后果</b><p>1× 适合凝视，12× 适合跨越世代。捕食者太多猎物便会消失；荒芜没有失败结局，草木与迁徙仍能带来另一次开始。</p></div>
+          <div><b>07 · 生命的足迹</b><p>河狸啃树筑坝，蓄水形成真实的局部水域；野兔挖穴避害，鹿群踩出并沿用兽径。狼群共享猎物目标，兔、鹿与河狸取食浆果后会散播种子。</p></div>
         </div>
         <div class="fg-help-keys"><kbd>1</kbd>观察 <kbd>2</kbd>雨 <kbd>3</kbd>晴 <kbd>4</kbd>雷暴 <kbd>5</kbd>赐福 <kbd>6</kbd>落雷 <kbd>7</kbd>晨雾 <kbd>8</kbd>初雪 <kbd>9</kbd>极光 <kbd>Space</kbd>暂停 <kbd>0</kbd>归位</div>
         <div class="fg-help-actions"><button id="btn-new-world" class="fg-danger">另创一个世界</button><button id="close-help-bottom">继续凝视这片森林 →</button></div>
@@ -519,7 +521,7 @@ import Base from '../../layouts/Base.astro';
 
   const behaviorNames: Record<Animal['behavior'], string> = {
     wander:'游荡', rest:'休息', seekFood:'觅食', drink:'饮水', flee:'逃窜', hunt:'追猎', court:'求偶', follow:'跟随长辈',
-    alert:'警觉', groom:'梳理', play:'嬉戏', shelter:'躲避风雨',
+    alert:'警觉', groom:'梳理', play:'嬉戏', shelter:'躲避风雨', dig:'挖掘', fell:'伐木', build:'筑坝',
   };
   const weatherNames: Record<World['weather']['kind'], string> = { clear:'晴朗', rain:'降雨', storm:'雷暴', mist:'晨雾', snow:'初雪' };
   const powerHints = Object.fromEntries([

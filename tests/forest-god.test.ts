@@ -4,7 +4,7 @@ import {
 } from '../src/scripts/forest-god-content';
 import { OBJECTIVES, identityFor } from '../src/scripts/forest-god-identity';
 import {
-  BIOME, advanceWorld, applyPower, bondCapacity, bondEntity, createWorld, deserializeWorld, environmentAt, findMemorial, isLand, isUnlocked, renameBond, serializeWorld, spiritRegenRate, stepWorld, tileAt, worldStats,
+  BIOME, advanceWorld, applyPower, bondCapacity, bondEntity, createWorld, deserializeWorld, environmentAt, findMemorial, isLand, isWater, isUnlocked, nearWater, renameBond, serializeWorld, spiritRegenRate, stepWorld, tileAt, worldStats,
 } from '../src/scripts/forest-god-core';
 import type { Animal, Plant, World } from '../src/scripts/forest-god-core';
 
@@ -25,6 +25,20 @@ function isolatedWorld(): { world: World; land: { x: number; y: number; i: numbe
   world.weather = { kind: 'clear', remaining: 100 };
   world.time = 0.5;
   return { world, land };
+}
+
+function firstShore(world: World): { x: number; y: number; i: number } {
+  for (let y = 2; y < WORLD_H - 2; y++) for (let x = 2; x < WORLD_W - 2; x++) {
+    if (isLand(world, x + 0.5, y + 0.5) && nearWater(world, x + 0.5, y + 0.5, 3)) return { x: x + 0.5, y: y + 0.5, i: tileAt(world, x, y) };
+  }
+  throw new Error('没有河岸');
+}
+
+function distantLand(world: World, origin: { x: number; y: number }, minDistance = 5): { x: number; y: number } {
+  for (let y = 2; y < WORLD_H - 2; y++) for (let x = 2; x < WORLD_W - 2; x++) {
+    if (Math.hypot(x - origin.x, y - origin.y) >= minDistance && isLand(world, x + 0.5, y + 0.5)) return { x: x + 0.5, y: y + 0.5 };
+  }
+  throw new Error('没有远处土地');
 }
 
 function plantAt(world: World, species: Plant['species'], x: number, y: number): Plant {
@@ -209,8 +223,8 @@ describe('森林之神 · 神谕与存档', () => {
       expect(Number.isFinite(animal.x) && Number.isFinite(animal.y)).toBe(true);
       expect(animal.health).toBeLessThanOrEqual(1.00001);
     }
-    expect(worldStats(world).species).toBeLessThanOrEqual(13);
-    expect(isLand(world, WORLD_W / 2, WORLD_H / 2)).toBe(true);
+    expect(worldStats(world).species).toBeLessThanOrEqual(14);
+    expect(world.terrain.biome[tileAt(world, WORLD_W / 2, WORLD_H / 2)]).not.toBe(BIOME.VOID);
   });
 });
 
@@ -343,13 +357,16 @@ describe('森林之神 v2 · 神眷、心愿与记忆', () => {
     const legacy = JSON.parse(serializeWorld(source)) as any;
     legacy.version = 1;
     delete legacy.aurora; delete legacy.memorials; delete legacy.progress;
+    delete legacy.structures; delete legacy.terrainTick; delete legacy.pathRecorded;
+    delete legacy.terrain.trail; delete legacy.terrain.water; delete legacy.terrain.succession;
     for (const entity of [...legacy.plants, ...legacy.animals]) {
       delete entity.name; delete entity.traits; delete entity.bond; delete entity.memories;
       delete entity.generation; delete entity.parentIds; delete entity.offspring;
+      delete entity.wood; delete entity.seed; delete entity.structureId; delete entity.lastTrailTile;
     }
     const rng = legacy.rng, nextId = legacy.nextId;
     const migrated = deserializeWorld(JSON.stringify(legacy));
-    expect(migrated.version).toBe(2);
+    expect(migrated.version).toBe(3);
     expect(migrated.rng).toBe(rng);
     expect(migrated.nextId).toBe(nextId);
     expect(migrated.plants.map(p => p.id)).toEqual(source.plants.map(p => p.id));
@@ -357,5 +374,170 @@ describe('森林之神 v2 · 神眷、心愿与记忆', () => {
     expect(migrated.animals[0].parentIds).toEqual(migrated.animals[0].parentId === null ? [] : [migrated.animals[0].parentId]);
     expect(migrated.animals[0].traits).toEqual(identityFor(777, migrated.animals[0].id).traits);
     expect(serializeWorld(deserializeWorld(serializeWorld(migrated)))).toBe(serializeWorld(migrated));
+  });
+});
+
+describe('森林之神 v3 · 自主工程与动态地貌', () => {
+  it('河狸需要近水栖息地，真实啃倒树木并分阶段筑坝', () => {
+    const { world } = isolatedWorld();
+    const shore = firstShore(world);
+    const beaver = animalAt(world, 'beaver', shore.x, shore.y);
+    const oak = plantAt(world, 'oak', shore.x, shore.y);
+    oak.growth = 1; oak.health = 1; oak.age = 30;
+    beaver.x = shore.x; beaver.y = shore.y; beaver.think = 0; beaver.hunger = 0; beaver.thirst = 0;
+    advanceWorld(world, 35);
+    expect(oak.alive).toBe(false);
+    expect(beaver.wood).toBe(1);
+    advanceWorld(world, 170);
+    const dam = world.structures.find(s => s.kind === 'dam');
+    expect(dam).toBeDefined();
+    expect(dam!.progress).toBe(0.5);
+    beaver.wood = 1; beaver.think = 0;
+    advanceWorld(world, 80);
+    expect(dam!.progress).toBe(1);
+    expect(world.events.some(e => e.text.includes('木坝完工'))).toBe(true);
+  });
+
+  it('完整水坝形成局部回水，拆坝退水后保留原土地基底', () => {
+    const { world } = isolatedWorld();
+    const shore = firstShore(world);
+    let waterTile: { x: number; y: number } | null = null;
+    let best = Infinity;
+    for (let y = 1; y < WORLD_H - 1; y++) for (let x = Math.floor(shore.x); x < WORLD_W - 1; x++) {
+      const d = Math.hypot(x - shore.x, y - shore.y);
+      if (x - shore.x <= 8 && Math.abs(y - shore.y) <= 4 && world.terrain.biome[tileAt(world, x, y)] === BIOME.WATER && d < best) {
+        best = d; waterTile = { x: x + 0.5, y: y + 0.5 };
+      }
+    }
+    expect(waterTile).not.toBeNull();
+    const damTile = tileAt(world, waterTile!.x, waterTile!.y);
+    world.terrain.elevation[shore.i] = world.terrain.elevation[damTile];
+    world.structures.push({ id:world.nextId++, kind:'dam', x:waterTile!.x, y:waterTile!.y, progress:1, integrity:1, ownerId:1, createdAt:world.time });
+    world.weather = { kind:'clear', remaining:100 };
+    advanceWorld(world, 100);
+    expect(world.terrain.water[shore.i]).toBeGreaterThan(0.28);
+    expect(isWater(world, shore.x, shore.y)).toBe(true);
+    const baseBiome = world.terrain.biome[shore.i];
+    world.structures = [];
+    const stored = world.terrain.water[shore.i];
+    advanceWorld(world, 220);
+    expect(world.terrain.water[shore.i]).toBeLessThan(stored);
+    expect(world.terrain.biome[shore.i]).toBe(baseBiome);
+  });
+
+  it('强降雨会在饱和低地形成真实积水，而不仅是视觉粒子', () => {
+    const { world, land } = isolatedWorld();
+    world.terrain.moisture[land.i] = 1;
+    world.terrain.water[land.i] = 0;
+    world.weather = { kind:'storm', remaining:100 };
+    advanceWorld(world, 200);
+    expect(world.terrain.water[land.i]).toBeGreaterThan(0.2);
+    expect(world.terrain.moisture[land.i]).toBeGreaterThan(0.75);
+  });
+
+  it('野兔挖穴、回穴，主人死亡后兔穴仍然保留', () => {
+    const { world, land } = isolatedWorld();
+    const rabbit = animalAt(world, 'rabbit', land.x, land.y);
+    rabbit.x = land.x; rabbit.y = land.y; rabbit.think = 0; rabbit.hunger = 0; rabbit.thirst = 0;
+    world.weather = { kind:'rain', remaining:100 };
+    advanceWorld(world, 25);
+    const burrow = world.structures.find(s => s.kind === 'burrow');
+    expect(burrow?.progress).toBe(1);
+    expect(rabbit.homeX).toBe(burrow!.x);
+    rabbit.think = 0;
+    stepWorld(world);
+    expect(rabbit.structureId).toBe(burrow!.id);
+    rabbit.health = 0; stepWorld(world); rabbit.deadFor = 2.199; stepWorld(world);
+    expect(world.structures).toContain(burrow);
+  });
+
+  it('真实移动形成小径，闲置小径在雨中逐渐消退', () => {
+    const { world } = isolatedWorld();
+    const shore = firstShore(world);
+    let start = shore, end = distantLand(world, shore, 3);
+    for (let y = 3; y < WORLD_H - 3; y++) for (let x = 3; x < WORLD_W - 6; x++) {
+      if (isLand(world, x + 0.5, y + 0.5) && isLand(world, x + 4.5, y + 0.5)) { start = { x:x+0.5,y:y+0.5,i:tileAt(world,x,y) }; end = { x:x+4.5,y:y+0.5 }; break; }
+    }
+    const deer = animalAt(world, 'deer', start.x, start.y);
+    deer.x = start.x; deer.y = start.y; deer.age = 6; deer.hunger = 0; deer.thirst = 0; deer.energy = 1;
+    deer.behavior = 'wander'; deer.think = 100; deer.tx = end.x; deer.ty = end.y;
+    advanceWorld(world, 40);
+    const worn = Math.max(...world.terrain.trail);
+    expect(worn).toBeGreaterThan(0);
+    world.weather = { kind:'rain', remaining:100 };
+    world.animals = [];
+    advanceWorld(world, 600);
+    expect(Math.max(...world.terrain.trail)).toBeLessThan(worn);
+  });
+
+  it('狼把活跃猎物共享给附近同伴', () => {
+    const { world, land } = isolatedWorld();
+    const wolf = animalAt(world, 'wolf', land.x, land.y);
+    const pack = animalAt(world, 'wolf', land.x + 2, land.y);
+    const rabbit = animalAt(world, 'rabbit', land.x, land.y);
+    wolf.x = land.x; wolf.y = land.y; pack.x = land.x + 2; pack.y = land.y; rabbit.x = land.x; rabbit.y = land.y;
+    wolf.hunger = 0.9; wolf.think = 0; pack.think = 100; rabbit.think = 100;
+    stepWorld(world);
+    expect(pack.behavior).toBe('hunt');
+    expect(pack.targetId).toBe(rabbit.id);
+  });
+
+  it('动物携带浆果种子到远处，新植株保留亲代', () => {
+    const { world, land } = isolatedWorld();
+    const berry = plantAt(world, 'berry', land.x, land.y);
+    berry.growth = 1; berry.health = 1; berry.fruit = 1;
+    const deer = animalAt(world, 'deer', land.x, land.y);
+    deer.x = land.x; deer.y = land.y; deer.hunger = 0.9; deer.thirst = 0; deer.think = 0;
+    stepWorld(world);
+    expect(deer.seed?.parentId).toBe(berry.id);
+    const destination = distantLand(world, land, 7);
+    deer.x = destination.x; deer.y = destination.y; deer.seed!.delay = 0; deer.think = 100;
+    const before = world.plants.length;
+    stepWorld(world);
+    expect(world.plants.length).toBe(before + 1);
+    expect(world.plants.at(-1)!.species).toBe('berry');
+    expect(world.plants.at(-1)!.parentIds).toContain(berry.id);
+  });
+
+  it('树根减少暴雨侵蚀，林地与草甸按持续压力转换', () => {
+    const bare = isolatedWorld();
+    const rooted = isolatedWorld();
+    for (const fixture of [bare, rooted]) {
+      fixture.world.weather = { kind:'storm', remaining:100 };
+      fixture.world.terrain.elevation.fill(0.1);
+      fixture.world.terrain.elevation[fixture.land.i] = 0.5;
+      fixture.world.terrain.elevation[fixture.land.i + 1] = 0.05;
+    }
+    const oak = plantAt(rooted.world, 'oak', rooted.land.x, rooted.land.y);
+    oak.growth = 1; oak.health = 1;
+    advanceWorld(bare.world, 50); advanceWorld(rooted.world, 50);
+    expect(rooted.world.terrain.elevation[rooted.land.i]).toBeGreaterThan(bare.world.terrain.elevation[bare.land.i]);
+    rooted.world.weather = { kind:'clear', remaining:100 };
+    rooted.world.terrain.succession[rooted.land.i] = 210;
+    rooted.world.terrain.biome[rooted.land.i] = BIOME.MEADOW;
+    advanceWorld(rooted.world, 100);
+    expect(rooted.world.terrain.biome[rooted.land.i]).toBe(BIOME.FOREST);
+    rooted.world.plants = [];
+    rooted.world.terrain.succession[rooted.land.i] = 40;
+    advanceWorld(rooted.world, 150);
+    expect(rooted.world.terrain.biome[rooted.land.i]).toBe(BIOME.MEADOW);
+  });
+
+  it('v2 存档迁移 v3 时补齐地貌与工程状态而不消耗 RNG', () => {
+    const source = createWorld(2026);
+    const data = JSON.parse(serializeWorld(source)) as any;
+    data.version = 2;
+    delete data.terrain.trail; delete data.terrain.water; delete data.terrain.succession;
+    delete data.structures; delete data.terrainTick; delete data.pathRecorded;
+    for (const animal of data.animals) { delete animal.wood; delete animal.seed; delete animal.structureId; delete animal.lastTrailTile; }
+    const rng = data.rng, nextId = data.nextId;
+    const migrated = deserializeWorld(JSON.stringify(data));
+    expect(migrated.version).toBe(3);
+    expect(migrated.rng).toBe(rng);
+    expect(migrated.nextId).toBe(nextId);
+    expect(migrated.structures).toEqual([]);
+    expect(migrated.animals[0].wood).toBe(0);
+    expect(Math.max(...migrated.terrain.trail)).toBe(0);
+    for (let i = 0; i < migrated.terrain.biome.length; i++) if (migrated.terrain.biome[i] === BIOME.WATER) expect(migrated.terrain.water[i]).toBeCloseTo(0.65, 5);
   });
 });
