@@ -39,7 +39,7 @@ export const OBJECTIVES: readonly ObjectiveDefinition[] = [
   { id: 'pollination', name: '花间信使', description: '见证野蜂为野花完成一次授粉。', reward: '解锁神力「晨雾」', unlock: 'mist' },
   { id: 'bondedBirth', name: '血脉新生', description: '见证神眷生命迎来自己的后代。', reward: '可同时维系三段神眷', unlock: 'bond3' },
   { id: 'threeGenerations', name: '三代同林', description: '见证一条神眷血脉延续至第三代。', reward: '解锁神力「初雪」', unlock: 'snow' },
-  { id: 'diversity', name: '万物并育', description: '结缘后，让十三类生命共存并迎来三次新生。', reward: '解锁神力「极光」', unlock: 'aurora' },
+  { id: 'diversity', name: '万物并育', description: '结缘后，让十四类生命共存并迎来三次新生。', reward: '解锁神力「极光」', unlock: 'aurora' },
   { id: 'ancientTree', name: '岁月成冠', description: '与一棵历经漫长岁月的古树结缘。', reward: '纪念石会长出金色苔纹', unlock: 'memorial' },
   { id: 'fireRecovery', name: '灰烬春回', description: '让山火焚毁的土地重新孕育出繁茂生命。', reward: '将这场重生写入森林的历史', unlock: null },
 ];

@@ -2,7 +2,7 @@
 
 export const WORLD_W = 120;
 export const WORLD_H = 80;
-export const WORLD_VERSION = 2;
+export const WORLD_VERSION = 3;
 export const STEP_DAYS = 0.005;
 export const DAYS_PER_SEASON = 12;
 export const MAX_PLANTS = 380;
@@ -11,12 +11,14 @@ export const MAX_EVENTS = 48;
 export const MAX_BONDS = 3;
 export const MAX_MEMORIES = 16;
 export const MAX_MEMORIALS = 24;
+export const MAX_DAMS = 8;
+export const MAX_BURROWS = 24;
 
 export type PlantSpecies = 'grass' | 'flower' | 'berry' | 'oak' | 'pine' | 'fern' | 'mushroom';
-export type AnimalSpecies = 'rabbit' | 'deer' | 'fox' | 'wolf' | 'bee' | 'frog';
+export type AnimalSpecies = 'rabbit' | 'deer' | 'fox' | 'wolf' | 'bee' | 'frog' | 'beaver';
 export type WeatherKind = 'clear' | 'rain' | 'storm' | 'mist' | 'snow';
 export type Season = '春' | '夏' | '秋' | '冬';
-export type Behavior = 'wander' | 'rest' | 'seekFood' | 'drink' | 'flee' | 'hunt' | 'court' | 'follow' | 'alert' | 'groom' | 'play' | 'shelter';
+export type Behavior = 'wander' | 'rest' | 'seekFood' | 'drink' | 'flee' | 'hunt' | 'court' | 'follow' | 'alert' | 'groom' | 'play' | 'shelter' | 'dig' | 'fell' | 'build';
 export type Power = 'inspect' | 'rain' | 'sun' | 'storm' | 'bless' | 'lightning' | 'mist' | 'snow' | 'aurora' | PlantSpecies | AnimalSpecies;
 export type EventKind = 'birth' | 'death' | 'weather' | 'divine' | 'ecology' | 'fire' | 'bond' | 'milestone';
 
@@ -67,9 +69,10 @@ export const ANIMAL_RULES: Record<AnimalSpecies, AnimalRule> = {
   rabbit: { name: '野兔', latin: 'Lepus silva', diet: 'herbivore', foods: ['grass', 'flower', 'berry'], predators: ['fox', 'wolf'], lifespan: 14, matureAt: 1.8, speed: 27, hungerRate: 0.18, thirstRate: 0.12, sense: 9, attack: 0.08, cost: 8, color: '#d7c6aa', description: '繁殖迅速，靠警觉与奔跑活下去。' },
   deer: { name: '梅花鹿', latin: 'Cervus maculatus', diet: 'herbivore', foods: ['grass', 'berry', 'fern'], predators: ['wolf'], lifespan: 30, matureAt: 4, speed: 23, hungerRate: 0.12, thirstRate: 0.14, sense: 10, attack: 0.16, cost: 14, color: '#b78359', description: '成群啃食嫩芽，也会避开狼群。' },
   fox: { name: '赤狐', latin: 'Vulpes ignis', diet: 'carnivore', foods: ['rabbit'], predators: ['wolf'], lifespan: 24, matureAt: 3.2, speed: 26, hungerRate: 0.1, thirstRate: 0.1, sense: 13, attack: 0.5, cost: 14, color: '#c87546', nocturnal: true, description: '暮色里的独行者，控制着兔群数量。' },
-  wolf: { name: '灰狼', latin: 'Lupus chorus', diet: 'carnivore', foods: ['rabbit', 'deer', 'fox'], predators: [], lifespan: 30, matureAt: 4.5, speed: 27, hungerRate: 0.085, thirstRate: 0.1, sense: 15, attack: 0.7, cost: 18, color: '#858a89', nocturnal: true, description: '顶级捕食者，饥饿时也会与狐争斗。' },
+  wolf: { name: '灰狼', latin: 'Lupus chorus', diet: 'carnivore', foods: ['rabbit', 'deer', 'fox', 'beaver'], predators: [], lifespan: 30, matureAt: 4.5, speed: 27, hungerRate: 0.085, thirstRate: 0.1, sense: 15, attack: 0.7, cost: 18, color: '#858a89', nocturnal: true, description: '顶级捕食者，饥饿时也会与狐争斗。' },
   bee: { name: '野蜂', latin: 'Apis aurea', diet: 'pollinator', foods: ['flower'], predators: ['frog'], lifespan: 3.5, matureAt: 0.35, speed: 36, hungerRate: 0.3, thirstRate: 0.04, sense: 12, attack: 0.05, cost: 5, color: '#e7bd50', description: '追逐花期；蜂群繁盛时，花海也会扩张。' },
   frog: { name: '树蛙', latin: 'Rana pluvia', diet: 'insectivore', foods: ['bee'], predators: ['fox'], lifespan: 10, matureAt: 1.2, speed: 17, hungerRate: 0.16, thirstRate: 0.2, sense: 7, attack: 0.25, cost: 7, color: '#6f9b62', nocturnal: true, description: '依水而居，雨后和昆虫多的地方最活跃。' },
+  beaver: { name: '河狸', latin: 'Castor silva', diet: 'herbivore', foods: ['grass', 'berry', 'fern'], predators: ['wolf'], lifespan: 26, matureAt: 3, speed: 20, hungerRate: 0.12, thirstRate: 0.12, sense: 11, attack: 0.12, cost: 16, color: '#8b6b50', description: '啃伐树木、搬运木材并筑坝，让水域改变森林的边界。' },
 };
 
 export const POWER_INFO: Record<Exclude<Power, PlantSpecies | AnimalSpecies>, { name: string; cost: number; hint: string }> = {
@@ -86,7 +89,7 @@ export const POWER_INFO: Record<Exclude<Power, PlantSpecies | AnimalSpecies>, { 
 
 export const SEASONS: Season[] = ['春', '夏', '秋', '冬'];
 export const PLANT_ORDER: PlantSpecies[] = ['grass', 'flower', 'berry', 'oak', 'pine', 'fern', 'mushroom'];
-export const ANIMAL_ORDER: AnimalSpecies[] = ['rabbit', 'deer', 'fox', 'wolf', 'bee', 'frog'];
+export const ANIMAL_ORDER: AnimalSpecies[] = ['rabbit', 'deer', 'fox', 'wolf', 'bee', 'frog', 'beaver'];
 
 export const clamp = (value: number, min = 0, max = 1) => Math.max(min, Math.min(max, value));
 export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
