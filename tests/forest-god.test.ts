@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-  MAX_ANIMALS, MAX_EVENTS, MAX_PLANTS, STEP_DAYS, WORLD_H, WORLD_W,
+  MAX_ANIMALS, MAX_EVENTS, MAX_MEMORIES, MAX_MEMORIALS, MAX_PLANTS, STEP_DAYS, WORLD_H, WORLD_W,
 } from '../src/scripts/forest-god-content';
+import { OBJECTIVES, identityFor } from '../src/scripts/forest-god-identity';
 import {
-  BIOME, advanceWorld, applyPower, createWorld, deserializeWorld, environmentAt, isLand, serializeWorld, stepWorld, tileAt, worldStats,
+  BIOME, advanceWorld, applyPower, bondCapacity, bondEntity, createWorld, deserializeWorld, environmentAt, findMemorial, isLand, isUnlocked, renameBond, serializeWorld, spiritRegenRate, stepWorld, tileAt, worldStats,
 } from '../src/scripts/forest-god-core';
 import type { Animal, Plant, World } from '../src/scripts/forest-god-core';
 
@@ -130,6 +131,10 @@ describe('森林之神 · 生态规则', () => {
     stepWorld(world);
     expect(world.animals.length).toBeGreaterThan(count);
     expect(world.animals.at(-1)!.parentId).not.toBeNull();
+    expect(world.animals.at(-1)!.parentIds).toEqual(expect.arrayContaining([a.id, b.id]));
+    expect(world.animals.at(-1)!.generation).toBe(2);
+    expect(a.offspring).toContain(world.animals.at(-1)!.id);
+    expect(b.offspring).toContain(world.animals.at(-1)!.id);
     expect(world.events.some(event => event.kind === 'birth')).toBe(true);
   });
 
@@ -206,5 +211,151 @@ describe('森林之神 · 神谕与存档', () => {
     }
     expect(worldStats(world).species).toBeLessThanOrEqual(13);
     expect(isLand(world, WORLD_W / 2, WORLD_H / 2)).toBe(true);
+  });
+});
+
+describe('森林之神 v2 · 神眷、心愿与记忆', () => {
+  it('身份与特质确定，子代最多继承一项亲代特质', () => {
+    const a = identityFor(42, 99), b = identityFor(42, 99);
+    expect(a).toEqual(b);
+    expect(a.name.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(a.traits).size).toBe(2);
+    expect(identityFor(42, 100, ['swift']).traits[0]).toBe('swift');
+  });
+
+  it('结缘支持命名，心愿逐步增加栏位，重复结缘不重复计数', () => {
+    const { world, land } = isolatedWorld();
+    const a = animalAt(world, 'rabbit', land.x, land.y);
+    const b = animalAt(world, 'rabbit', land.x + 1, land.y);
+    const c = animalAt(world, 'rabbit', land.x + 2, land.y);
+    expect(bondCapacity(world)).toBe(1);
+    expect(bondEntity(world, a.id, '小满').ok).toBe(true);
+    expect(a.name).toBe('小满');
+    expect(bondCapacity(world)).toBe(2);
+    expect(bondEntity(world, a.id, '另一个名字').ok).toBe(true);
+    expect(world.progress.lifetimeBonds).toBe(1);
+    expect(bondEntity(world, b.id).ok).toBe(true);
+    expect(bondEntity(world, c.id).ok).toBe(false);
+  });
+
+  it('赐福和更名会写入个体记忆，记忆数量始终有界', () => {
+    const { world, land } = isolatedWorld();
+    const rabbit = animalAt(world, 'rabbit', land.x, land.y);
+    bondEntity(world, rabbit.id, '苔芽');
+    for (let i = 0; i < 24; i++) renameBond(world, rabbit.id, `名字${i}`);
+    expect(rabbit.memories.length).toBeLessThanOrEqual(MAX_MEMORIES);
+    applyPower(world, 'bless', land.x, land.y);
+    expect(rabbit.memories.some(m => m.kind === 'bless')).toBe(true);
+  });
+
+  it('神眷死亡只生成一座纪念，遗骸分解后生命档案仍可读', () => {
+    const { world, land } = isolatedWorld();
+    const rabbit = animalAt(world, 'rabbit', land.x, land.y);
+    bondEntity(world, rabbit.id, '溪跃');
+    rabbit.health = 0;
+    stepWorld(world);
+    const memorial = findMemorial(world, rabbit.id);
+    expect(memorial?.name).toBe('溪跃');
+    expect(memorial?.memories.some(m => m.kind === 'death')).toBe(true);
+    stepWorld(world);
+    expect(world.memorials.filter(m => m.id === rabbit.id)).toHaveLength(1);
+    rabbit.deadFor = 2.199;
+    stepWorld(world);
+    expect(world.animals).not.toContain(rabbit);
+    expect(findMemorial(world, rabbit.id)?.offspring).toEqual([]);
+    const restored = deserializeWorld(serializeWorld(world));
+    expect(restored.memorials).toEqual(world.memorials);
+    expect(restored.progress).toEqual(world.progress);
+  });
+
+  it('心愿只完成一次，授粉与三代血脉分别解锁雾和雪', () => {
+    const { world, land } = isolatedWorld();
+    expect(isUnlocked(world, 'mist')).toBe(false);
+    const energy = world.divine;
+    expect(applyPower(world, 'mist').ok).toBe(false);
+    expect(world.divine).toBe(energy);
+    world.progress.pollinations = 1;
+    stepWorld(world);
+    expect(isUnlocked(world, 'mist')).toBe(true);
+    expect(applyPower(world, 'mist').ok).toBe(true);
+    expect(world.weather.kind).toBe('mist');
+    world.progress.maxGeneration = 3;
+    world.progress.bondedBirths = 1;
+    stepWorld(world);
+    expect(isUnlocked(world, 'snow')).toBe(true);
+    expect(applyPower(world, 'snow').ok).toBe(true);
+    expect(world.weather.kind).toBe('snow');
+    const count = world.progress.completed.length;
+    advanceWorld(world, 20);
+    expect(world.progress.completed.length).toBe(count);
+    expect(new Set(world.progress.completed).size).toBe(world.progress.completed.length);
+  });
+
+  it('万物共存解锁极光，极光会进入神眷记忆', () => {
+    const { world, land } = isolatedWorld();
+    const rabbit = animalAt(world, 'rabbit', land.x, land.y);
+    bondEntity(world, rabbit.id);
+    world.progress.completed.push('diversity');
+    expect(applyPower(world, 'aurora').ok).toBe(true);
+    expect(world.aurora).toBe(1);
+    expect(rabbit.memories.some(m => m.kind === 'aurora')).toBe(true);
+    expect(OBJECTIVES.length).toBe(7);
+  });
+
+  it('健康多样的森林恢复更多灵力，荒芜世界也有恢复下限', () => {
+    const { world: empty } = isolatedWorld();
+    const healthy = createWorld(1122);
+    expect(spiritRegenRate(empty)).toBe(4);
+    expect(spiritRegenRate(healthy)).toBeGreaterThan(spiritRegenRate(empty));
+    healthy.divine = 99.99;
+    stepWorld(healthy);
+    expect(healthy.divine).toBeLessThanOrEqual(100);
+  });
+
+  it('纪念林保留最近二十四段故事，纪念 ID 不重复', () => {
+    const world = createWorld(9191);
+    world.progress.completed.push('firstBond', 'bondedBirth');
+    for (let i = 0; i < 30; i++) {
+      const animal = world.animals.find(a => a.alive);
+      if (!animal) break;
+      bondEntity(world, animal.id);
+      animal.health = 0;
+      stepWorld(world);
+      animal.deadFor = 2.199;
+      stepWorld(world);
+    }
+    expect(world.memorials.length).toBeLessThanOrEqual(MAX_MEMORIALS);
+    expect(new Set(world.memorials.map(m => m.id)).size).toBe(world.memorials.length);
+  });
+
+  it('长期生态受食物与栖息地承载力约束，不会被单一物种刷屏', () => {
+    const world = createWorld(60606);
+    advanceWorld(world, 2400);
+    expect(world.animals.filter(a => a.alive && a.species === 'bee').length).toBeLessThanOrEqual(28);
+    expect(world.animals.filter(a => a.alive && a.species === 'rabbit').length).toBeLessThanOrEqual(30);
+    expect(world.plants.filter(p => p.alive && p.species === 'grass').length).toBeLessThanOrEqual(115);
+    expect(world.events.filter(e => e.text.includes('新的蜂群')).length).toBeLessThan(12);
+  });
+
+  it('v1 存档原地升级，保留 RNG、ID、地形与既有亲代', () => {
+    const source = createWorld(777);
+    advanceWorld(source, 12);
+    const legacy = JSON.parse(serializeWorld(source)) as any;
+    legacy.version = 1;
+    delete legacy.aurora; delete legacy.memorials; delete legacy.progress;
+    for (const entity of [...legacy.plants, ...legacy.animals]) {
+      delete entity.name; delete entity.traits; delete entity.bond; delete entity.memories;
+      delete entity.generation; delete entity.parentIds; delete entity.offspring;
+    }
+    const rng = legacy.rng, nextId = legacy.nextId;
+    const migrated = deserializeWorld(JSON.stringify(legacy));
+    expect(migrated.version).toBe(2);
+    expect(migrated.rng).toBe(rng);
+    expect(migrated.nextId).toBe(nextId);
+    expect(migrated.plants.map(p => p.id)).toEqual(source.plants.map(p => p.id));
+    expect(migrated.terrain.moisture).toEqual(source.terrain.moisture);
+    expect(migrated.animals[0].parentIds).toEqual(migrated.animals[0].parentId === null ? [] : [migrated.animals[0].parentId]);
+    expect(migrated.animals[0].traits).toEqual(identityFor(777, migrated.animals[0].id).traits);
+    expect(serializeWorld(deserializeWorld(serializeWorld(migrated)))).toBe(serializeWorld(migrated));
   });
 });

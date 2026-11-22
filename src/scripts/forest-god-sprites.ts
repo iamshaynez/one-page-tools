@@ -1,12 +1,17 @@
 import { ANIMAL_RULES } from './forest-god-content';
-import type { Animal, Plant } from './forest-god-core';
+import type { WeatherKind } from './forest-god-content';
+import type { Animal, Memorial, Plant } from './forest-god-core';
 
 export interface SpriteEnvironment {
   time: number;
   daylight: number;
   seasonIndex: number;
-  weather: 'clear' | 'rain' | 'storm';
+  weather: WeatherKind;
   reducedMotion: boolean;
+  paused?: boolean;
+  rainIntensity?: number;
+  snowCover?: number;
+  windStrength?: number;
 }
 
 /**
@@ -45,6 +50,11 @@ const C = {
   berry: '#a9415c',
   berryLight: '#e07978',
   gold: '#e9b95f',
+  mint: '#91c7a4',
+  glow: '#c6d79b',
+  glowShade: '#718f78',
+  stone: '#777681',
+  stoneLight: '#aaa69c',
   water: '#76aeb2',
   eye: '#211f31',
   rose: '#d98b9d',
@@ -91,9 +101,28 @@ const FERN_FRONDS = [
   [-1, -4, 5], [-1, -7, 7], [0, -10, 5],
 ] as const;
 const DEAD_PINE_BRANCHES = [0.18, 0.34, 0.51, 0.68] as const;
+const RAIN_POINTS: Record<Plant['species'], readonly (readonly [number, number])[]> = {
+  grass: [[-2, -6], [2, -5], [0, -8]],
+  flower: [[-1, -11], [-5, -9], [3, -7]],
+  berry: [[-5, -17], [4, -16], [0, -12]],
+  oak: [[-9, -34], [6, -35], [12, -27]],
+  pine: [[-3, -35], [7, -24], [-10, -14]],
+  fern: [[-4, -8], [4, -9], [0, -12]],
+  mushroom: [[-2, -9], [3, -7], [5, -4]],
+};
 
 const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
 const mod4 = (n: number): number => ((Math.floor(n) % 4) + 4) % 4;
+const snowWidth = (full: number, cover: number): number => Math.max(1, Math.round(full * (0.35 + cover * 0.65)));
+
+function shifted(p: Pen, dx: number, dy: number): Pen {
+  return {
+    ...p,
+    x: Math.round(p.x + (p.flip ? -dx : dx) * p.s),
+    y: Math.round(p.y + dy * p.s),
+    color: '',
+  };
+}
 
 function at(g: CanvasRenderingContext2D, x: number, y: number, z: number, scale = 1, flip = false): Pen {
   return {
@@ -136,11 +165,35 @@ function seasonOf(env: SpriteEnvironment): number {
   return mod4(env.seasonIndex);
 }
 
+function rainFor(env: SpriteEnvironment): number {
+  const fallback = env.weather === 'storm' ? 1 : env.weather === 'rain' ? 0.65 : 0;
+  return clamp01(env.rainIntensity ?? fallback);
+}
+
+function snowFor(env: SpriteEnvironment): number {
+  const fallback = seasonOf(env) === 3 ? 1 : env.weather === 'snow' ? 0.6 : 0;
+  return clamp01(env.snowCover ?? fallback);
+}
+
+function windStrengthFor(env: SpriteEnvironment): number {
+  const fallback = env.weather === 'storm' ? 1
+    : env.weather === 'rain' ? 0.65
+      : env.weather === 'snow' ? 0.45
+        : env.weather === 'mist' ? 0.2 : 0.3;
+  return clamp01(env.windStrength ?? fallback);
+}
+
+function windOffset(env: SpriteEnvironment, seed: number): number {
+  if (env.reducedMotion || env.paused) return 0;
+  const strength = windStrengthFor(env);
+  if (strength <= 0.02) return 0;
+  const reach = Math.max(1, Math.round(strength * 2 + (env.weather === 'storm' ? 1 : 0)));
+  const frame = Math.floor(env.time * (4 + strength * 4)) + seed;
+  return WIND[mod4(frame)] * reach;
+}
+
 function windFor(plant: Plant, env: SpriteEnvironment): number {
-  if (env.reducedMotion) return 0;
-  const frame = Math.floor(env.time * 8) + plant.id * 3 + plant.variant;
-  const strength = env.weather === 'storm' ? 2 : 1;
-  return WIND[mod4(frame)] * strength;
+  return windOffset(env, plant.id * 3 + plant.variant);
 }
 
 function broadPalette(env: SpriteEnvironment, health = 1): Palette {
@@ -198,7 +251,7 @@ function drawGrass(p: Pen, plant: Plant, stage: number, wind: number, env: Sprit
     px(p, colors[1], bx + Math.sign(lean), -h, 1, 3);
     if (h > 5) px(p, colors[2], bx + lean, -h, 1, 2);
   }
-  if (season === 3 && stage > 1) {
+  if (snowFor(env) > 0.55 && stage > 1) {
     px(p, C.snowShade, -5, -1, 4, 1);
     px(p, C.snow, 1, -1, 4, 1);
   }
@@ -238,7 +291,7 @@ function drawFlower(p: Pen, plant: Plant, stage: number, wind: number, env: Spri
     px(p, leaf.dark, 3, -4, 1, 4);
     flowerHead(p, 2 + wind, -6, FLOWER_COLORS[mod4(plant.variant + 1)], open, false);
   }
-  if (season === 3) px(p, C.snow, -2, -1, 4, 1);
+  if (snowFor(env) > 0.5) px(p, C.snow, -2, -1, 4, 1);
 }
 
 function drawBerry(p: Pen, plant: Plant, stage: number, wind: number, env: SpriteEnvironment): void {
@@ -275,7 +328,7 @@ function drawBerry(p: Pen, plant: Plant, stage: number, wind: number, env: Sprit
     px(p, C.dead, 6 + wind, -16, 2, 7);
     px(p, C.deadLight, -8 + wind, -16, 5, 1);
     px(p, C.deadLight, 3 + wind, -17, 5, 1);
-    if (season === 3) {
+    if (snowFor(env) > 0.35) {
       px(p, C.snow, -8 + wind, -17, 5, 1);
       px(p, C.snowShade, 3 + wind, -18, 5, 1);
     }
@@ -337,7 +390,7 @@ function drawOak(p: Pen, plant: Plant, stage: number, wind: number, env: SpriteE
   const top = ancient ? -44 : -36;
   const season = seasonOf(env);
   const bare = season === 3 || plant.health < 0.24;
-  oakBranches(p, ancient, top, wind, bare && season === 3);
+  oakBranches(p, ancient, top, wind, bare && snowFor(env) > 0.4);
   if (ancient) {
     px(p, C.ink, -1, -15, 3, 6);
     px(p, C.violetLight, 2, -15, 1, 5);
@@ -397,7 +450,7 @@ function drawPine(p: Pen, plant: Plant, stage: number, wind: number, env: Sprite
     px(p, leaf.dark, -half + sway, y, half * 2, 6);
     px(p, leaf.mid, -half + 2 + sway, y, Math.max(2, half * 2 - 4), 4);
     px(p, leaf.light, -half + 2 + sway, y, Math.max(2, half), 1);
-    if (winter && i > 0) {
+    if (snowFor(env) > 0.45 && i > 0) {
       px(p, C.snowShade, -half + sway, y + 4, half, 1);
       px(p, C.snow, -half + 2 + sway, y, Math.max(2, half), 1);
     }
@@ -434,7 +487,7 @@ function drawFern(p: Pen, plant: Plant, stage: number, wind: number, env: Sprite
     px(p, leaf.light, wind, -12, 2, 2);
     px(p, leaf.mid, 1 + wind, -11, 2, 1);
   }
-  if (season === 3) px(p, C.snowShade, -5, -1, 8, 1);
+  if (snowFor(env) > 0.5) px(p, C.snowShade, -5, -1, 8, 1);
 }
 
 function drawMushroom(p: Pen, plant: Plant, stage: number, wind: number, env: SpriteEnvironment): void {
@@ -458,8 +511,8 @@ function drawMushroom(p: Pen, plant: Plant, stage: number, wind: number, env: Sp
     px(p, cap, 4, -4, 4, 2);
     px(p, C.cream, 5, -3, 2, 3);
   }
-  if (seasonOf(env) === 3) px(p, C.snow, -3 + sway, -9, 5, 1);
-  else if (env.weather !== 'clear') px(p, C.water, 3 + sway, -8, 1, 1);
+  if (snowFor(env) > 0.5) px(p, C.snow, -3 + sway, -9, 5, 1);
+  else if (rainFor(env) > 0.15) px(p, C.water, 3 + sway, -8, 1, 1);
 }
 
 function drawDeadOak(p: Pen, plant: Plant, decay: number): void {
@@ -539,6 +592,81 @@ function drawDeadSmall(p: Pen, plant: Plant, decay: number): void {
   }
 }
 
+function drawPlantWeather(p: Pen, plant: Plant, wind: number, env: SpriteEnvironment): void {
+  const rain = rainFor(env);
+  if (rain > 0.08) {
+    const points = RAIN_POINTS[plant.species];
+    const count = rain > 0.7 ? 3 : rain > 0.3 ? 2 : 1;
+    for (let i = 0; i < count; i++) {
+      const point = points[i];
+      const drip = !env.paused && !env.reducedMotion && rain > 0.75
+        && mod4(Math.floor(env.time * 8) + plant.id + i) === 0 ? 1 : 0;
+      px(p, C.water, point[0] + wind, point[1] + drip, 1, rain > 0.7 && i === 0 ? 2 : 1);
+      if (rain > 0.85 && i === 0) px(p, C.cream, point[0] + wind, point[1] + drip, 1, 1);
+    }
+  }
+  const snow = snowFor(env);
+  if (snow <= 0.05) return;
+  switch (plant.species) {
+    case 'grass':
+      px(p, C.snowShade, -5, 0, snowWidth(10, snow), 1);
+      px(p, C.snow, -4, -1, snowWidth(8, snow), 1);
+      break;
+    case 'flower':
+      px(p, C.snow, -2 + wind, -12, snowWidth(5, snow), 1);
+      if (snow > 0.55) px(p, C.snowShade, -2, -1, snowWidth(5, snow), 1);
+      break;
+    case 'berry': {
+      const bare = seasonOf(env) === 3 || plant.health < 0.25;
+      const y = bare ? -17 : -18;
+      px(p, C.snowShade, -7 + wind, y + 1, snowWidth(9, snow), 1);
+      px(p, C.snow, -7 + wind, y, snowWidth(10, snow), 1);
+      if (snow > 0.65) px(p, C.snow, 2 + wind, y + 2, snowWidth(6, snow), 1);
+      break;
+    }
+    case 'oak': {
+      const ancient = plant.variant === 7;
+      const bare = seasonOf(env) === 3 || plant.health < 0.24;
+      const top = ancient ? -44 : -36;
+      const y = bare ? top + 7 : top;
+      px(p, C.snowShade, -12 + wind, y + 1, snowWidth(10, snow), 1);
+      px(p, C.snow, -12 + wind, y, snowWidth(12, snow), 1);
+      if (snow > 0.6) px(p, C.snow, 3 + wind, y + 3, snowWidth(ancient ? 14 : 8, snow), 1);
+      break;
+    }
+    case 'pine':
+      px(p, C.snow, wind - 1, -41, snowWidth(4, snow), 1);
+      if (snow > 0.6) px(p, C.snowShade, -7 + wind, -30, snowWidth(9, snow), 1);
+      break;
+    case 'fern':
+      px(p, C.snow, -4 + wind, -11, snowWidth(7, snow), 1);
+      if (snow > 0.6) px(p, C.snowShade, -5, -1, snowWidth(9, snow), 1);
+      break;
+    case 'mushroom':
+      px(p, C.snowShade, -4 + Math.sign(wind), -8, snowWidth(8, snow), 1);
+      px(p, C.snow, -3 + Math.sign(wind), -9, snowWidth(7, snow), 1);
+      break;
+  }
+}
+
+function drawPlantIdentity(p: Pen, plant: Plant, wind: number, env: SpriteEnvironment): void {
+  if (plant.traits.includes('luminous')) {
+    const top = -plantTop(plant);
+    const pulse = !env.paused && !env.reducedMotion && mod4(Math.floor(env.time * 2) + plant.id) === 0;
+    px(p, C.glowShade, -3 + wind, top + 2, 1, 2);
+    px(p, C.glow, 2 + wind, top + 1, 2, 1);
+    px(p, C.mint, 3 + wind, top + 2, 1, 1);
+    if (pulse) px(p, C.cream, 0, top - 1, 1, 1);
+  }
+  if (plant.bond) {
+    // A tiny two-tone root rune distinguishes a bond without enclosing the plant.
+    px(p, C.gold, -4, -2, 2, 1);
+    px(p, C.warm, -4, -3, 1, 1);
+    px(p, C.mint, 2, -3, 1, 2);
+    px(p, C.glowShade, 3, -2, 1, 1);
+  }
+}
+
 export function drawPlant(
   ctx: CanvasRenderingContext2D,
   plant: Plant,
@@ -569,20 +697,35 @@ export function drawPlant(
       case 'fern': drawFern(p, plant, stage, wind, env); break;
       case 'mushroom': drawMushroom(p, plant, stage, wind, env); break;
     }
+    drawPlantWeather(p, plant, wind, env);
+    drawPlantIdentity(p, plant, wind, env);
   } finally {
     ctx.restore();
   }
 }
 
+type AnimalReaction = 'startle' | 'bless' | 'bond';
+
 interface Pose {
   behavior: Animal['behavior'];
+  reaction: AnimalReaction | null;
   frame: number;
   gait: number;
   bob: number;
+  breath: number;
+  hop: number;
+  twitch: number;
+  orbit: number;
+  blink: boolean;
+  throat: boolean;
   moving: boolean;
   resting: boolean;
   drinking: boolean;
   feeding: boolean;
+  grooming: boolean;
+  playing: boolean;
+  alert: boolean;
+  sheltering: boolean;
   hunting: boolean;
   fleeing: boolean;
   courting: boolean;
@@ -591,29 +734,47 @@ interface Pose {
   adult: boolean;
 }
 
-function poseFor(animal: Animal, env: SpriteEnvironment): Pose {
-  const frame = env.reducedMotion ? 0 : mod4(Math.floor(env.time * 8) + animal.id);
+function poseFor(animal: Animal, env: SpriteEnvironment, reaction?: AnimalReaction | null): Pose {
+  const animate = !env.reducedMotion && !env.paused;
+  const tick = animate ? Math.floor(env.time * 8) + animal.id : 0;
+  const frame = mod4(tick);
   const moving = Math.abs(animal.vx) + Math.abs(animal.vy) > 0.08 && animal.behavior !== 'rest';
   const resting = animal.behavior === 'rest' && !moving;
   const hunting = animal.behavior === 'hunt';
   const fleeing = animal.behavior === 'flee';
   const courting = animal.behavior === 'court';
-  const bob = env.reducedMotion ? 0 : courting ? (frame < 2 ? -1 : 0) : moving ? (frame === 1 || frame === 2 ? -1 : 0) : 0;
+  const playing = animal.behavior === 'play';
   const maturity = clamp01(animal.age / ANIMAL_RULES[animal.species].matureAt);
+  const juvenile = maturity < 1;
+  const bob = !animate ? 0 : courting ? (frame < 2 ? -1 : 0) : moving ? (frame === 1 || frame === 2 ? -1 : 0) : 0;
+  const playHop = animate && playing && (frame === 1 || frame === 2) ? juvenile ? -2 : -1 : 0;
+  const startleHop = reaction === 'startle' ? -2 : 0;
+  const blinkTick = Math.floor(env.time * 8) + animal.id * 11;
   return {
     behavior: animal.behavior,
+    reaction: reaction ?? null,
     frame,
-    gait: moving ? GAIT[frame] * (fleeing || hunting ? 2 : 1) : 0,
+    gait: animate && (moving || playing) ? GAIT[frame] * (fleeing || hunting ? 2 : 1) : 0,
     bob,
+    breath: animate && !moving && !playing && mod4(Math.floor(env.time * 2.5) + animal.id) === 2 ? -1 : 0,
+    hop: Math.min(playHop, startleHop),
+    twitch: animate && mod4(Math.floor(env.time * 4) + animal.id) === 1 ? -1 : 0,
+    orbit: animate && animal.species === 'bee' && !resting && animal.behavior !== 'shelter' ? WIND[frame] * (playing ? 2 : 1) : 0,
+    blink: animate && ((blinkTick % 37) + 37) % 37 === 0,
+    throat: animate && animal.species === 'frog' && (frame === 1 || frame === 2),
     moving,
     resting,
     drinking: animal.behavior === 'drink',
     feeding: animal.behavior === 'seekFood' && animal.action > 0 && !moving,
+    grooming: animal.behavior === 'groom',
+    playing,
+    alert: animal.behavior === 'alert' || reaction === 'startle',
+    sheltering: animal.behavior === 'shelter',
     hunting,
     fleeing,
     courting,
     following: animal.behavior === 'follow',
-    juvenile: maturity < 1,
+    juvenile,
     adult: maturity >= 1,
   };
 }
@@ -651,9 +812,13 @@ function drawRabbit(p: Pen, animal: Animal, pose: Pose): void {
   const fur = pale ? '#c7b89f' : '#92969a';
   const light = pale ? '#ead8b7' : '#c8c8ba';
   const rest = pose.resting;
-  const low = pose.drinking || pose.feeding;
-  const body = (rest ? -4 : pose.fleeing ? -4 : -5) + pose.bob;
-  if (!rest) {
+  const settled = rest || pose.sheltering;
+  const low = pose.drinking || pose.feeding || pose.grooming;
+  const body = (settled || pose.fleeing ? -4 : -5) + pose.bob + pose.breath + pose.hop;
+  const tailLift = settled ? 0 : pose.twitch;
+  px(p, dark, -5, body - 1 + tailLift, 3, 3);
+  px(p, light, -5, body - 1 + tailLift, 2, 2);
+  if (!settled) {
     px(p, dark, -3 - pose.gait, -2, 2, 2);
     px(p, dark, 2 + pose.gait, -2, 2, 2);
     if (pose.fleeing) {
@@ -663,33 +828,39 @@ function drawRabbit(p: Pen, animal: Animal, pose: Pose): void {
   } else {
     px(p, dark, -3, -1, 6, 1);
   }
-  px(p, dark, -5, body - 1, 3, 3);
-  px(p, light, -5, body - 1, 2, 2);
-  px(p, dark, -4, body, 8, rest ? 3 : 3);
+  px(p, dark, -4, body, 8, 3);
   px(p, fur, -3, body - 1, 6, 3);
   px(p, light, -2, body - 1, 4, 1);
   const hx = low ? 4 : 2;
-  const hy = low ? -2 : rest ? body - 2 : body - 3;
+  const hy = (low ? -2 : settled ? body - 2 : body - 3) - (pose.alert && !low ? 1 : 0);
   px(p, dark, hx, hy, 4, 3);
   px(p, fur, hx, hy - 1, 3, 3);
   px(p, light, hx + 2, hy + 1, 3, 2);
   px(p, C.rose, hx + 4, hy + 1, 1, 1);
-  if (rest || low) {
+  if (settled || low) {
     px(p, dark, hx - 3, hy - 1, 4, 1);
     px(p, fur, hx - 2, hy - 2, 4, 1);
+    if (pose.grooming) {
+      px(p, light, hx + 2, -1, 3, 1);
+      px(p, C.rose, hx + 4, 0, 1, 1);
+    }
   } else if (pose.fleeing) {
     px(p, dark, hx - 4, hy - 2, 5, 2);
     px(p, light, hx - 3, hy - 2, 3, 1);
   } else {
-    const earLift = pose.following ? -1 : 0;
+    const earLift = pose.alert ? -2 : pose.following ? -1 : 0;
     px(p, dark, hx, hy - 5 + earLift, 2, 5 - earLift);
-    px(p, fur, hx + 2, hy - 6, 2, 6);
-    px(p, C.rose, hx + 2, hy - 5, 1, 3);
+    px(p, fur, hx + 2, hy - 6 + pose.twitch, 2, 6 - pose.twitch);
+    px(p, C.rose, hx + 2, hy - 5 + pose.twitch, 1, 3);
     px(p, light, hx, hy - 5 + earLift, 1, 2);
   }
-  eye(p, hx + 2, hy, rest, false);
+  if (pose.playing && !settled) {
+    px(p, light, 3 + pose.gait, -2, 2, 1);
+    px(p, C.warm, 7, body - 5, 1, 1);
+  }
+  eye(p, hx + 2, hy, rest || pose.blink, false);
   if (pose.drinking) drinkRipple(p, 7);
-  if (pose.courting) courtMark(p, -13);
+  if (pose.courting) courtMark(p, -13 + pose.hop);
 }
 
 function antlers(p: Pen, hx: number, hy: number, lowered: boolean): void {
@@ -713,9 +884,10 @@ function drawDeer(p: Pen, animal: Animal, pose: Pose): void {
   const dark = (animal.variant & 1) === 0 ? '#574454' : '#4b4651';
   const fur = (animal.variant & 1) === 0 ? '#ad784f' : '#987052';
   const light = '#d6a46b';
-  const low = pose.drinking || pose.feeding;
-  const body = (pose.resting ? -5 : -8) + pose.bob + (pose.fleeing ? 1 : 0);
-  if (!pose.resting) {
+  const settled = pose.resting || pose.sheltering;
+  const low = pose.drinking || pose.feeding || pose.grooming;
+  const body = (settled ? -5 : -8) + pose.bob + pose.breath + pose.hop + (pose.fleeing ? 1 : 0);
+  if (!settled) {
     px(p, dark, -5 - pose.gait, body + 3, 2, -body - 3);
     px(p, dark, 2 + pose.gait, body + 3, 2, -body - 3);
     px(p, fur, -3 + pose.gait, body + 3, 1, -body - 4);
@@ -731,8 +903,9 @@ function drawDeer(p: Pen, animal: Animal, pose: Pose): void {
   px(p, dark, -7, body, 12, 4);
   px(p, fur, -6, body - 1, 10, 4);
   px(p, light, -4, body - 1, 7, 1);
-  px(p, C.cream, -8, body, 2, 2);
-  px(p, dark, -8, body + 1, 1, 3);
+  const tailLift = settled ? 0 : pose.twitch + (pose.alert ? -1 : 0);
+  px(p, C.cream, -8, body + tailLift, 2, 2);
+  px(p, dark, -8, body + 1 + tailLift, 1, 3);
   // Fawn-like spots remain visible on adults as the species' field mark.
   px(p, C.cream, -3, body, 1, 1);
   px(p, C.warm, 0, body + 1, 1, 1);
@@ -744,12 +917,16 @@ function drawDeer(p: Pen, animal: Animal, pose: Pose): void {
     px(p, fur, 4, body, 3, 6);
     hx = 6;
     hy = -3;
-  } else if (pose.resting) {
+    if (pose.grooming) {
+      px(p, light, 4, -1, 4, 1);
+      px(p, C.rose, 8, 0, 1, 1);
+    }
+  } else if (settled) {
     px(p, dark, 2, body - 4, 4, 5);
     px(p, fur, 3, body - 5, 3, 5);
     hy = body - 6;
   } else {
-    const lift = pose.following || pose.courting ? -1 : 0;
+    const lift = pose.alert ? -2 : pose.following || pose.courting ? -1 : 0;
     px(p, dark, 2, body - 7 + lift, 4, 8 - lift);
     px(p, fur, 3, body - 8 + lift, 3, 8 - lift);
     px(p, light, 5, body - 7 + lift, 1, 5);
@@ -759,24 +936,28 @@ function drawDeer(p: Pen, animal: Animal, pose: Pose): void {
   px(p, fur, hx, hy - 1, 4, 3);
   px(p, C.cream, hx + 3, hy + 1, 3, 2);
   px(p, C.eye, hx + 5, hy + 1, 1, 1);
-  px(p, fur, hx - 1, hy - 2, 2, 2);
-  px(p, dark, hx + 2, hy - 2, 2, 2);
-  eye(p, hx + 2, hy, pose.resting);
-  if (animal.sex === 1 && pose.adult) antlers(p, hx, hy - 1, low);
+  px(p, fur, hx - 1, hy - 2 + pose.twitch, 2, 2);
+  px(p, dark, hx + 2, hy - 2 - (pose.alert ? 1 : 0), 2, 2);
+  if (pose.playing && !settled) px(p, light, 5 + pose.gait, -2, 2, 1);
+  eye(p, hx + 2, hy, pose.resting || pose.blink);
+  if (animal.sex === 1 && pose.adult) antlers(p, hx, hy - 1, low || pose.sheltering);
   if (pose.drinking) drinkRipple(p, 9);
-  if (pose.courting) courtMark(p, animal.sex === 1 && pose.adult ? -24 : -18);
+  if (pose.courting) courtMark(p, (animal.sex === 1 && pose.adult ? -24 : -18) + pose.hop);
 }
 
 function drawFox(p: Pen, animal: Animal, pose: Pose): void {
   const dark = '#51394a';
   const fur = (animal.variant & 1) === 0 ? '#c27145' : '#ad5d43';
   const light = '#e8a265';
-  const low = pose.drinking || pose.feeding;
-  const body = (pose.resting ? -4 : pose.hunting ? -4 : -6) + pose.bob;
-  if (pose.resting) {
+  const settled = pose.resting || pose.sheltering;
+  const low = pose.drinking || pose.feeding || pose.grooming;
+  const body = (settled || pose.hunting ? -4 : -6) + pose.bob + pose.breath + pose.hop;
+  if (settled) {
     px(p, dark, -7, -3, 12, 3);
     px(p, fur, -6, -4, 9, 3);
     px(p, C.cream, 1, -2, 5, 2);
+    px(p, fur, -8, -3 + (pose.resting ? 0 : pose.twitch), 4, 3);
+    px(p, C.cream, -9, -2, 2, 2);
   } else {
     px(p, dark, -4 - pose.gait, body + 2, 2, -body - 2);
     px(p, dark, 2 + pose.gait, body + 2, 2, -body - 2);
@@ -785,32 +966,38 @@ function drawFox(p: Pen, animal: Animal, pose: Pose): void {
     px(p, dark, -6, body, 11, 3);
     px(p, fur, -5, body - 1, 9, 3);
     px(p, light, -3, body - 1, 6, 1);
-    const tailY = pose.fleeing || pose.hunting ? body : body + 1;
+    const tailY = (pose.fleeing || pose.hunting ? body : body + 1) + pose.twitch - (pose.alert ? 1 : 0);
     px(p, dark, -10, tailY, 6, 4);
     px(p, fur, -9, tailY - 1, 5, 4);
     px(p, C.cream, -11, tailY, 3, 3);
   }
   const hx = low ? 6 : pose.hunting ? 5 : 3;
-  const hy = low ? -2 : body - 3;
+  const hy = (low ? -2 : body - 3) - (pose.alert && !low ? 1 : 0);
   px(p, dark, hx - 1, hy, 5, 4);
   px(p, fur, hx, hy - 1, 4, 4);
-  px(p, fur, hx, hy - 3, 2, 3);
-  px(p, dark, hx + 2, hy - 3, 2, 3);
+  px(p, fur, hx, hy - 3 + pose.twitch, 2, 3 - pose.twitch);
+  px(p, dark, hx + 2, hy - 3 - (pose.alert ? 1 : 0), 2, 3 + (pose.alert ? 1 : 0));
   px(p, C.cream, hx + 2, hy + 1, 4, 2);
   px(p, C.eye, hx + 5, hy + 1, 1, 1);
-  eye(p, hx + 2, hy, pose.resting, true);
+  if (pose.grooming) {
+    px(p, light, hx + 1, -1, 3, 1);
+    px(p, C.rose, hx + 4, 0, 1, 1);
+  }
+  if (pose.playing && !settled) px(p, light, 4 + pose.gait, -2, 3, 1);
+  eye(p, hx + 2, hy, pose.resting || pose.blink, true);
   if (pose.following) px(p, light, hx - 1, hy - 3, 1, 2);
   if (pose.drinking) drinkRipple(p, 9);
-  if (pose.courting) courtMark(p, -13);
+  if (pose.courting) courtMark(p, -13 + pose.hop);
 }
 
 function drawWolf(p: Pen, animal: Animal, pose: Pose): void {
   const dark = (animal.variant & 1) === 0 ? '#3f3c4d' : '#48404a';
   const fur = (animal.variant & 1) === 0 ? '#7c8384' : '#887c72';
   const light = (animal.variant & 1) === 0 ? '#b5b9ae' : '#c0ae91';
-  const low = pose.drinking || pose.feeding;
-  const body = (pose.resting ? -5 : pose.hunting ? -5 : -8) + pose.bob;
-  if (!pose.resting) {
+  const settled = pose.resting || pose.sheltering;
+  const low = pose.drinking || pose.feeding || pose.grooming;
+  const body = (settled || pose.hunting ? -5 : -8) + pose.bob + pose.breath + pose.hop;
+  if (!settled) {
     px(p, dark, -5 - pose.gait, body + 3, 2, -body - 3);
     px(p, dark, 2 + pose.gait, body + 3, 2, -body - 3);
     px(p, fur, -2 + pose.gait, body + 3, 1, -body - 4);
@@ -827,29 +1014,37 @@ function drawWolf(p: Pen, animal: Animal, pose: Pose): void {
   px(p, fur, -6, body - 1, 11, 4);
   px(p, light, -3, body - 1, 7, 1);
   px(p, light, 2, body + 2, 4, 2);
-  const tailY = pose.hunting || pose.fleeing ? body + 1 : body + 2;
+  const tailY = (pose.hunting || pose.fleeing ? body + 1 : body + 2) + pose.twitch - (pose.alert ? 2 : 0);
   px(p, dark, -11, tailY, 5, 3);
   px(p, fur, -10, tailY - (pose.following ? 2 : 0), 5, 3);
   const hx = low ? 6 : pose.hunting ? 5 : 4;
-  const hy = low ? -3 : body - 4;
+  const hy = (low ? -3 : body - 4) - (pose.alert && !low ? 1 : 0);
   px(p, dark, hx - 2, hy, 6, 5);
   px(p, fur, hx - 1, hy - 1, 5, 5);
-  px(p, fur, hx - 1, hy - 3, 2, 3);
-  px(p, dark, hx + 2, hy - 3, 2, 3);
+  px(p, fur, hx - 1, hy - 3 + pose.twitch, 2, 3 - pose.twitch);
+  px(p, dark, hx + 2, hy - 3 - (pose.alert ? 1 : 0), 2, 3 + (pose.alert ? 1 : 0));
   px(p, light, hx + 2, hy + 2, 4, 2);
   px(p, C.eye, hx + 5, hy + 2, 1, 1);
-  eye(p, hx + 2, hy, pose.resting, true);
+  if (pose.grooming) {
+    px(p, light, hx + 1, -1, 4, 1);
+    px(p, C.rose, hx + 5, 0, 1, 1);
+  }
+  if (pose.playing && !settled) px(p, light, 5 + pose.gait, -2, 3, 1);
+  eye(p, hx + 2, hy, pose.resting || pose.blink, true);
   if (pose.hunting) px(p, C.cream, hx + 4, hy + 2, 1, 1);
   if (pose.drinking) drinkRipple(p, 10);
-  if (pose.courting) courtMark(p, -17);
+  if (pose.courting) courtMark(p, -17 + pose.hop);
 }
 
-function drawBee(p: Pen, animal: Animal, pose: Pose): void {
-  const lift = pose.resting || pose.drinking ? 0 : 3 + (pose.frame === 1 || pose.frame === 2 ? 1 : 0);
-  const body = -3 - lift + pose.bob;
+function drawBee(anchor: Pen, animal: Animal, pose: Pose): void {
+  // Horizontal orbit plus the stepped vertical lift reads as a tiny hovering loop.
+  const p = shifted(anchor, pose.orbit, 0);
+  const grounded = pose.resting || pose.sheltering || pose.grooming;
+  const lift = grounded || pose.drinking ? 0 : 3 + (pose.frame === 1 || pose.frame === 2 ? 1 : 0) + (pose.alert ? 1 : 0);
+  const body = -3 - lift + pose.bob + pose.breath + pose.hop;
   const wingY = body - 3;
-  const wing = pose.resting ? '#8f8790' : pose.frame % 2 === 0 ? '#d7d9c9' : '#aaa9bd';
-  if (!pose.resting) {
+  const wing = grounded ? '#8f8790' : pose.frame % 2 === 0 ? '#d7d9c9' : '#aaa9bd';
+  if (!grounded) {
     px(p, C.violetLight, -3, wingY, 4, 2);
     px(p, wing, -2, wingY - 1, 4, 2);
     px(p, C.violetLight, 1, wingY + (pose.frame % 2), 4, 2);
@@ -861,14 +1056,23 @@ function drawBee(p: Pen, animal: Animal, pose: Pose): void {
   px(p, C.gold, -3, body - 1, 6, 3);
   px(p, C.ink, -1, body - 1, 1, 3);
   px(p, C.ink, 2, body - 1, 1, 3);
-  px(p, C.warm, -3, body - 1, 2, 1);
+  px(p, C.warm, -3, body - 1, pose.breath < 0 ? 3 : 2, 1);
   px(p, C.bark, 3, body, 2, 2);
-  eye(p, 4, body, pose.resting);
+  eye(p, 4, body, pose.resting || pose.blink);
   px(p, C.violet, -5, body + 1, 1, 1);
-  if (!pose.resting) {
+  if (!grounded) {
     px(p, C.violet, -2, body + 2, 1, 2);
     px(p, C.violet, 2, body + 2, 1, 2);
   }
+  if (pose.grooming) {
+    px(p, C.warm, 2, body + 2, 3, 1);
+    px(p, C.violet, 4, body + 1, 1, 2);
+  }
+  if (pose.alert) {
+    px(p, C.gold, 3, body - 3, 1, 2);
+    px(p, C.gold, 5, body - 4, 1, 3);
+  }
+  if (pose.playing) px(p, C.mint, -6, body - 2, 1, 1);
   if (pose.hunting || pose.feeding || pose.drinking) px(p, C.rose, 5, body + 1, 3, 1);
   if (pose.courting) {
     px(p, C.gold, -5, body - 4, 2, 2);
@@ -881,8 +1085,10 @@ function drawFrog(p: Pen, animal: Animal, pose: Pose, env: SpriteEnvironment): v
   const dark = teal ? '#34494d' : '#3d4b43';
   const skin = teal ? '#5e9481' : '#71975d';
   const light = teal ? '#9fbea0' : '#b4c681';
-  const hop = pose.moving && !env.reducedMotion && (pose.frame === 1 || pose.frame === 2) ? -2 : 0;
-  const body = (pose.resting ? -3 : -4) + hop + pose.bob;
+  const movingHop = pose.moving && !env.paused && !env.reducedMotion && (pose.frame === 1 || pose.frame === 2) ? -2 : 0;
+  const hop = Math.min(movingHop, pose.hop);
+  const settled = pose.resting || pose.sheltering;
+  const body = (settled ? -3 : -4) + hop + pose.bob + pose.breath;
   const stretched = hop < 0 || pose.fleeing;
   px(p, dark, stretched ? -8 : -6, stretched ? -1 : -2, stretched ? 6 : 4, 2);
   px(p, skin, -5, body + 1, 4, 3);
@@ -890,26 +1096,31 @@ function drawFrog(p: Pen, animal: Animal, pose: Pose, env: SpriteEnvironment): v
   px(p, dark, -5, body, 10, 4);
   px(p, skin, -4, body - 1, 8, 4);
   px(p, light, -2, body - 1, 5, 1);
-  const hx = pose.drinking ? 4 : 2;
-  const hy = pose.drinking ? -2 : body - 3;
+  const hx = pose.drinking || pose.grooming ? 4 : 2;
+  const hy = (pose.drinking || pose.grooming ? -2 : body - 3) - (pose.alert ? 1 : 0);
   px(p, dark, hx - 2, hy, 6, 4);
   px(p, skin, hx - 1, hy - 1, 5, 4);
-  px(p, skin, hx, hy - 2, 2, 2);
+  px(p, skin, hx, hy - 2 - (pose.alert ? 1 : 0), 2, 2 + (pose.alert ? 1 : 0));
   px(p, skin, hx + 3, hy - 2, 2, 2);
-  if (!pose.resting) {
-    px(p, C.cream, hx, hy - 2, 1, 1);
+  if (!settled) {
+    px(p, C.cream, hx, hy - 2 - (pose.alert ? 1 : 0), 1, 1);
     px(p, C.cream, hx + 3, hy - 2, 1, 1);
   }
-  eye(p, hx + 1, hy - 2, pose.resting);
-  eye(p, hx + 4, hy - 2, pose.resting);
-  if (pose.courting || pose.drinking) {
-    px(p, C.warm, hx + 2, hy + 2, 3, pose.courting && pose.frame < 2 ? 3 : 2);
+  eye(p, hx + 1, hy - 2 - (pose.alert ? 1 : 0), pose.resting || pose.blink);
+  eye(p, hx + 4, hy - 2, pose.resting || pose.blink);
+  const throat = pose.courting || pose.drinking || pose.throat;
+  // The throat sac is visible even outside courtship, quietly pulsing at rest.
+  px(p, throat ? C.warm : light, hx + 2, hy + 2, 3, throat && (pose.courting || pose.frame < 2) ? 3 : 2);
+  if (pose.grooming) {
+    px(p, light, hx + 3, -1, 4, 1);
+    px(p, C.rose, hx + 6, 0, 1, 1);
   }
+  if (pose.playing) px(p, C.mint, hx + 7, hy - 3, 1, 1);
   if (pose.hunting) {
     px(p, C.rose, hx + 5, hy + 1, 5, 1);
     px(p, C.warm, hx + 9, hy, 2, 2);
   }
-  if (env.weather !== 'clear' && !pose.resting) px(p, C.water, -3, body - 2, 1, 1);
+  if (rainFor(env) > 0.1 && !settled) px(p, C.water, -3, body - 2, 1, 1);
   if (pose.courting) courtMark(p, -11 + hop);
 }
 
@@ -963,6 +1174,62 @@ function drawDeadAnimal(p: Pen, animal: Animal): void {
   if (decay > 0.82) px(p, C.violet, -2, 0, 5, 1);
 }
 
+function animalMarkTop(animal: Animal, pose: Pose): number {
+  switch (animal.species) {
+    case 'rabbit': return (pose.alert ? -18 : -15) + pose.hop;
+    case 'deer': return (animal.sex === 1 && pose.adult ? -26 : -19) + pose.hop;
+    case 'fox': return -14 + pose.hop;
+    case 'wolf': return -18 + pose.hop;
+    case 'bee': return -12 + pose.bob + pose.hop;
+    case 'frog': return -13 + pose.hop;
+  }
+}
+
+function drawReaction(p: Pen, reaction: AnimalReaction | null, top: number): void {
+  if (!reaction) return;
+  if (reaction === 'startle') {
+    px(p, C.gold, 0, top - 7, 2, 4);
+    px(p, C.cream, 0, top - 7, 1, 2);
+    px(p, C.gold, 0, top - 2, 2, 2);
+    return;
+  }
+  if (reaction === 'bless') {
+    px(p, C.gold, -1, top - 6, 2, 4);
+    px(p, C.gold, -3, top - 4, 6, 1);
+    px(p, C.cream, -1, top - 5, 1, 2);
+    px(p, C.mint, -6, top - 1, 2, 1);
+    px(p, C.mint, 5, top - 6, 1, 2);
+    px(p, C.warm, 5, top, 2, 2);
+    return;
+  }
+  // Two linked, open squares for a newly formed bond.
+  px(p, C.gold, -4, top - 5, 4, 1);
+  px(p, C.gold, -4, top - 4, 1, 3);
+  px(p, C.gold, -3, top - 1, 3, 1);
+  px(p, C.mint, 0, top - 4, 4, 1);
+  px(p, C.mint, 3, top - 3, 1, 3);
+  px(p, C.mint, 0, top, 4, 1);
+}
+
+function drawAnimalIdentity(anchor: Pen, animal: Animal, pose: Pose, env: SpriteEnvironment): void {
+  const p = animal.species === 'bee' ? shifted(anchor, pose.orbit, 0) : anchor;
+  const top = animalMarkTop(animal, pose);
+  const pulse = !env.paused && !env.reducedMotion && mod4(Math.floor(env.time * 2) + animal.id) === 0;
+  if (animal.traits.includes('luminous')) {
+    px(p, C.glowShade, -5, top + 4, 1, 2);
+    px(p, C.glow, 4, top + 3, 2, 1);
+    px(p, C.mint, 5, top + 4, 1, 1);
+    if (pulse) px(p, C.cream, -4, top + 2, 1, 1);
+  }
+  if (animal.bond) {
+    px(p, C.gold, -3, top, 2, 1);
+    px(p, C.warm, -3, top - 1, 1, 1);
+    px(p, C.mint, 2, top - 1, 1, 2);
+    px(p, C.glowShade, 3, top, 1, 1);
+  }
+  drawReaction(p, pose.reaction, top);
+}
+
 export function drawAnimal(
   ctx: CanvasRenderingContext2D,
   animal: Animal,
@@ -970,6 +1237,7 @@ export function drawAnimal(
   y: number,
   z: number,
   env: SpriteEnvironment,
+  reaction?: 'startle' | 'bless' | 'bond' | null,
 ): void {
   ctx.save();
   try {
@@ -979,7 +1247,7 @@ export function drawAnimal(
       drawDeadAnimal(p, animal);
       return;
     }
-    const pose = poseFor(animal, env);
+    const pose = poseFor(animal, env, reaction);
     switch (animal.species) {
       case 'rabbit': drawRabbit(p, animal, pose); break;
       case 'deer': drawDeer(p, animal, pose); break;
@@ -987,6 +1255,83 @@ export function drawAnimal(
       case 'wolf': drawWolf(p, animal, pose); break;
       case 'bee': drawBee(p, animal, pose); break;
       case 'frog': drawFrog(p, animal, pose, env); break;
+    }
+    drawAnimalIdentity(p, animal, pose, env);
+  } finally {
+    ctx.restore();
+  }
+}
+
+export function drawMemorial(
+  ctx: CanvasRenderingContext2D,
+  memorial: Memorial,
+  x: number,
+  y: number,
+  z: number,
+  env: SpriteEnvironment,
+): void {
+  ctx.save();
+  try {
+    ctx.imageSmoothingEnabled = false;
+    const p = at(ctx, x, y, z, 1, (memorial.variant & 1) === 1);
+    const luminous = memorial.traits.includes('luminous');
+    const pulse = !env.paused && !env.reducedMotion && mod4(Math.floor(env.time * 2) + memorial.id) === 0;
+    // Broken gold corners make the little monument read as an interactive rune.
+    px(p, C.violet, -8, -1, 16, 2);
+    px(p, C.gold, -8, -2, 3, 1);
+    px(p, C.gold, 5, -2, 3, 1);
+    px(p, C.warm, -8, -4, 1, 3);
+    px(p, C.warm, 7, -4, 1, 3);
+    px(p, C.stoneLight, -1, 0, 3, 1);
+    if (memorial.kind === 'animal') {
+      px(p, C.ink, -6, -6, 12, 6);
+      px(p, C.violet, -5, -9, 10, 9);
+      px(p, C.stone, -4, -9, 8, 9);
+      px(p, C.stone, -3, -11, 6, 2);
+      px(p, C.stoneLight, -3, -10, 5, 2);
+      px(p, C.stoneLight, -4, -8, 2, 5);
+      px(p, C.shade, 3, -7, 1, 6);
+      // Gold lichen and a small paw-like remembrance mark, never an image asset.
+      px(p, C.gold, -4, -10, 3, 1);
+      px(p, C.gold, -5, -8, 2, 2);
+      px(p, C.warm, -2, -11, 1, 1);
+      px(p, C.cream, -1, -6, 2, 2);
+      px(p, C.gold, -2, -4, 1, 1);
+      px(p, C.gold, 1, -4, 1, 1);
+      if (luminous) {
+        px(p, C.glowShade, -7, -8, 1, 2);
+        px(p, C.glow, 5, -9, 1, 1);
+        if (pulse) px(p, C.mint, 4, -12, 1, 1);
+      }
+    } else {
+      px(p, C.ink, -6, -4, 12, 4);
+      px(p, C.stone, -5, -5, 10, 5);
+      px(p, C.stoneLight, -3, -6, 6, 2);
+      px(p, C.shade, 3, -4, 2, 3);
+      const wind = windOffset(env, memorial.id * 3 + memorial.variant);
+      const leaf = broadPalette(env);
+      px(p, C.bark, 0, -13, 1, 9);
+      px(p, C.barkLight, 1, -11, 1, 6);
+      px(p, C.bark, -2 + Math.sign(wind), -10, 3, 1);
+      px(p, leaf.dark, -6 + wind, -14, 6, 3);
+      px(p, leaf.mid, -5 + wind, -15, 4, 2);
+      px(p, C.mint, -4 + wind, -15, 2, 1);
+      px(p, leaf.dark, 1 + wind, -12, 6, 3);
+      px(p, leaf.mid, 2 + wind, -13, 4, 2);
+      px(p, C.glow, 2 + wind, -13, 2, 1);
+      px(p, leaf.mid, wind, -16, 3, 3);
+      px(p, C.mint, 1 + wind, -16, 1, 1);
+      if (rainFor(env) > 0.2) px(p, C.water, 5 + wind, -11, 1, 2);
+      if (snowFor(env) > 0.15) {
+        px(p, C.snow, -5 + wind, -16, 5, 1);
+        px(p, C.snowShade, 1 + wind, -13, 5, 1);
+        if (snowFor(env) > 0.65) px(p, C.snow, -4, -6, 7, 1);
+      }
+      if (luminous) {
+        px(p, C.glowShade, -8 + wind, -13, 1, 2);
+        px(p, C.glow, 7 + wind, -14, 1, 1);
+        if (pulse) px(p, C.cream, 2 + wind, -18, 1, 1);
+      }
     }
   } finally {
     ctx.restore();
