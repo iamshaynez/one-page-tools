@@ -54,6 +54,7 @@ export const TOOLS: Tool[] = [
   { key: 'password', name: '密码与 UUID', desc: '强密码批量生成，UUID v4 一打一打地来。', icon: 'P', category: 'dev', since: '2026-11' },
 
   // ---- 趣味游戏 ----
+  { key: 'forest-god', name: '森林之神', desc: '一方会呼吸的像素神域：播种、唤雨、引入兽群，看食物网在繁衍、捕食与死亡中写下自己的历史。', icon: '森', category: 'play', since: '2026-11', featured: true },
   { key: 'g2048', name: '2048', desc: '数字合成经典。键盘方向键或滑动，冲击 2048。', icon: '肆', category: 'play', since: '2026-11' },
   { key: 'bulls', name: '猜数字 1A2B', desc: '四位不重复数字，几 A 几 B 推理对决，三分钟一局。', icon: '猜', category: 'play', since: '2026-11' },
   { key: 'wheel', name: '今晚吃什么轮盘', desc: '漆红指针转盘，编辑你的选项清单，让命运决定。', icon: '盤', category: 'play', since: '2026-11' },

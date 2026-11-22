@@ -1,0 +1,575 @@
+---
+// 《森林之神》— 固定步长生态沙盒 + 程序化像素画布。全幅展品，不走 ToolShell。
+import Base from '../../layouts/Base.astro';
+---
+<Base
+  title="森林之神 · 玩具展馆"
+  description="播种、唤雨、引入兽群。观察一方像素森林在食物网、四季、火焰与新生中，写下只属于你的自然史。"
+>
+  <script is:inline>document.documentElement.dataset.theme = 'dark';</script>
+  <main class="forest-god" id="forest-god">
+    <canvas id="world" aria-label="会自主演化的像素森林。拖动平移，滚轮缩放，点选生命查看档案。"></canvas>
+
+    <header class="fg-topbar">
+      <div class="fg-brand">
+        <a class="fg-back" href="/" aria-label="返回玩具大厅">←</a>
+        <span class="fg-leaf" aria-hidden="true"><i></i></span>
+        <div>
+          <h1>森林之神</h1>
+          <p>FOREST GOD · AN EVER-CHANGING WILD</p>
+        </div>
+      </div>
+
+      <div class="fg-epoch" aria-live="polite">
+        <span class="fg-weather-dot" id="weather-dot"></span>
+        <div><b id="epoch">第一年 · 春</b><span id="clock">第 1 日 · 08:00 · 晴朗</span></div>
+      </div>
+
+      <nav class="fg-actions" aria-label="展品操作">
+        <button id="btn-chronicle" class="fg-icon fg-mobile-only" title="森林纪事">纪</button>
+        <button id="btn-sound" class="fg-icon" aria-pressed="false" title="开启环境声">音</button>
+        <button id="btn-photo" class="fg-icon" title="保存森林留影">影</button>
+        <button id="btn-help" class="fg-icon" title="神明手册">?</button>
+        <button id="btn-full" class="fg-icon fg-wide-only" title="全屏">⛶</button>
+      </nav>
+    </header>
+
+    <section class="fg-vitals" aria-label="森林状态">
+      <div class="fg-spirit-row"><span>灵力</span><b id="spirit">100</b></div>
+      <div class="fg-spirit-track"><i id="spirit-fill"></i></div>
+      <div class="fg-counts">
+        <span><i class="fg-dot plant"></i><b id="plant-count">0</b> 草木</span>
+        <span><i class="fg-dot animal"></i><b id="animal-count">0</b> 走兽</span>
+        <span><i class="fg-dot species"></i><b id="species-count">0</b> 物种</span>
+      </div>
+      <div class="fg-balance"><span>生命均衡</span><div><i id="health-fill"></i></div></div>
+    </section>
+
+    <aside class="fg-chronicle" id="chronicle" aria-label="森林纪事">
+      <div class="fg-panel-title"><span>森林纪事</span><small>CHRONICLE</small><button id="close-chronicle" class="fg-mobile-only" aria-label="关闭纪事">×</button></div>
+      <div id="event-list" class="fg-events"></div>
+      <p class="fg-chronicle-foot">每条小事，都曾真实发生。</p>
+    </aside>
+
+    <aside class="fg-inspector" id="inspector" aria-label="万物档案">
+      <div class="fg-panel-title"><span>万物档案</span><small>FIELD NOTES</small><button id="close-inspector" aria-label="收起档案">×</button></div>
+      <div id="empty-inspector" class="fg-empty-inspector">
+        <span class="fg-observe-mark" aria-hidden="true"></span>
+        <p>点选一株草、一只兽，<br />阅读它此刻的命运。</p>
+        <small>拖动环游 · 滚轮缩放 · 点击纪事定位</small>
+      </div>
+      <div id="entity-inspector" hidden>
+        <div class="fg-entity-heading"><span id="entity-glyph">兔</span><div><h2 id="entity-name">野兔</h2><p id="entity-latin">Lepus silva</p></div></div>
+        <p class="fg-entity-story" id="entity-story"></p>
+        <div class="fg-life-row"><span id="entity-stage">成年</span><span id="entity-age">0 日</span><span id="entity-sex"></span></div>
+        <div class="fg-meter"><label>健康 <b id="health-value"></b></label><div><i id="entity-health"></i></div></div>
+        <div id="animal-needs">
+          <div class="fg-meter"><label>饱食 <b id="food-value"></b></label><div><i id="entity-food"></i></div></div>
+          <div class="fg-meter"><label>水分 <b id="water-value"></b></label><div><i id="entity-water"></i></div></div>
+          <div class="fg-meter"><label>精力 <b id="energy-value"></b></label><div><i id="entity-energy"></i></div></div>
+        </div>
+        <div class="fg-behavior"><span>此刻</span><b id="entity-behavior">游荡</b></div>
+        <button id="btn-follow" class="fg-follow">移步观察 →</button>
+      </div>
+    </aside>
+
+    <div class="fg-fire-warning" id="fire-warning" hidden><span>!</span> 山火正在改变这片森林 <b id="fire-count"></b></div>
+
+    <div class="fg-view-controls" aria-label="视角控制">
+      <button id="zoom-out" aria-label="缩小">−</button><button id="zoom-reset" title="归位">◎</button><button id="zoom-in" aria-label="放大">+</button>
+    </div>
+
+    <footer class="fg-bottom">
+      <div class="fg-time-controls">
+        <button id="btn-pause" aria-pressed="false" title="空格键暂停">Ⅱ <span>暂停</span></button>
+        <div class="fg-speed" aria-label="时间流速">
+          <button data-speed="1" class="active">1×</button><button data-speed="4">4×</button><button data-speed="12">12×</button>
+        </div>
+      </div>
+      <p class="fg-power-hint" id="power-hint">观察万物，或从下方选择一种神谕。</p>
+      <div class="fg-tools" role="toolbar" aria-label="神谕工具栏">
+        <div class="fg-tool-group">
+          <span class="fg-group-name">观察</span>
+          <div><button class="fg-tool active" data-power="inspect" aria-pressed="true" title="观察生命 · 1"><i>察</i><span>观察</span></button></div>
+        </div>
+        <div class="fg-tool-group">
+          <span class="fg-group-name">天象</span>
+          <div>
+            <button class="fg-tool" data-power="rain" title="唤雨 · 18 灵力 · 2"><i>雨</i><span>唤雨</span></button>
+            <button class="fg-tool" data-power="sun" title="晴光 · 12 灵力 · 3"><i>阳</i><span>晴光</span></button>
+            <button class="fg-tool" data-power="storm" title="雷暴 · 30 灵力 · 4"><i>暴</i><span>雷暴</span></button>
+            <button class="fg-tool" data-power="lightning" title="落雷 · 20 灵力 · 6"><i>雷</i><span>落雷</span></button>
+          </div>
+        </div>
+        <div class="fg-tool-group">
+          <span class="fg-group-name">草木</span>
+          <div>
+            <button class="fg-tool" data-power="grass" title="青草 · 2 灵力"><i>草</i><span>青草</span></button>
+            <button class="fg-tool" data-power="flower" title="野花 · 3 灵力"><i>花</i><span>野花</span></button>
+            <button class="fg-tool" data-power="berry" title="浆果丛 · 6 灵力"><i>果</i><span>浆果</span></button>
+            <button class="fg-tool" data-power="oak" title="橡树 · 10 灵力"><i>橡</i><span>橡树</span></button>
+            <button class="fg-tool" data-power="pine" title="松树 · 10 灵力"><i>松</i><span>松树</span></button>
+            <button class="fg-tool" data-power="fern" title="蕨类 · 4 灵力"><i>蕨</i><span>蕨类</span></button>
+            <button class="fg-tool" data-power="mushroom" title="蘑菇 · 4 灵力"><i>菌</i><span>蘑菇</span></button>
+          </div>
+        </div>
+        <div class="fg-tool-group">
+          <span class="fg-group-name">众生</span>
+          <div>
+            <button class="fg-tool" data-power="rabbit" title="野兔 · 8 灵力"><i>兔</i><span>野兔</span></button>
+            <button class="fg-tool" data-power="deer" title="梅花鹿 · 14 灵力"><i>鹿</i><span>梅花鹿</span></button>
+            <button class="fg-tool" data-power="fox" title="赤狐 · 14 灵力"><i>狐</i><span>赤狐</span></button>
+            <button class="fg-tool" data-power="wolf" title="灰狼 · 18 灵力"><i>狼</i><span>灰狼</span></button>
+            <button class="fg-tool" data-power="bee" title="野蜂 · 5 灵力"><i>蜂</i><span>野蜂</span></button>
+            <button class="fg-tool" data-power="frog" title="树蛙 · 7 灵力"><i>蛙</i><span>树蛙</span></button>
+          </div>
+        </div>
+        <div class="fg-tool-group">
+          <span class="fg-group-name">神迹</span>
+          <div><button class="fg-tool fg-bless" data-power="bless" title="赐福 · 25 灵力 · 5"><i>✦</i><span>赐福</span></button></div>
+        </div>
+      </div>
+    </footer>
+
+    <div class="fg-intro" id="intro"><span>你是这里的神。</span>但没有任何生命，只为你而存在。<button id="dismiss-intro" aria-label="知道了">×</button></div>
+    <div class="fg-live" id="announce" aria-live="polite"></div>
+
+    <div class="fg-help" id="help" hidden role="dialog" aria-modal="true" aria-labelledby="help-title">
+      <section>
+        <button class="fg-help-close" id="close-help" aria-label="关闭手册">×</button>
+        <span class="fg-eyebrow">A SMALL GUIDE FOR A GREAT GOD</span>
+        <h2 id="help-title">别只给予生命。<br />也给它自己的命运。</h2>
+        <p class="fg-help-lead">每个世界由一枚种子生成。花草争夺水土，蜂为花授粉，鹿兔啃食嫩芽，狐狼追猎；遗骸化为养分，菌落又让死亡成为另一次开始。</p>
+        <div class="fg-help-grid">
+          <div><b>01 · 观察</b><p>拖动平移，滚轮或双指缩放。观察手点选生命；点击纪事可直接前往现场。</p></div>
+          <div><b>02 · 干预</b><p>天象立即生效。选择草木、众生、赐福或落雷后，再点击林地投放。灵力随时间恢复。</p></div>
+          <div><b>03 · 等待</b><p>1× 适合凝视，12× 适合跨越世代。没有失败结局：荒芜之后，总能重新开始。</p></div>
+          <div><b>04 · 后果</b><p>晴光促进生长也加速蒸发；暴雨灭火却可能伴随落雷。捕食者太多，猎物便会消失。</p></div>
+        </div>
+        <div class="fg-help-keys"><kbd>1</kbd>观察 <kbd>2</kbd>雨 <kbd>3</kbd>晴 <kbd>4</kbd>雷暴 <kbd>5</kbd>赐福 <kbd>6</kbd>落雷 <kbd>Space</kbd>暂停 <kbd>0</kbd>归位</div>
+        <div class="fg-help-actions"><button id="btn-new-world" class="fg-danger">另创一个世界</button><button id="close-help-bottom">继续凝视这片森林 →</button></div>
+        <small class="fg-save-note">世界会自动保存在此浏览器中。另创世界将覆盖当前存档。</small>
+      </section>
+    </div>
+
+    <div class="fg-veil" id="veil"><span class="fg-loading-tree">♣</span><p>风正在穿过第一片树叶…</p></div>
+    <div class="fg-fatal" id="fatal" hidden><h2>这片森林暂时无法苏醒。</h2><p id="fatal-message"></p><a href="/">← 返回大厅</a></div>
+  </main>
+</Base>
+
+<style is:global>
+  html, body { overflow: hidden; background: #151c19 !important; }
+  .forest-god { --fg-cream:#ede7d3; --fg-muted:#a7ad9d; --fg-gold:#e0c47b; --fg-line:rgba(222,225,199,.17); position:fixed; inset:0; color:var(--fg-cream); font-family:var(--font-sans); background:#151c19; isolation:isolate; }
+  .forest-god *, .forest-god *::before, .forest-god *::after { box-sizing:border-box; }
+  .forest-god button, .forest-god a { -webkit-tap-highlight-color:transparent; }
+  .forest-god button { color:inherit; }
+  .forest-god button:focus-visible, .forest-god a:focus-visible { outline:2px solid var(--fg-gold); outline-offset:3px; }
+  .forest-god [hidden] { display:none !important; }
+  #world { position:absolute; inset:0; width:100%; height:100%; display:block; image-rendering:pixelated; image-rendering:crisp-edges; touch-action:none; cursor:grab; }
+  #world:active { cursor:grabbing; }
+  .fg-topbar { position:absolute; z-index:10; top:0; left:0; right:0; padding:18px 20px; display:flex; justify-content:space-between; align-items:flex-start; pointer-events:none; background:linear-gradient(to bottom,rgba(14,19,20,.48),transparent); }
+  .fg-brand { display:flex; gap:11px; align-items:center; pointer-events:auto; }
+  .fg-back { color:var(--fg-cream); opacity:.65; text-decoration:none; font-size:20px; padding:4px; }
+  .fg-back:hover { opacity:1; color:var(--fg-gold); }
+  .fg-brand h1 { font-size:23px; letter-spacing:.22em; text-indent:.22em; color:var(--fg-cream); line-height:1.1; text-shadow:0 2px 8px #152019; }
+  .fg-brand p { margin:5px 0 0; font:7px/1.2 var(--font-mono); letter-spacing:.19em; color:#c3c7b4; }
+  .fg-leaf { width:24px; height:28px; position:relative; display:block; }
+  .fg-leaf::before, .fg-leaf::after, .fg-leaf i { content:""; position:absolute; width:8px; height:8px; background:#9cad72; box-shadow:8px 0 #7e9461,0 8px #7e9461,8px 8px #5f7b53; }
+  .fg-leaf::before { left:3px; top:1px; }
+  .fg-leaf::after { left:11px; top:9px; background:#405f4c; box-shadow:-8px 0 #66805a,0 8px #3a5445; }
+  .fg-leaf i { left:3px; top:25px; width:17px; height:2px; background:#c5b37b; box-shadow:none; transform:rotate(-25deg); }
+  .fg-epoch { display:flex; align-items:center; gap:10px; background:rgba(22,29,26,.72); border:1px solid var(--fg-line); padding:8px 15px; backdrop-filter:blur(10px); pointer-events:auto; box-shadow:0 4px 20px rgba(13,18,17,.12); }
+  .fg-epoch b { display:block; font:600 13px/1.3 var(--font-serif); letter-spacing:.14em; }
+  .fg-epoch span:not(.fg-weather-dot) { display:block; color:var(--fg-muted); font:9px/1.5 var(--font-mono); margin-top:2px; }
+  .fg-weather-dot { width:7px; height:7px; background:#e4c876; box-shadow:0 0 0 3px rgba(228,200,118,.1); }
+  .fg-weather-dot.rain { background:#8bb7bd; box-shadow:0 0 0 3px rgba(139,183,189,.12); }
+  .fg-weather-dot.storm { background:#d89684; animation:fg-pulse .7s steps(2) infinite; }
+  .fg-actions { display:flex; gap:6px; pointer-events:auto; }
+  .fg-icon { width:34px; height:34px; border:1px solid var(--fg-line); background:rgba(22,29,26,.72); font:12px var(--font-mono); cursor:pointer; backdrop-filter:blur(10px); }
+  .fg-icon:hover, .fg-icon[aria-pressed="true"] { border-color:#b7b98f; color:var(--fg-gold); background:rgba(43,53,42,.88); }
+  .fg-vitals { position:absolute; z-index:8; left:20px; top:92px; width:218px; padding:13px 14px; background:rgba(22,29,26,.75); border:1px solid var(--fg-line); backdrop-filter:blur(10px); }
+  .fg-spirit-row { display:flex; justify-content:space-between; font-size:10px; letter-spacing:.16em; color:var(--fg-muted); }
+  .fg-spirit-row b { color:var(--fg-gold); font:12px var(--font-mono); }
+  .fg-spirit-track { height:3px; background:#3d473e; margin:7px 0 12px; }
+  .fg-spirit-track i { display:block; height:100%; width:100%; background:#d8bd76; transition:width .3s; }
+  .fg-counts { display:flex; gap:10px; font-size:9px; color:var(--fg-muted); }
+  .fg-counts span { white-space:nowrap; }
+  .fg-counts b { color:var(--fg-cream); font:11px var(--font-mono); }
+  .fg-dot { display:inline-block; width:4px; height:4px; margin:0 4px 2px 0; }
+  .fg-dot.plant { background:#8fac74; } .fg-dot.animal { background:#d5ad79; } .fg-dot.species { background:#a49bbf; }
+  .fg-balance { display:flex; align-items:center; gap:8px; margin-top:10px; font-size:9px; color:var(--fg-muted); }
+  .fg-balance>div { flex:1; height:2px; background:#41473f; }
+  .fg-balance i { display:block; height:100%; background:#9cad77; }
+  .fg-chronicle, .fg-inspector { position:absolute; z-index:8; background:rgba(22,29,26,.82); border:1px solid var(--fg-line); backdrop-filter:blur(12px); box-shadow:0 10px 32px rgba(10,17,13,.14); }
+  .fg-chronicle { left:20px; bottom:126px; width:255px; padding:13px 14px 9px; }
+  .fg-inspector { right:20px; top:91px; width:238px; padding:13px 14px 14px; }
+  .fg-panel-title { display:flex; align-items:baseline; gap:8px; border-bottom:1px solid var(--fg-line); padding-bottom:8px; margin-bottom:7px; }
+  .fg-panel-title>span { font:600 12px var(--font-serif); letter-spacing:.16em; }
+  .fg-panel-title small { color:#858f82; font:7px var(--font-mono); letter-spacing:.14em; }
+  .fg-panel-title button { margin-left:auto; border:0; background:none; cursor:pointer; color:#aab09f; font-size:18px; line-height:14px; }
+  .fg-events { display:flex; flex-direction:column; max-height:184px; overflow:auto; scrollbar-width:thin; scrollbar-color:#596155 transparent; }
+  .fg-event { display:grid; grid-template-columns:5px 1fr; gap:8px; text-align:left; border:0; border-bottom:1px solid rgba(222,225,199,.07); background:none; padding:7px 0; cursor:pointer; }
+  .fg-event:hover .fg-event-text { color:var(--fg-gold); }
+  .fg-event>i { width:3px; height:3px; margin-top:5px; background:#889d75; }
+  .fg-event.birth>i { background:#e5c985; } .fg-event.death>i { background:#9a7c81; } .fg-event.fire>i { background:#df896a; } .fg-event.divine>i { background:#d8bb74; }
+  .fg-event-text { color:#c7cbb9; font-size:10px; line-height:1.55; transition:color .15s; }
+  .fg-event time { display:block; color:#747f75; font:7px var(--font-mono); margin-top:2px; }
+  .fg-chronicle-foot { color:#6f7a6f; font-size:8px; letter-spacing:.08em; margin:8px 0 0; }
+  .fg-empty-inspector { text-align:center; padding:18px 0 10px; }
+  .fg-empty-inspector p { font:12px/1.9 var(--font-serif); color:#c6c9b7; }
+  .fg-empty-inspector small { font-size:8px; color:#778278; }
+  .fg-observe-mark { display:block; width:22px; height:22px; border:1px dashed #a7ae89; border-radius:50%; margin:0 auto 12px; position:relative; }
+  .fg-observe-mark::after { content:""; position:absolute; width:4px; height:4px; background:#d6bd78; left:8px; top:8px; }
+  .fg-entity-heading { display:flex; align-items:center; gap:10px; margin:12px 0 9px; }
+  #entity-glyph { display:grid; place-items:center; width:37px; height:37px; border:1px solid #6e785f; background:#354537; color:#e1ca89; font:18px var(--font-serif); }
+  .fg-entity-heading h2 { font-size:16px; letter-spacing:.1em; }
+  .fg-entity-heading p { margin:2px 0 0; color:#899488; font:8px var(--font-mono); }
+  .fg-entity-story { font-size:10px; line-height:1.65; color:#aeb6a5; min-height:32px; }
+  .fg-life-row { display:flex; gap:9px; font-size:9px; color:#d4ceb8; margin:9px 0 12px; }
+  .fg-life-row span+span { border-left:1px solid var(--fg-line); padding-left:9px; }
+  .fg-meter { margin:7px 0; }
+  .fg-meter label { display:flex; justify-content:space-between; color:#8e998d; font-size:8px; }
+  .fg-meter label b { color:#bfc6b4; font:8px var(--font-mono); }
+  .fg-meter>div { height:2px; background:#3d463f; margin-top:4px; }
+  .fg-meter i { display:block; height:100%; background:#97a879; transition:width .25s; }
+  .fg-behavior { display:flex; justify-content:space-between; margin-top:12px; padding-top:9px; border-top:1px solid var(--fg-line); font-size:10px; }
+  .fg-behavior span { color:#869187; } .fg-behavior b { color:#e1cb90; font-weight:500; }
+  .fg-follow { width:100%; border:1px solid var(--fg-line); background:rgba(118,135,96,.09); padding:6px; margin-top:9px; font-size:9px; cursor:pointer; }
+  .fg-follow:hover { border-color:#919b77; }
+  .fg-fire-warning { position:absolute; z-index:9; top:82px; left:50%; transform:translateX(-50%); background:rgba(74,36,32,.86); border:1px solid rgba(224,139,104,.45); padding:6px 12px; color:#f0c5a3; font-size:10px; pointer-events:none; }
+  .fg-fire-warning span { display:inline-block; margin-right:6px; color:#efaa7f; }
+  .fg-view-controls { position:absolute; right:20px; bottom:128px; z-index:8; display:flex; }
+  .fg-view-controls button { width:30px; height:28px; background:rgba(22,29,26,.8); border:1px solid var(--fg-line); margin-left:-1px; font:13px var(--font-mono); cursor:pointer; }
+  .fg-view-controls button:hover { color:var(--fg-gold); background:#354238; }
+  .fg-bottom { position:absolute; z-index:12; left:0; right:0; bottom:0; display:flex; flex-direction:column; align-items:center; pointer-events:none; background:linear-gradient(to top,rgba(12,18,16,.6),transparent); padding-top:28px; }
+  .fg-time-controls { display:flex; gap:7px; pointer-events:auto; margin-bottom:5px; }
+  .fg-time-controls>button, .fg-speed { border:1px solid var(--fg-line); background:rgba(22,29,26,.85); backdrop-filter:blur(10px); }
+  .fg-time-controls>button { padding:4px 10px; font-size:9px; cursor:pointer; }
+  .fg-time-controls>button span { margin-left:3px; }
+  .fg-speed { display:flex; }
+  .fg-speed button { border:0; border-right:1px solid var(--fg-line); background:none; color:#929d90; font:9px var(--font-mono); width:34px; cursor:pointer; }
+  .fg-speed button:last-child { border-right:0; }
+  .fg-speed button.active { color:#1c261e; background:#c4c99c; }
+  .fg-power-hint { margin:0 0 5px; font-size:9px; letter-spacing:.08em; color:#e0ddca; text-shadow:0 1px 5px #111; pointer-events:none; }
+  .fg-tools { display:flex; gap:10px; max-width:calc(100vw - 24px); padding:8px 10px 9px; background:rgba(20,28,24,.9); border:1px solid var(--fg-line); border-bottom:0; backdrop-filter:blur(14px); pointer-events:auto; overflow-x:auto; scrollbar-width:thin; scrollbar-color:#65705d transparent; }
+  .fg-tool-group { flex:none; }
+  .fg-tool-group+.fg-tool-group { border-left:1px solid var(--fg-line); padding-left:10px; }
+  .fg-group-name { display:block; color:#717d72; font-size:7px; letter-spacing:.25em; margin:0 0 4px 2px; }
+  .fg-tool-group>div { display:flex; gap:3px; }
+  .fg-tool { width:40px; height:43px; padding:3px 0 2px; border:1px solid transparent; background:transparent; cursor:pointer; }
+  .fg-tool i { display:block; font:normal 16px/20px var(--font-serif); color:#c9ceba; }
+  .fg-tool span { display:block; color:#828e81; font-size:7px; white-space:nowrap; }
+  .fg-tool:hover { background:rgba(157,171,128,.09); border-color:#535f50; }
+  .fg-tool.active { background:#d5cfaa; border-color:#e5dbb5; box-shadow:0 0 0 1px rgba(16,25,18,.5); }
+  .fg-tool.active i, .fg-tool.active span { color:#25372b; }
+  .fg-bless i { color:#e2c574; }
+  .fg-intro { position:absolute; z-index:11; left:50%; bottom:145px; transform:translateX(-50%); background:rgba(23,31,27,.8); border:1px solid var(--fg-line); padding:7px 10px 7px 13px; font-size:10px; color:#aeb6a4; white-space:nowrap; transition:opacity .5s; }
+  .fg-intro span { color:#e0d5b4; margin-right:4px; }
+  .fg-intro button { border:0; background:none; margin-left:10px; color:#929b8d; cursor:pointer; }
+  .fg-intro.gone { opacity:0; pointer-events:none; }
+  .fg-live { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); }
+  .fg-help { position:absolute; z-index:40; inset:0; display:grid; place-items:center; background:rgba(9,14,12,.72); backdrop-filter:blur(8px); padding:20px; }
+  .fg-help>section { position:relative; width:min(690px,100%); max-height:90dvh; overflow:auto; background:#1d2821; border:1px solid #55614e; padding:34px; box-shadow:12px 12px 0 rgba(7,12,9,.35); }
+  .fg-help-close { position:absolute; right:15px; top:12px; border:0; background:none; color:#b9c0ad; font-size:24px; cursor:pointer; }
+  .fg-eyebrow { font:8px var(--font-mono); letter-spacing:.18em; color:#929f83; }
+  .fg-help h2 { font-size:28px; line-height:1.45; letter-spacing:.08em; margin:12px 0; color:#ece2c6; }
+  .fg-help-lead { color:#b7bdab; font-size:12px; line-height:1.8; }
+  .fg-help-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; margin:22px 0; }
+  .fg-help-grid b { color:#d9c58f; font-size:11px; letter-spacing:.08em; }
+  .fg-help-grid p { color:#9eaa9b; font-size:10px; line-height:1.7; margin:5px 0 0; }
+  .fg-help-keys { border-top:1px solid var(--fg-line); border-bottom:1px solid var(--fg-line); padding:12px 0; color:#8f9b8b; font-size:9px; line-height:2.3; }
+  .fg-help-keys kbd { border:1px solid #596453; background:#28372b; color:#d6d7c3; padding:2px 5px; margin:0 3px 0 7px; font:8px var(--font-mono); }
+  .fg-help-actions { display:flex; justify-content:space-between; gap:10px; margin-top:20px; }
+  .fg-help-actions button { border:1px solid #63705b; background:#33432f; padding:8px 13px; font-size:10px; cursor:pointer; }
+  .fg-help-actions .fg-danger { background:transparent; color:#bfa49b; border-color:#72574f; }
+  .fg-save-note { display:block; color:#748175; margin-top:12px; font-size:8px; }
+  .fg-veil, .fg-fatal { position:absolute; z-index:60; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; background:#17221c; transition:opacity .8s; }
+  .fg-veil.lit { opacity:0; pointer-events:none; }
+  .fg-loading-tree { color:#c9bb82; font-size:32px; animation:fg-pulse 1.2s steps(3) infinite; }
+  .fg-veil p { color:#8f9c8b; font-size:10px; letter-spacing:.22em; }
+  .fg-fatal h2 { color:#e6dcc4; } .fg-fatal p { color:#9caa9b; } .fg-fatal a { color:#e1c680; }
+  .fg-mobile-only { display:none; }
+  @keyframes fg-pulse { 50% { opacity:.4; } }
+
+  @media (max-width:1100px) {
+    .fg-tool { width:37px; }
+    .fg-tools { gap:7px; }
+    .fg-tool-group+.fg-tool-group { padding-left:7px; }
+    .fg-chronicle { width:226px; }
+  }
+  @media (max-width:760px) {
+    .fg-topbar { padding:11px 12px; }
+    .fg-brand { gap:7px; } .fg-brand h1 { font-size:17px; } .fg-brand p, .fg-leaf { display:none; }
+    .fg-back { font-size:17px; }
+    .fg-epoch { position:absolute; top:54px; left:50%; transform:translateX(-50%); padding:5px 10px; white-space:nowrap; }
+    .fg-epoch b { font-size:10px; } .fg-epoch span:not(.fg-weather-dot) { font-size:7px; }
+    .fg-icon { width:32px; height:32px; }
+    .fg-wide-only { display:none; } .fg-mobile-only { display:block; }
+    .fg-vitals { top:96px; left:10px; width:130px; padding:8px 9px; }
+    .fg-spirit-row { font-size:8px; } .fg-spirit-track { margin:4px 0 7px; }
+    .fg-counts { gap:7px; } .fg-counts span { font-size:0; } .fg-counts b { font-size:9px; }
+    .fg-balance { display:none; }
+    .fg-inspector { top:102px; right:10px; width:210px; max-height:calc(100dvh - 230px); overflow:auto; padding:10px 12px; }
+    .fg-inspector:not(.has-entity) { display:none; }
+    .fg-chronicle { display:none; left:10px; right:10px; bottom:130px; width:auto; max-height:52dvh; }
+    .fg-chronicle.open { display:block; }
+    .fg-events { max-height:35dvh; }
+    .fg-view-controls { right:10px; bottom:133px; }
+    .fg-fire-warning { top:94px; font-size:8px; white-space:nowrap; }
+    .fg-bottom { padding-top:20px; align-items:stretch; }
+    .fg-time-controls { align-self:center; margin-bottom:3px; }
+    .fg-power-hint { text-align:center; font-size:8px; height:14px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; padding:0 16px; }
+    .fg-tools { max-width:100vw; border-left:0; border-right:0; padding:6px 9px calc(7px + env(safe-area-inset-bottom)); gap:8px; }
+    .fg-tool { width:42px; height:44px; }
+    .fg-group-name { font-size:7px; }
+    .fg-intro { bottom:180px; max-width:calc(100vw - 28px); white-space:normal; text-align:center; font-size:9px; width:max-content; }
+    .fg-help { padding:12px; } .fg-help>section { padding:26px 20px; }
+    .fg-help h2 { font-size:22px; } .fg-help-grid { grid-template-columns:1fr; gap:12px; }
+    .fg-help-actions { flex-direction:column-reverse; } .fg-help-actions button { width:100%; }
+  }
+  @media (prefers-reduced-motion:reduce) { .fg-weather-dot.storm, .fg-loading-tree { animation:none; } }
+</style>
+
+<script>
+  import { ANIMAL_RULES, PLANT_RULES, POWER_INFO } from '../../scripts/forest-god-content';
+  import type { Power } from '../../scripts/forest-god-content';
+  import { applyPower, createWorld, deserializeWorld, environmentAt, findEntity, serializeWorld, stepWorld, worldStats } from '../../scripts/forest-god-core';
+  import type { Animal, Plant } from '../../scripts/forest-god-core';
+  import { createForestScene } from '../../scripts/forest-god-scene';
+  import { createForestAudio } from '../../scripts/forest-god-audio';
+  import { confirmDialog, download, toast } from '../../scripts/ui';
+
+  const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+  const canvas = $('world') as HTMLCanvasElement;
+  const SAVE_KEY = 'forest-god-world-v1';
+  let saved: string | null = null;
+  try { saved = localStorage.getItem(SAVE_KEY); } catch { /* 隐私模式 */ }
+  let world = createWorld();
+  if (saved) {
+    try { world = deserializeWorld(saved); }
+    catch { try { localStorage.removeItem(SAVE_KEY); } catch { /* ignore */ } }
+  }
+  let selectedId: number | null = null;
+  let currentPower: Power = 'inspect';
+  let speed = 1;
+  let paused = false;
+  let lastSave = 0;
+  let soundOn = false;
+  const audio = createForestAudio();
+
+  function saveWorld() {
+    try { localStorage.setItem(SAVE_KEY, serializeWorld(world)); } catch { /* 存储配额或隐私模式 */ }
+  }
+
+  const behaviorNames = { wander:'游荡', rest:'休息', seekFood:'觅食', drink:'饮水', flee:'逃窜', hunt:'追猎', court:'求偶', follow:'跟随长辈' };
+  const weatherNames = { clear:'晴朗', rain:'降雨', storm:'雷暴' };
+  const powerHints: Partial<Record<Power, string>> = Object.fromEntries([
+    ...Object.entries(PLANT_RULES).map(([key, rule]) => [key, `点击林地播种${rule.name} · ${rule.cost} 灵力`]),
+    ...Object.entries(ANIMAL_RULES).map(([key, rule]) => [key, `点击适宜栖息地引入${rule.name} · ${rule.cost} 灵力`]),
+    ['bless', POWER_INFO.bless.hint], ['lightning', POWER_INFO.lightning.hint], ['inspect', POWER_INFO.inspect.hint],
+  ]) as Partial<Record<Power, string>>;
+
+  function updateEvents() {
+    const list = $('event-list');
+    list.replaceChildren();
+    for (const event of world.events.slice(0, 6)) {
+      const button = document.createElement('button');
+      button.className = `fg-event ${event.kind}`;
+      const dot = document.createElement('i');
+      const body = document.createElement('span');
+      body.className = 'fg-event-text';
+      body.textContent = event.text;
+      const time = document.createElement('time');
+      time.textContent = `第 ${Math.floor(event.at) + 1} 日 · ${String(Math.floor((event.at % 1) * 24)).padStart(2, '0')} 时`;
+      body.appendChild(time);
+      button.append(dot, body);
+      button.addEventListener('click', () => {
+        scene.focus(event.x, event.y, 1.7);
+        $('chronicle').classList.remove('open');
+        $('intro').classList.add('gone');
+      });
+      list.appendChild(button);
+    }
+  }
+
+  function setMeter(id: string, value: number) {
+    const element = $(id) as HTMLElement;
+    element.style.width = `${Math.round(Math.max(0, Math.min(1, value)) * 100)}%`;
+  }
+
+  function updateInspector() {
+    const entity = findEntity(world, selectedId);
+    $('empty-inspector').hidden = !!entity;
+    $('entity-inspector').hidden = !entity;
+    $('inspector').classList.toggle('has-entity', !!entity);
+    if (!entity) return;
+    const plant = 'growth' in entity;
+    const rule = plant ? PLANT_RULES[(entity as Plant).species] : ANIMAL_RULES[(entity as Animal).species];
+    $('entity-glyph').textContent = rule.name.slice(-1);
+    $('entity-name').textContent = entity.alive ? rule.name : `${rule.name}的遗骸`;
+    $('entity-latin').textContent = rule.latin;
+    $('entity-story').textContent = rule.description;
+    $('entity-age').textContent = `${entity.age.toFixed(1)} 日`;
+    $('entity-sex').textContent = plant ? '' : (entity as Animal).sex ? '雌性' : '雄性';
+    if (!entity.alive) $('entity-stage').textContent = '正在归土';
+    else if (plant) {
+      const growth = (entity as Plant).growth;
+      $('entity-stage').textContent = growth < 0.2 ? '萌芽' : growth < 0.6 ? '生长' : growth < 0.85 ? '成熟' : '繁茂';
+    } else $('entity-stage').textContent = entity.age < rule.matureAt ? '幼年' : entity.age > rule.lifespan * 0.8 ? '暮年' : '成年';
+    setMeter('entity-health', entity.health);
+    $('health-value').textContent = `${Math.round(entity.health * 100)}%`;
+    $('animal-needs').hidden = plant;
+    if (!plant) {
+      const animal = entity as Animal;
+      setMeter('entity-food', 1 - animal.hunger); setMeter('entity-water', 1 - animal.thirst); setMeter('entity-energy', animal.energy);
+      $('food-value').textContent = `${Math.round((1 - animal.hunger) * 100)}%`;
+      $('water-value').textContent = `${Math.round((1 - animal.thirst) * 100)}%`;
+      $('energy-value').textContent = `${Math.round(animal.energy * 100)}%`;
+      $('entity-behavior').textContent = entity.alive ? behaviorNames[animal.behavior] : '生命已止息';
+    } else $('entity-behavior').textContent = entity.alive ? ((entity as Plant).pollinated ? '已经授粉' : '静静生长') : '养分正在回归';
+  }
+
+  function updateHud(now = performance.now()) {
+    const env = environmentAt(world.time);
+    const stats = worldStats(world);
+    const hour = Math.floor(env.day * 24), minute = Math.floor((env.day * 24 - hour) * 60);
+    $('epoch').textContent = `第${['一','二','三','四','五'][Math.min(4, env.year - 1)] ?? env.year}年 · ${env.season}`;
+    $('clock').textContent = `第 ${Math.floor(world.time % 48) + 1} 日 · ${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')} · ${weatherNames[world.weather.kind]}`;
+    $('weather-dot').className = `fg-weather-dot ${world.weather.kind}`;
+    $('spirit').textContent = String(Math.floor(world.divine));
+    setMeter('spirit-fill', world.divine / 100); setMeter('health-fill', stats.health);
+    $('plant-count').textContent = String(stats.plants); $('animal-count').textContent = String(stats.animals); $('species-count').textContent = String(stats.species);
+    $('fire-warning').hidden = stats.fires === 0; $('fire-count').textContent = stats.fires ? `${stats.fires} 处` : '';
+    updateEvents(); updateInspector(); audio.update(world);
+    if (now - lastSave > 7000) { lastSave = now; saveWorld(); }
+  }
+
+  function announce(message: string, ok = true) {
+    $('announce').textContent = message;
+    toast(message, ok ? 2300 : 1800);
+  }
+
+  function selectPower(power: Power) {
+    currentPower = power;
+    scene.setPower(power);
+    document.querySelectorAll<HTMLButtonElement>('[data-power]').forEach(button => {
+      const active = button.dataset.power === power && !['rain','sun','storm'].includes(power);
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+    $('power-hint').textContent = powerHints[power] ?? '观察万物，或选择一种神谕。';
+    $('intro').classList.add('gone');
+  }
+
+  let scene: ReturnType<typeof createForestScene>;
+  try {
+    scene = createForestScene(canvas, world, {
+    onTick: updateHud,
+    onSelect(id) { selectedId = id; scene.select(id); updateInspector(); if (id !== null) $('intro').classList.add('gone'); },
+    onPower(x, y) {
+      const result = applyPower(world, currentPower, x, y);
+      if (result.ok) { audio.chime('divine'); saveWorld(); updateHud(); }
+      return result;
+    },
+    onMessage: announce,
+    onEvent(event) { if (event.kind === 'birth') audio.chime('birth'); else if (event.kind === 'death') audio.chime('death'); },
+    });
+  } catch (error) {
+    $('veil').hidden = true;
+    $('fatal').hidden = false;
+    $('fatal-message').textContent = error instanceof Error ? error.message : '浏览器无法创建画布。';
+    throw error;
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('[data-power]').forEach(button => {
+    button.addEventListener('click', () => {
+      const power = button.dataset.power as Power;
+      if (power === 'rain' || power === 'sun' || power === 'storm') {
+        const result = applyPower(world, power);
+        announce(result.message, result.ok);
+        if (result.ok) { audio.chime('divine'); saveWorld(); updateHud(); }
+      } else selectPower(power);
+    });
+  });
+
+  function setPaused(next: boolean) {
+    paused = next; scene.setPaused(paused);
+    $('btn-pause').setAttribute('aria-pressed', String(paused));
+    $('btn-pause').innerHTML = paused ? '▶ <span>继续</span>' : 'Ⅱ <span>暂停</span>';
+  }
+  $('btn-pause').addEventListener('click', () => setPaused(!paused));
+  document.querySelectorAll<HTMLButtonElement>('[data-speed]').forEach(button => button.addEventListener('click', () => {
+    speed = Number(button.dataset.speed); scene.setSpeed(speed); setPaused(false);
+    document.querySelectorAll('[data-speed]').forEach(b => b.classList.toggle('active', b === button));
+  }));
+  $('zoom-in').addEventListener('click', () => scene.zoomBy(1.25));
+  $('zoom-out').addEventListener('click', () => scene.zoomBy(0.8));
+  $('zoom-reset').addEventListener('click', () => scene.resetView());
+  $('dismiss-intro').addEventListener('click', () => $('intro').classList.add('gone'));
+  $('close-inspector').addEventListener('click', () => { selectedId = null; scene.select(null); updateInspector(); });
+  $('btn-follow').addEventListener('click', () => {
+    const entity = findEntity(world, selectedId); if (entity) scene.focus(entity.x, entity.y, 2);
+  });
+  $('btn-chronicle').addEventListener('click', () => $('chronicle').classList.toggle('open'));
+  $('close-chronicle').addEventListener('click', () => $('chronicle').classList.remove('open'));
+
+  function showHelp(show: boolean) { $('help').hidden = !show; if (show) $('close-help').focus(); }
+  $('btn-help').addEventListener('click', () => showHelp(true));
+  $('close-help').addEventListener('click', () => showHelp(false));
+  $('close-help-bottom').addEventListener('click', () => showHelp(false));
+  $('help').addEventListener('click', event => { if (event.target === $('help')) showHelp(false); });
+  $('btn-new-world').addEventListener('click', async () => {
+    const confirmed = await confirmDialog('让另一枚世界种子发芽？', '当前森林会被覆盖。它的历史将只留在你保存过的留影里。', '另创世界');
+    if (!confirmed) return;
+    world = createWorld((Date.now() ^ Math.floor(Math.random() * 0xffffffff)) >>> 0);
+    selectedId = null; scene.setWorld(world); saveWorld(); showHelp(false); selectPower('inspect'); updateHud();
+    announce('新的风、新的河流、新的生命。另一部自然史开始了。');
+  });
+  $('btn-sound').addEventListener('click', async () => {
+    soundOn = await audio.toggle();
+    $('btn-sound').setAttribute('aria-pressed', String(soundOn));
+    $('btn-sound').title = soundOn ? '关闭环境声' : '开启环境音';
+    announce(soundOn ? '风、雨与鸟鸣已被唤醒。' : '森林重归无声。');
+  });
+  $('btn-photo').addEventListener('click', async () => {
+    const blob = await scene.snapshot();
+    if (blob) { download(`森林之神-第${Math.floor(world.time) + 1}日.png`, blob, 'image/png'); announce('这一刻的森林，已经收进留影。'); }
+    else announce('浏览器未能保存这张留影。', false);
+  });
+  $('btn-full').addEventListener('click', async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await document.documentElement.requestFullscreen();
+    } catch { announce('这个浏览器暂不支持全屏。', false); }
+  });
+
+  document.addEventListener('keydown', event => {
+    const target = event.target as HTMLElement | null;
+    if (target && ['INPUT','TEXTAREA','SELECT'].includes(target.tagName)) return;
+    if (event.key === 'Escape') { showHelp(false); $('chronicle').classList.remove('open'); selectPower('inspect'); return; }
+    if (!$('help').hidden) return;
+    if (event.code === 'Space') { event.preventDefault(); setPaused(!paused); return; }
+    const powers: Record<string, Power> = { '1':'inspect', '2':'rain', '3':'sun', '4':'storm', '5':'bless', '6':'lightning' };
+    const power = powers[event.key];
+    if (power) {
+      if (power === 'rain' || power === 'sun' || power === 'storm') {
+        const result = applyPower(world, power); announce(result.message, result.ok); if (result.ok) updateHud();
+      } else selectPower(power);
+    }
+    if (event.key === '0') scene.resetView();
+    if (event.key === '+' || event.key === '=') scene.zoomBy(1.2);
+    if (event.key === '-') scene.zoomBy(0.8);
+  });
+
+  window.addEventListener('pagehide', saveWorld);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) saveWorld(); });
+  document.addEventListener('astro:before-swap', () => { saveWorld(); scene.dispose(); audio.dispose(); }, { once:true });
+  updateHud();
+  requestAnimationFrame(() => $('veil').classList.add('lit'));
+  setTimeout(() => $('veil').remove(), 1100);
+  setTimeout(() => $('intro').classList.add('gone'), 10000);
+  // 仅测试模式暴露只读诊断与固定推进接口，不影响正常沙盒。
+  if (new URLSearchParams(location.search).has('test')) {
+    Object.assign(window, { __forestGod: { world: () => world, step: (n = 1) => { for (let i=0;i<n;i++) stepWorld(world); updateHud(); }, render: () => scene.renderOnce(), stats: () => worldStats(world), selectPower } });
+  }
+</script>
