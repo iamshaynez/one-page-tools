@@ -19,9 +19,9 @@ jobs:
         run: npx vitest run
       - name: 构建
         run: npx astro build
-      - name: 无广告/追踪代码检查
+      - name: 无第三方广告/追踪代码检查（自托管第一方统计除外）
         run: |
           if grep -rniE 'adsense|adsbygoogle|doubleclick|googletagmanager|gtag\(|cnzz|hm\.baidu' src/ public/ --include='*.astro' --include='*.ts' --include='*.js' --include='*.html'; then
-            echo '发现广告/追踪代码'; exit 1;
+            echo '发现第三方广告/追踪代码'; exit 1;
           fi
-          echo '干净：无广告无追踪'
+          echo '干净：无第三方广告/追踪代码（自托管第一方统计除外）'
