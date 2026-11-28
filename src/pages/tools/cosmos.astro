@@ -1,10 +1,18 @@
 ---
 // 《宇宙漫游》— 从地球出发的太阳系 3D 飞行。真实轨道根数驱动。
 import Base from '../../layouts/Base.astro';
+import ImmersiveSeo from '../../components/ImmersiveSeo.astro';
+import { byKey } from '../../data/tools';
+import { webAppLd } from '../../data/seo';
+
+const tool = byKey('cosmos')!;
+const jsonLd = [webAppLd(tool, new URL(Astro.url.pathname, Astro.site).href)];
 ---
 <Base
-  title="宇宙漫游 · 玩具展馆"
-  description="从地球出发，驾驶视角漫游真实轨道参数构建的太阳系：八行星与冥王星按 J2000 轨道根数运行，土星环、小行星带、流星与五个漂浮彩蛋。WASD 或双摇杆航行。"
+  title={tool.seo?.title ?? `${tool.name} · 玩具展馆`}
+  description={tool.seo?.description ?? tool.desc}
+  keywords={tool.keywords}
+  jsonLd={jsonLd}
 >
   <script is:inline>
     document.documentElement.dataset.theme = 'dark';
@@ -118,6 +126,7 @@ import Base from '../../layouts/Base.astro';
       <a class="hud__btn" href="/">← 回到大厅</a>
     </div>
   </div>
+  <ImmersiveSeo toolKey="cosmos" />
 </Base>
 
 <style is:global>

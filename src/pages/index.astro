@@ -1,8 +1,35 @@
 ---
 import Base from '../layouts/Base.astro';
-import { TOOLS, CATEGORIES } from '../data/tools';
+import { TOOLS, CATEGORIES, byCategory } from '../data/tools';
+
+const title = '玩具展馆 - 免费在线工具与网页小游戏合集';
+const description = '玩具展馆是一座单页玩具展馆：MBTI 测试、观音灵签抽签、扫雷、贪吃蛇、JSON 格式化、番茄钟、白噪音等 30 个免费在线工具与网页小游戏，无需注册、无广告，数据不出浏览器，PWA 可离线。';
+const keywords = ['在线工具箱', '免费在线工具', '网页小游戏', '无广告工具站', '单页工具', '在线工具合集'];
+
+const jsonLd = [
+  {
+    '@context': 'https://schema.org',
+    '@type': 'WebSite',
+    name: '玩具展馆',
+    alternateName: 'one-page-tools',
+    url: Astro.site?.href,
+    description,
+    inLanguage: 'zh-CN',
+  },
+  {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    name: '玩具展馆 · 馆藏清单',
+    itemListElement: TOOLS.map((t, i) => ({
+      '@type': 'ListItem',
+      position: i + 1,
+      name: t.name,
+      url: new URL(`/tools/${t.key}/`, Astro.site).href,
+    })),
+  },
+];
 ---
-<Base>
+<Base title={title} description={description} keywords={keywords} jsonLd={jsonLd}>
   <header class="hero">
     <div class="wrap">
       <div class="hero__top">
@@ -46,6 +73,40 @@ import { TOOLS, CATEGORIES } from '../data/tools';
       ))}
     </div>
     <p class="center muted hidden" id="empty" style="padding: 48px 0;">没有找到匹配的玩具。</p>
+
+    <section class="guide" aria-label="展馆导览">
+      <h2>展馆导览</h2>
+      <p class="muted">
+        这座展馆里住着 {TOOLS.length} 个免费在线工具与网页小游戏，全部无需注册、无广告，数据不出浏览器。
+        四个展厅，按喜欢挑：
+      </p>
+      <dl class="guide__list">
+        <div>
+          <dt>经典玩具</dt>
+          <dd>
+            <a href="/tools/asakusa/">观音灵签在线抽签</a>、<a href="/tools/mbti/">MBTI 测试</a>、<a href="/tools/enneagram/">九型人格测试</a>、<a href="/tools/yijing/">周易铜钱卦</a>、<a href="/tools/snake/">贪吃蛇</a>、<a href="/tools/mine/">扫雷</a>、<a href="/tools/mermaid/">Mermaid 图表</a>、<a href="/tools/score/">牌局计分板</a>、<a href="/tools/subtitle/">字幕截图生成</a>、<a href="/tools/randomrole/">角色随机分配器</a>
+          </dd>
+        </div>
+        <div>
+          <dt>创作工坊</dt>
+          <dd>
+            <a href="/tools/poem/">每日诗签</a>、<a href="/tools/wordclock/">汉字时钟</a>、<a href="/tools/vertical/">竖排文字器</a>、<a href="/tools/seal/">印章生成器</a>、<a href="/tools/pomodoro/">在线番茄钟</a>、<a href="/tools/party/">聚会抽奖分组</a>、<a href="/tools/endtime/">时间的尽头</a>、<a href="/tools/cosmos/">宇宙漫游</a>
+          </dd>
+        </div>
+        <div>
+          <dt>开发者工具</dt>
+          <dd>
+            <a href="/tools/json/">JSON 格式化</a>、<a href="/tools/regex/">正则表达式测试</a>、<a href="/tools/cron/">Cron 表达式解析</a>、<a href="/tools/timestamp/">时间戳转换</a>、<a href="/tools/password/">密码与 UUID 生成器</a>
+          </dd>
+        </div>
+        <div>
+          <dt>趣味游戏</dt>
+          <dd>
+            <a href="/tools/forest-god/">森林之神生态沙盒</a>、<a href="/tools/g2048/">2048</a>、<a href="/tools/gomoku/">五子棋</a>、<a href="/tools/twentyfour/">24 点</a>、<a href="/tools/bulls/">猜数字 1A2B</a>、<a href="/tools/wheel/">今晚吃什么转盘</a>、<a href="/tools/noise/">白噪音小屋</a>
+          </dd>
+        </div>
+      </dl>
+    </section>
   </main>
 
   <footer class="site-foot wrap muted small">
@@ -86,6 +147,13 @@ import { TOOLS, CATEGORIES } from '../data/tools';
   .tcard__desc { font-size: 0.88rem; line-height: 1.7; margin: 12px 0 16px; flex: 1; }
   .tcard__foot { display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed var(--line); padding-top: 12px; }
   .site-foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding: 24px; border-top: 1px solid var(--line-soft); }
+  .guide { margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line-soft); }
+  .guide h2 { font-size: 1.05rem; margin: 0 0 12px; }
+  .guide__list { display: grid; gap: 12px; margin: 16px 0 0; }
+  .guide__list dt { font-family: var(--font-serif); font-weight: 600; margin-bottom: 4px; }
+  .guide__list dd { margin: 0; line-height: 2; font-size: 0.9rem; color: var(--ink-soft); }
+  .guide__list dd a { border-bottom: 1px dashed var(--line); }
+  .guide__list dd a:hover { border-bottom-color: var(--red); color: var(--ink); }
   @media (max-width: 640px) { .filter-search { width: 100%; margin-left: 0; } }
 </style>
 

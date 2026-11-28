@@ -1,8 +1,20 @@
 ---
 import Base from '../layouts/Base.astro';
 import { TOOLS } from '../data/tools';
+
+const title = '关于玩具展馆 · 免费无广告的单页工具站';
+const description = `玩具展馆是一座单页玩具的展馆：${TOOLS.length} 个免费在线工具与网页小游戏，本地优先、PWA 可离线、无广告无追踪。这里记录它们的来历与造法。`;
+const keywords = ['玩具展馆', '单页工具', '本地优先', '无追踪', 'PWA'];
+const jsonLd = [{
+  '@context': 'https://schema.org',
+  '@type': 'AboutPage',
+  name: title,
+  description,
+  inLanguage: 'zh-CN',
+  url: new URL(Astro.url.pathname, Astro.site).href,
+}];
 ---
-<Base title="关于 · 玩具展馆">
+<Base title={title} description={description} keywords={keywords} jsonLd={jsonLd}>
   <main class="wrap about">
     <a href="/" class="muted">← 返回大厅</a>
     <h1 style="margin: 24px 0 8px;">每个玩具，<br />都始于一次喜欢<span class="red">。</span></h1>

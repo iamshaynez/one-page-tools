@@ -1,10 +1,18 @@
 ---
 // 《时间的尽头》— 3D 沉浸展品。全幅画布 + 玄墨叠层，不走 ToolShell。
 import Base from '../../layouts/Base.astro';
+import ImmersiveSeo from '../../components/ImmersiveSeo.astro';
+import { byKey } from '../../data/tools';
+import { webAppLd } from '../../data/seo';
+
+const tool = byKey('endtime')!;
+const jsonLd = [webAppLd(tool, new URL(Astro.url.pathname, Astro.site).href)];
 ---
 <Base
-  title="时间的尽头 · 玩具展馆"
-  description="一座已死的巨钟坍缩成奇点：吸积盘、引力透镜与时间膨胀。坠向视界令你的钟变慢，按住令时间倒流至 t=0，见证下一个宇宙。"
+  title={tool.seo?.title ?? `${tool.name} · 玩具展馆`}
+  description={tool.seo?.description ?? tool.desc}
+  keywords={tool.keywords}
+  jsonLd={jsonLd}
 >
   <script is:inline>
     // 本展品永远处于黑暗中
@@ -70,6 +78,7 @@ import Base from '../../layouts/Base.astro';
       <a class="hud__btn" href="/">← 回到大厅</a>
     </div>
   </div>
+  <ImmersiveSeo toolKey="endtime" />
 </Base>
 
 <style is:global>

@@ -1,10 +1,18 @@
 ---
 // 《森林之神》— 固定步长生态沙盒 + 程序化像素画布。全幅展品，不走 ToolShell。
 import Base from '../../layouts/Base.astro';
+import ImmersiveSeo from '../../components/ImmersiveSeo.astro';
+import { byKey } from '../../data/tools';
+import { webAppLd } from '../../data/seo';
+
+const tool = byKey('forest-god')!;
+const jsonLd = [webAppLd(tool, new URL(Astro.url.pathname, Astro.site).href)];
 ---
 <Base
-  title="森林之神 · 玩具展馆"
-  description="播种、唤雨、引入兽群。观察一方像素森林在食物网、四季、火焰与新生中，写下只属于你的自然史。"
+  title={tool.seo?.title ?? `${tool.name} · 玩具展馆`}
+  description={tool.seo?.description ?? tool.desc}
+  keywords={tool.keywords}
+  jsonLd={jsonLd}
 >
   <script is:inline>document.documentElement.dataset.theme = 'dark';</script>
   <main class="forest-god" id="forest-god">
@@ -181,6 +189,7 @@ import Base from '../../layouts/Base.astro';
     <div class="fg-veil" id="veil"><span class="fg-loading-tree">♣</span><p>风正在穿过第一片树叶…</p></div>
     <div class="fg-fatal" id="fatal" hidden><h2>这片森林暂时无法苏醒。</h2><p id="fatal-message"></p><a href="/">← 返回大厅</a></div>
   </main>
+  <ImmersiveSeo toolKey="forest-god" />
 </Base>
 
 <style is:global>

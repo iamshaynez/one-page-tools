@@ -3,9 +3,19 @@
 interface Props {
   title?: string;
   description?: string;
+  keywords?: string[];
+  /** 结构化数据（schema.org JSON-LD），可传多个对象 */
+  jsonLd?: object[];
 }
-const { title = '玩具展馆 · 一个网页的玩具大集合', description = '喜欢一件，做一件 —— 日积月累攒下的单页玩具大集合。玄墨视觉，可装进手机。' } = Astro.props;
+const {
+  title = '玩具展馆 · 一个网页的玩具大集合',
+  description = '喜欢一件，做一件 —— 日积月累攒下的单页玩具大集合。玄墨视觉，可装进手机。',
+  keywords = [],
+  jsonLd = [],
+} = Astro.props;
 const canonical = new URL(Astro.url.pathname, Astro.site).href;
+// JSON-LD 序列化：< 转义为 \u003c，防止正文里出现 </script> 提前闭合标签
+const toLd = (obj: object) => JSON.stringify(obj).replace(/</g, '\\u003c');
 // 站点统计 snippet：逐字照抄 xiaowenz-content/ops/多站打点接入-agent指南.md，见指南禁止事项，不要自行"优化"
 const PV_SNIPPET = `(function(){
   if (navigator.doNotTrack === '1') return;           // 尊重 DNT，必须保留
@@ -27,7 +37,9 @@ const PV_SNIPPET = `(function(){
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content={description} />
+    {keywords.length > 0 && <meta name="keywords" content={keywords.join(',')} />}
     <link rel="canonical" href={canonical} />
+    <meta property="og:locale" content="zh_CN" />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
     <meta property="og:type" content="website" />
@@ -35,6 +47,10 @@ const PV_SNIPPET = `(function(){
     <meta property="og:site_name" content="玩具展馆" />
     <meta property="og:image" content={new URL('icons/icon-512.png', Astro.site).href} />
     <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={new URL('icons/icon-512.png', Astro.site).href} />
+    {jsonLd.map((ld) => <script type="application/ld+json" set:html={toLd(ld)} />)}
     <meta name="theme-color" content="#f1f1ef" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="manifest" href="/manifest.webmanifest" />

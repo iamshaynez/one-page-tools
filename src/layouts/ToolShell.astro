@@ -1,15 +1,26 @@
 ---
 // 工具页统一外壳：← 返回大厅 | 工具名 | 主题切换
+// SEO：title/description/keywords 取注册表 seo 字段，自动生成 JSON-LD 与页尾「关于这款玩具」区块
 import Base from './Base.astro';
 import { byKey, CATEGORIES } from '../data/tools';
+import { webAppLd, breadcrumbLd, faqLd } from '../data/seo';
 
 interface Props { toolKey: string; }
 const { toolKey } = Astro.props;
 const tool = byKey(toolKey);
 if (!tool) throw new Error(`Unknown tool: ${toolKey}`);
 const cat = CATEGORIES[tool.category];
+const title = tool.seo?.title ?? `${tool.name} · 玩具展馆`;
+const description = tool.seo?.description ?? tool.desc;
+const canonical = new URL(Astro.url.pathname, Astro.site).href;
+
+const jsonLd: object[] = [
+  webAppLd(tool, canonical),
+  breadcrumbLd(tool, canonical, new URL('/', Astro.site).href),
+  faqLd(tool.seo?.faq),
+].filter(Boolean);
 ---
-<Base title={`${tool.name} · 玩具展馆`} description={tool.desc}>
+<Base title={title} description={description} keywords={tool.keywords} jsonLd={jsonLd}>
   <header class="shell-bar">
     <div class="wrap shell-bar__in">
       <a href="/" class="shell-back" aria-label="返回大厅">← <span class="shell-back__text">大厅</span></a>
@@ -25,6 +36,22 @@ const cat = CATEGORIES[tool.category];
   <main class="wrap shell-main">
     <p class="shell-desc muted">{tool.desc}</p>
     <slot />
+    {(tool.seo?.intro || tool.seo?.faq) && (
+      <section class="seo-about">
+        <h2>关于{tool.name}</h2>
+        {tool.seo?.intro && <p>{tool.seo.intro}</p>}
+        {tool.seo?.faq && (
+          <div class="seo-faq">
+            {tool.seo.faq.map((f) => (
+              <details>
+                <summary>{f.q}</summary>
+                <p>{f.a}</p>
+              </details>
+            ))}
+          </div>
+        )}
+      </section>
+    )}
   </main>
 
   <footer class="shell-foot wrap muted small">
@@ -53,6 +80,14 @@ const cat = CATEGORIES[tool.category];
   .shell-main { padding-top: 28px; padding-bottom: 48px; min-height: calc(100vh - 180px); }
   .shell-desc { margin: 0 0 24px; font-size: 0.95rem; }
   .shell-foot { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; padding-top: 20px; padding-bottom: 28px; border-top: 1px solid var(--line-soft); }
+  .seo-about { margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--line-soft); max-width: 68ch; }
+  .seo-about h2 { font-size: 1.05rem; margin: 0 0 12px; }
+  .seo-about > p { margin: 0; line-height: 1.9; }
+  .seo-faq { margin-top: 20px; display: grid; gap: 8px; }
+  .seo-faq details { border: 1px solid var(--line-soft); border-radius: var(--radius-s); padding: 10px 14px; background: color-mix(in srgb, var(--ink) 3%, transparent); }
+  .seo-faq summary { cursor: pointer; font-size: 0.92rem; }
+  .seo-faq summary::marker { color: var(--red); }
+  .seo-faq details p { margin: 10px 0 2px; line-height: 1.85; font-size: 0.9rem; }
   @media (max-width: 560px) {
     .shell-title .tag { display: none; }
     .shell-back__text { display: none; }
